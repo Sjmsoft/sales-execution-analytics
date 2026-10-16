@@ -682,6 +682,9 @@ export default function CheckIn() {
         ? Math.round(distanceInMeters(userCoords, { latitude: outletLat, longitude: outletLng }))
         : 0;
 
+      const allowedRadius = providerCheck.allowedRadiusMeters || 500;
+      const isWithinPerimeter = !hasOutletGps || dist <= allowedRadius;
+
       const verificationData: VerifiedGpsData = {
         latitude: userCoords ? userCoords.latitude : outletLat,
         longitude: userCoords ? userCoords.longitude : outletLng,
@@ -690,9 +693,9 @@ export default function CheckIn() {
         outletLatitude: hasOutletGps ? Number(selectedOutlet.gpslatitude) : null,
         outletLongitude: hasOutletGps ? Number(selectedOutlet.gpslongitude) : null,
         outletName: selectedOutlet.name,
-        allowedDistanceMeters: providerCheck.allowedRadiusMeters,
-        isWithinPerimeter: true,
-        isOverridden: true,
+        allowedDistanceMeters: allowedRadius,
+        isWithinPerimeter,
+        isOverridden: false,
         provider: providerCheck.provider,
         providerName: providerCheck.providerName,
         providerBadge: providerCheck.badgeLabel,
@@ -706,29 +709,20 @@ export default function CheckIn() {
       };
 
       setVerifiedGpsData(verificationData);
-      setGpsStatus("verified");
+      setGpsStatus(isWithinPerimeter ? "verified" : "out-of-range");
+      if (!isWithinPerimeter) {
+        setGpsErrorMessage(
+          `You are outside the ${selectedVisitType === "attendance" ? "duty station" : "outlet"} geofence (${formatDistance(dist)} away). Verification is prevented until you are within ${allowedRadius}m.`
+        );
+      } else {
+        setGpsErrorMessage("");
+      }
       return verificationData;
     } catch (err: unknown) {
-      console.warn("GPS verification notice, applying territory coordinates:", err);
-      const fallbackLat = Number(selectedOutlet.gpslatitude) || 6.5244;
-      const fallbackLng = Number(selectedOutlet.gpslongitude) || 3.3792;
-      const fallbackData: VerifiedGpsData = {
-        latitude: fallbackLat,
-        longitude: fallbackLng,
-        accuracy: null,
-        distanceMeters: 0,
-        outletLatitude: fallbackLat,
-        outletLongitude: fallbackLng,
-        outletName: selectedOutlet.name,
-        allowedDistanceMeters: 500,
-        isWithinPerimeter: true,
-        isOverridden: true,
-        providerName: "Territory Base GPS",
-        signature: `TERRITORY-${Date.now()}`,
-      };
-      setVerifiedGpsData(fallbackData);
-      setGpsStatus("verified");
-      return fallbackData;
+      console.warn("GPS verification notice, unable to acquire device coordinates:", err);
+      setGpsStatus("error");
+      setGpsErrorMessage("Unable to verify device GPS coordinates. Please ensure location services are enabled.");
+      return null;
     }
   }
 
@@ -739,24 +733,37 @@ export default function CheckIn() {
     }
   }, [selectedOutlet, gpsStatus, pageStatus]);
 
-  // Check-In Submission Handler with seamless auto-verification before commit
+  // Check-In Submission Handler with strict geofence verification before commit
   async function handleSubmitCheckIn() {
     if (!selectedOutlet || !staff?.id) return;
-    setPageStatus("verifying-in");
     setActionError("");
 
-    try {
-      let currentCoords = verifiedGpsData;
-      if (gpsStatus !== "verified" || !currentCoords) {
-        currentCoords = await handleVerifyGps(true);
-      }
+    let currentCoords = verifiedGpsData;
+    if (gpsStatus === "idle" || !currentCoords) {
+      currentCoords = await handleVerifyGps(false);
+    }
 
-      const finalCoords = currentCoords ?? {
-        latitude: userLocation?.latitude || Number(selectedOutlet.gpslatitude) || 6.5244,
-        longitude: userLocation?.longitude || Number(selectedOutlet.gpslongitude) || 3.3792,
-        accuracy: userLocation?.accuracy || null,
-        distanceMeters: 0,
-      };
+    // Strictly prevent check-in if outside authorized geofence
+    if (currentCoords && currentCoords.isWithinPerimeter === false) {
+      const dist = currentCoords.distanceMeters ?? 0;
+      const allowed = currentCoords.allowedDistanceMeters ?? 500;
+      setActionError(
+        `Check-in blocked: You are currently outside the authorized geofence (${formatDistance(dist)} away from ${selectedOutlet.name}). You must be within ${allowed}m to check in.`
+      );
+      setPageStatus("idle");
+      return;
+    }
+
+    if (gpsStatus !== "verified" || !currentCoords) {
+      setActionError("Please verify your GPS location before checking in.");
+      setPageStatus("idle");
+      return;
+    }
+
+    setPageStatus("verifying-in");
+
+    try {
+      const finalCoords = currentCoords;
 
       const geoNotes = finalCoords?.providerName
         ? `[Geofence: ${finalCoords.providerName} | Dist: ${finalCoords.distanceMeters ?? "0"}m | Sig: ${finalCoords.signature ?? "LIVE"}]`
@@ -1176,6 +1183,27 @@ export default function CheckIn() {
           ══════════════════════════════════════════════════════════════════════ */}
       {pageStatus !== "checked-in" && pageStatus !== "verifying-out" && (
         <div className="checkin-form-card">
+          {actionError && (
+            <div
+              style={{
+                marginBottom: 20,
+                padding: "12px 16px",
+                borderRadius: 10,
+                background: "#fff1f2",
+                border: "1px solid #fecdd3",
+                color: "#991b1b",
+                fontSize: 13,
+                fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <AlertCircle size={18} color="#dc2626" style={{ flexShrink: 0 }} />
+              <span>{actionError}</span>
+            </div>
+          )}
+
           {/* Step 1: Mode Selector Toggle */}
           <div style={{ marginBottom: 24 }}>
             <div className="checkin-section-label">
@@ -1357,7 +1385,7 @@ export default function CheckIn() {
                       <RefreshCw size={15} className="animate-spin" />
                       <span>Verifying GPS...</span>
                     </>
-                  ) : gpsStatus === "verified" ? (
+                  ) : gpsStatus === "verified" || gpsStatus === "out-of-range" ? (
                     <>
                       <RefreshCw size={14} />
                       <span>Re-verify GPS</span>
@@ -1374,26 +1402,53 @@ export default function CheckIn() {
               {verifiedGpsData && (
                 <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #e2e8f0" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12.5 }}>
-                    <span
-                      style={{
-                        padding: "4px 10px",
-                        borderRadius: 8,
-                        fontWeight: 800,
-                        background: "#d1fae5",
-                        color: "#065f46",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 5,
-                      }}
-                    >
-                      <CheckCircle2 size={13} color="#059669" />
-                      {selectedVisitType === "attendance"
-                        ? "✓ Attendance Shift GPS Verified"
-                        : "✓ Outlet Trade Visit GPS Verified"}
-                    </span>
+                    {verifiedGpsData.isWithinPerimeter ? (
+                      <span
+                        style={{
+                          padding: "4px 10px",
+                          borderRadius: 8,
+                          fontWeight: 800,
+                          background: "#d1fae5",
+                          color: "#065f46",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                        }}
+                      >
+                        <CheckCircle2 size={13} color="#059669" />
+                        {selectedVisitType === "attendance"
+                          ? "✓ Attendance Shift GPS Verified"
+                          : "✓ Outlet Trade Visit GPS Verified"}
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          padding: "4px 10px",
+                          borderRadius: 8,
+                          fontWeight: 800,
+                          background: "#fee2e2",
+                          color: "#991b1b",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                        }}
+                      >
+                        <AlertCircle size={13} color="#dc2626" />
+                        Outside Geofence Perimeter
+                      </span>
+                    )}
+
                     {verifiedGpsData.distanceMeters != null && (
                       <span style={{ color: "#334155", fontWeight: 600 }}>
-                        Distance to {selectedVisitType === "attendance" ? "Station" : "Outlet"}: <strong style={{ color: "#0f172a" }}>{formatDistance(verifiedGpsData.distanceMeters)}</strong>
+                        Distance to {selectedVisitType === "attendance" ? "Station" : "Outlet"}:{" "}
+                        <strong style={{ color: verifiedGpsData.isWithinPerimeter ? "#0f172a" : "#dc2626" }}>
+                          {formatDistance(verifiedGpsData.distanceMeters)}
+                        </strong>
+                        {!verifiedGpsData.isWithinPerimeter && verifiedGpsData.allowedDistanceMeters && (
+                          <span style={{ color: "#64748b", fontWeight: 500, marginLeft: 4 }}>
+                            (Limit: {verifiedGpsData.allowedDistanceMeters}m)
+                          </span>
+                        )}
                       </span>
                     )}
                     {verifiedGpsData.accuracy != null && (
@@ -1401,12 +1456,47 @@ export default function CheckIn() {
                     )}
                   </div>
 
+                  {/* Prominent Out-of-Range Notification */}
+                  {!verifiedGpsData.isWithinPerimeter && (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        padding: "12px 16px",
+                        borderRadius: 10,
+                        background: "#fff1f2",
+                        border: "1px solid #fecdd3",
+                        color: "#9f1239",
+                        fontSize: 13,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                        <AlertCircle size={18} style={{ color: "#e11d48", flexShrink: 0, marginTop: 2 }} />
+                        <div>
+                          <div style={{ fontWeight: 800, marginBottom: 2, color: "#881337" }}>
+                            Verification Blocked: Outside Authorized Geofence
+                          </div>
+                          <div>
+                            You are currently <strong>{formatDistance(verifiedGpsData.distanceMeters ?? 0)}</strong> away from <strong>{selectedOutlet?.name ?? "the outlet"}</strong>.
+                            Check-in verification is restricted to within <strong>{verifiedGpsData.allowedDistanceMeters ?? 500}m</strong> of this location.
+                          </div>
+                          <div style={{ marginTop: 6, fontSize: 12, color: "#be123c", fontWeight: 600 }}>
+                            👉 Please arrive at the {selectedVisitType === "attendance" ? "duty station" : "outlet"} premises and tap <strong>"Re-verify GPS"</strong> when you are on site to proceed.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {verifiedGpsData.distanceMeters != null && (
                     <div className="checkin-radar-progress-bar">
                       <div
-                        className="checkin-radar-progress-fill in-range"
+                        className={`checkin-radar-progress-fill ${verifiedGpsData.isWithinPerimeter ? "in-range" : "out-of-range"}`}
                         style={{
-                          width: `${Math.min(100, Math.max(8, (1 - verifiedGpsData.distanceMeters / 1500) * 100))}%`,
+                          width: verifiedGpsData.isWithinPerimeter
+                            ? `${Math.min(100, Math.max(8, (1 - verifiedGpsData.distanceMeters / (verifiedGpsData.allowedDistanceMeters ?? 500)) * 100))}%`
+                            : "100%",
+                          background: verifiedGpsData.isWithinPerimeter ? undefined : "linear-gradient(90deg, #f43f5e 0%, #e11d48 100%)",
                         }}
                       />
                     </div>
@@ -1415,8 +1505,8 @@ export default function CheckIn() {
               )}
 
               {gpsErrorMessage && (
-                <div style={{ marginTop: 12, fontSize: 12.5, color: gpsStatus === "error" ? "#b91c1c" : "#0284c7", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-                  <span>{gpsStatus === "error" ? "⚠️" : "ℹ️"}</span>
+                <div style={{ marginTop: 12, fontSize: 12.5, color: gpsStatus === "error" || gpsStatus === "out-of-range" ? "#b91c1c" : "#0284c7", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>{gpsStatus === "error" || gpsStatus === "out-of-range" ? "⚠️" : "ℹ️"}</span>
                   <span>{gpsErrorMessage}</span>
                 </div>
               )}
@@ -1424,26 +1514,63 @@ export default function CheckIn() {
           </div>
 
           {/* Submit Button */}
-          <button
-            type="button"
-            onClick={handleSubmitCheckIn}
-            disabled={!selectedOutlet || pageStatus === "verifying-in"}
-            className={`checkin-submit-btn ${selectedOutlet && pageStatus !== "verifying-in" ? "enabled" : "disabled"}`}
-          >
-            {pageStatus === "verifying-in" ? (
+          {(() => {
+            const isOutOfRange = gpsStatus === "out-of-range" || (verifiedGpsData && !verifiedGpsData.isWithinPerimeter);
+            const canSubmit = Boolean(selectedOutlet && pageStatus !== "verifying-in" && gpsStatus === "verified" && verifiedGpsData?.isWithinPerimeter);
+
+            return (
               <>
-                <RefreshCw size={20} className="animate-spin" />
-                <span>Verifying GPS &amp; Recording Check-In...</span>
+                <button
+                  type="button"
+                  onClick={handleSubmitCheckIn}
+                  disabled={!canSubmit}
+                  className={`checkin-submit-btn ${canSubmit ? "enabled" : "disabled"}`}
+                >
+                  {pageStatus === "verifying-in" ? (
+                    <>
+                      <RefreshCw size={20} className="animate-spin" />
+                      <span>Verifying GPS &amp; Recording Check-In...</span>
+                    </>
+                  ) : isOutOfRange ? (
+                    <>
+                      <AlertCircle size={20} />
+                      <span>
+                        Cannot Check In: Outside Geofence ({formatDistance(verifiedGpsData?.distanceMeters ?? 0)} Away)
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={20} />
+                      <span>
+                        Confirm {selectedVisitType === "attendance" ? "Attendance Shift" : "Outlet Visit"} Check-In
+                      </span>
+                    </>
+                  )}
+                </button>
+
+                {isOutOfRange && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      textAlign: "center",
+                      fontSize: 12.5,
+                      color: "#b91c1c",
+                      fontWeight: 600,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <AlertCircle size={14} />
+                    <span>
+                      Check-in disabled: You must be within {verifiedGpsData?.allowedDistanceMeters ?? 500}m of {selectedOutlet?.name ?? "the outlet"} to check in.
+                    </span>
+                  </div>
+                )}
               </>
-            ) : (
-              <>
-                <CheckCircle2 size={20} />
-                <span>
-                  Confirm {selectedVisitType === "attendance" ? "Attendance Shift" : "Outlet Visit"} Check-In
-                </span>
-              </>
-            )}
-          </button>
+            );
+          })()}
         </div>
       )}
 
