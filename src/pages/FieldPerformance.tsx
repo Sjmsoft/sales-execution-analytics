@@ -1,0 +1,403 @@
+import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "../context/AuthContext";
+import { getSales, type Sale } from "../services/salesService";
+import { getUserScope, filterSalesByScope } from "../services/dataScopeService";
+import {
+  Activity,
+  Calendar,
+  ChevronDown,
+  MapPin,
+  Package,
+  Printer,
+  TrendingUp,
+  Users,
+  DollarSign,
+} from "lucide-react";
+import "../reports.css";
+import LogoLoader from "../components/brand/LogoLoader";
+import { useMinimumLoading } from "../hooks/useMinimumLoading";
+
+function getPeriodDateRange(periodKey: string): { start: string; end: string } {
+  const now = new Date();
+  const formatYmd = (d: Date) => d.toISOString().split("T")[0];
+
+  switch (periodKey) {
+    case "today": {
+      const todayStr = formatYmd(now);
+      return { start: todayStr, end: todayStr };
+    }
+    case "this_week": {
+      const day = now.getDay();
+      const diffToMonday = (day === 0 ? -6 : 1) - day;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() + diffToMonday);
+      return { start: formatYmd(monday), end: formatYmd(now) };
+    }
+    case "this_month": {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { start: formatYmd(firstDay), end: formatYmd(now) };
+    }
+    case "this_year": {
+      const firstDay = new Date(now.getFullYear(), 0, 1);
+      return { start: formatYmd(firstDay), end: formatYmd(now) };
+    }
+    default:
+      return { start: "", end: "" };
+  }
+}
+
+const FIELD_ROLES = ["brand_ambassador", "vsr", "market_sitter"];
+const ROLE_LABELS: Record<string, string> = {
+  brand_ambassador: "Brand Ambassador (BA)",
+  vsr: "Van Sales Rep (VSR)",
+  market_sitter: "Market Sitter (MS)"
+};
+
+export default function FieldPerformance() {
+  const { staff, role } = useAuth();
+  const userScope = useMemo(() => getUserScope(staff, role), [staff, role]);
+
+  const [allSales, setAllSales] = useState<Sale[]>([]);
+  const [loading, setLoading] = useState(true);
+  const visibleLoading = useMinimumLoading(loading, 800);
+  const [period, setPeriod] = useState("this_month");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  useEffect(() => {
+    if (period !== "custom") {
+      const bounds = getPeriodDateRange(period);
+      setStartDate(bounds.start);
+      setEndDate(bounds.end);
+    }
+  }, [period]);
+
+  useEffect(() => {
+    async function fetchData() {
+      setLoading(true);
+      try {
+        const data = await getSales(startDate || undefined, endDate || undefined);
+        const scoped = filterSalesByScope(data || [], userScope);
+        setAllSales(scoped);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, [startDate, endDate, userScope]);
+
+  // Filter only BA, VSR, and MS roles
+  const sales = useMemo(() => {
+    return allSales.filter(s => {
+      const role = (s.staff_role || "").toLowerCase();
+      return FIELD_ROLES.includes(role);
+    });
+  }, [allSales]);
+
+  // --- KPI Calculations ---
+  const totalRevenue = useMemo(() => sales.reduce((acc, s) => acc + Number(s.total_amount ?? 0), 0), [sales]);
+  const totalUnits = useMemo(() => sales.reduce((acc, s) => acc + Number(s.quantity ?? 0), 0), [sales]);
+  const totalCash = useMemo(() => sales.reduce((acc, s) => acc + Number(s.amount_paid ?? 0), 0), [sales]);
+  const collectionEfficiency = totalRevenue > 0 ? Math.round((totalCash / totalRevenue) * 100) : 0;
+  const avgOrderValue = sales.length > 0 ? Math.round(totalRevenue / sales.length) : 0;
+
+  // --- Reports Data Computations ---
+
+  // 1. Role Contribution (BA vs VSR vs MS)
+  const rolePerformance = useMemo(() => {
+    const map = new Map<string, { role: string; revenue: number; units: number; orders: number }>();
+    FIELD_ROLES.forEach(r => map.set(r, { role: r, revenue: 0, units: 0, orders: 0 }));
+    
+    sales.forEach((s) => {
+      const roleKey = (s.staff_role || "").toLowerCase();
+      if (map.has(roleKey)) {
+        const item = map.get(roleKey)!;
+        item.revenue += Number(s.total_amount ?? 0);
+        item.units += Number(s.quantity ?? 0);
+        item.orders += 1;
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
+  }, [sales]);
+
+  // 2. Individual Sales Performance (Reps)
+  const repPerformance = useMemo(() => {
+    const map = new Map<string, { name: string; role: string; revenue: number; units: number; orders: number; paid: number }>();
+    sales.forEach((s) => {
+      const name = s.staff || "Unknown Agent";
+      const role = (s.staff_role || "").toLowerCase();
+      if (!map.has(name)) map.set(name, { name, role: ROLE_LABELS[role] || role, revenue: 0, units: 0, orders: 0, paid: 0 });
+      const item = map.get(name)!;
+      item.revenue += Number(s.total_amount ?? 0);
+      item.units += Number(s.quantity ?? 0);
+      item.paid += Number(s.amount_paid ?? 0);
+      item.orders += 1;
+    });
+    return Array.from(map.values())
+      .map(r => ({ ...r, collectionRate: r.revenue > 0 ? Math.round((r.paid / r.revenue) * 100) : 0 }))
+      .sort((a, b) => b.revenue - a.revenue);
+  }, [sales]);
+
+  // 3. Daily Breakdown (Revenue & Units)
+  const dailyBreakdown = useMemo(() => {
+    const map = new Map<string, { date: string; revenue: number; units: number }>();
+    sales.forEach((s) => {
+      const d = s.sale_date || (s.created_at ? s.created_at.split("T")[0] : "Recent");
+      if (!map.has(d)) map.set(d, { date: d, revenue: 0, units: 0 });
+      const item = map.get(d)!;
+      item.revenue += Number(s.total_amount ?? 0);
+      item.units += Number(s.quantity ?? 0);
+    });
+    return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+  }, [sales]);
+
+  // 4. Sales in Regions
+  const regionPerformance = useMemo(() => {
+    const map = new Map<string, { region: string; revenue: number; units: number }>();
+    sales.forEach((s) => {
+      const reg = s.outlet_region || s.staff_region || s.outlet_state || "National";
+      if (!map.has(reg)) map.set(reg, { region: reg, revenue: 0, units: 0 });
+      const item = map.get(reg)!;
+      item.revenue += Number(s.total_amount ?? 0);
+      item.units += Number(s.quantity ?? 0);
+    });
+    return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
+  }, [sales]);
+
+  // 5. Sales by Products
+  const productPerformance = useMemo(() => {
+    const map = new Map<string, { product: string; revenue: number; units: number }>();
+    sales.forEach((s) => {
+      const prod = s.drink_type || "General Beverage";
+      if (!map.has(prod)) map.set(prod, { product: prod, revenue: 0, units: 0 });
+      const item = map.get(prod)!;
+      item.revenue += Number(s.total_amount ?? 0);
+      item.units += Number(s.quantity ?? 0);
+    });
+    return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
+  }, [sales]);
+
+  const formatCurrency = (val: number) => new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(val);
+  const maxDailyRevenue = Math.max(...dailyBreakdown.map(d => d.revenue), 100);
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  return (
+    <div className="reports-page">
+      {/* HEADER */}
+      <div className="reports-header-box">
+        <div className="reports-title-wrap">
+          <div className="reports-icon-box">
+            <Users size={24} />
+          </div>
+          <div>
+            <h2>Field Team Performance (BA, VSR, MS)</h2>
+            <p>Execution tracking, details, and trends strictly for Brand Ambassadors, Van Sales Reps, and Market Sitters.</p>
+          </div>
+        </div>
+        <div className="reports-controls">
+          <div className="report-filter-select">
+            <Calendar size={15} />
+            <select value={period} onChange={(e) => setPeriod(e.target.value)}>
+              <option value="all">All Time History</option>
+              <option value="today">Today</option>
+              <option value="this_week">This Week</option>
+              <option value="this_month">This Month</option>
+              <option value="this_year">This Year</option>
+            </select>
+            <ChevronDown size={14} className="chevron" />
+          </div>
+          <button className="report-print-btn" onClick={handlePrint}>
+            <Printer size={15} />
+            <span>Print Report</span>
+          </button>
+        </div>
+      </div>
+
+      {visibleLoading ? (
+        <LogoLoader
+          variant="page"
+          message="Compiling field team report"
+          hint="Aggregating performance metrics and revenue by representative"
+        />
+      ) : (
+        <div className="reports-content-container">
+          
+          {/* PRIMARY KPI SUMMARY STRIP */}
+          <div className="report-kpi-strip">
+            <div className="report-kpi-item">
+              <span className="rkpi-label">Field Team Revenue</span>
+              <strong className="rkpi-value">{formatCurrency(totalRevenue)}</strong>
+              <div className="rkpi-footer"><DollarSign size={13}/> <span>Top Line Value</span></div>
+            </div>
+            <div className="report-kpi-item">
+              <span className="rkpi-label">Total Volume Sold</span>
+              <strong className="rkpi-value">{totalUnits.toLocaleString()} Units</strong>
+              <div className="rkpi-footer"><Package size={13}/> <span>Cases & Bottles</span></div>
+            </div>
+            <div className="report-kpi-item">
+              <span className="rkpi-label">Collection Efficiency</span>
+              <strong className="rkpi-value">{collectionEfficiency}%</strong>
+              <div className="rkpi-footer"><Activity size={13}/> <span>{formatCurrency(totalCash)} Recovered</span></div>
+            </div>
+            <div className="report-kpi-item">
+              <span className="rkpi-label">Average Deal Size</span>
+              <strong className="rkpi-value">{formatCurrency(avgOrderValue)}</strong>
+              <div className="rkpi-footer"><TrendingUp size={13}/> <span>Across {sales.length} Deals</span></div>
+            </div>
+          </div>
+
+          <div className="report-grid-2col">
+            
+            {/* ROLE CONTRIBUTION OVERVIEW */}
+            <div className="report-card full-span">
+              <div className="rcard-head">
+                <h3><Users size={16}/> Role Contribution (BA vs VSR vs MS)</h3>
+              </div>
+              <div className="rcard-body scrollable">
+                <div className="report-list-blocks" style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap' }}>
+                  {rolePerformance.map((roleInfo) => (
+                    <div className="report-list-block" style={{ flex: '1 1 250px', borderBottom: 'none', borderRight: '1px solid #f1f5f9' }} key={roleInfo.role}>
+                      <div className="rlb-left" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+                        <strong>{ROLE_LABELS[roleInfo.role] || roleInfo.role}</strong>
+                        <span style={{ fontSize: '13px' }}>{roleInfo.orders} Transactions</span>
+                      </div>
+                      <div className="rlb-right" style={{ textAlign: 'left', marginTop: '12px' }}>
+                        <strong style={{ fontSize: '20px' }}>{formatCurrency(roleInfo.revenue)}</strong>
+                        <span style={{ display: 'inline-block', background: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: '10px', fontSize: '12px', marginTop: '6px' }}>
+                          {totalRevenue > 0 ? Math.round((roleInfo.revenue / totalRevenue) * 100) : 0}% Share
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* DAILY BREAKDOWN CHART */}
+            <div className="report-card full-span">
+              <div className="rcard-head">
+                <h3>Daily Revenue Progression (Field Teams)</h3>
+                <span className="rcard-meta">Chronological transaction velocity</span>
+              </div>
+              <div className="rcard-body">
+                {dailyBreakdown.length === 0 ? (
+                  <div className="rcard-empty">No activity found for this period.</div>
+                ) : (
+                  <div className="report-bar-chart-wrap">
+                    <svg viewBox="0 0 800 200" className="report-bar-chart" preserveAspectRatio="none">
+                      {dailyBreakdown.map((d, i) => {
+                        const width = 800 / Math.max(1, dailyBreakdown.length) - 4;
+                        const x = i * (width + 4);
+                        const height = (d.revenue / maxDailyRevenue) * 180;
+                        const y = 200 - height;
+                        return (
+                          <g key={d.date} className="report-chart-group">
+                            <rect x={x} y={y} width={Math.max(8, width)} height={height} fill="#3b82f6" rx="2" className="report-chart-rect" />
+                            <title>{d.date}: {formatCurrency(d.revenue)}</title>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* REPRESENTATIVE PERFORMANCE */}
+            <div className="report-card">
+              <div className="rcard-head">
+                <h3><Users size={16}/> Individual Rep Performance</h3>
+              </div>
+              <div className="rcard-body scrollable">
+                <table className="report-data-table">
+                  <thead>
+                    <tr>
+                      <th>Sales Representative</th>
+                      <th className="num-col">Revenue</th>
+                      <th className="num-col">Collection</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {repPerformance.map(rep => (
+                      <tr key={rep.name}>
+                        <td>
+                          <strong>{rep.name}</strong>
+                          <span className="table-sub">{rep.role} · {rep.orders} Orders</span>
+                        </td>
+                        <td className="num-col"><strong>{formatCurrency(rep.revenue)}</strong></td>
+                        <td className="num-col">
+                          <span className={`rep-collect-badge ${rep.collectionRate >= 90 ? 'good' : rep.collectionRate >= 70 ? 'avg' : 'poor'}`}>
+                            {rep.collectionRate}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* REGIONAL / TERRITORY DISTRIBUTION */}
+            <div className="report-card">
+              <div className="rcard-head">
+                <h3><MapPin size={16}/> Territory Performance</h3>
+              </div>
+              <div className="rcard-body scrollable">
+                <table className="report-data-table">
+                  <thead>
+                    <tr>
+                      <th>Region / State</th>
+                      <th className="num-col">Volume (Units)</th>
+                      <th className="num-col">Total Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {regionPerformance.map(reg => (
+                      <tr key={reg.region}>
+                        <td><strong>{reg.region}</strong></td>
+                        <td className="num-col">{reg.units.toLocaleString()}</td>
+                        <td className="num-col"><strong>{formatCurrency(reg.revenue)}</strong></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* PRODUCT CONTRIBUTION */}
+            <div className="report-card full-span">
+              <div className="rcard-head">
+                <h3><Package size={16}/> Beverage Product Mix (Field Teams)</h3>
+              </div>
+              <div className="rcard-body scrollable">
+                <div className="report-list-blocks">
+                  {productPerformance.map((prod, idx) => (
+                    <div className="report-list-block" key={prod.product}>
+                      <div className="rlb-left">
+                        <div className="rlb-index">#{idx + 1}</div>
+                        <div>
+                          <strong>{prod.product}</strong>
+                          <span>{prod.units.toLocaleString()} Units Sold</span>
+                        </div>
+                      </div>
+                      <div className="rlb-right">
+                        <strong>{formatCurrency(prod.revenue)}</strong>
+                        <span>{totalRevenue > 0 ? Math.round((prod.revenue / totalRevenue) * 100) : 0}% Share</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

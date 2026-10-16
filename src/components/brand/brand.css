@@ -1,0 +1,438 @@
+/* ==========================================================================
+   PEN EDGE — 3D BRAND LOGO
+   The sail + keel mark is extruded by stacking slices along the Z axis.
+   NOTE: never put opacity / filter / overflow / clip-path on .bl3d-object or
+   .bl3d-part — those would flatten the preserve-3d context.
+   ========================================================================== */
+
+.bl3d {
+  --bl-size: 44px;
+  --bl-mid: 3;
+  --bl-d: calc(var(--bl-size) * 0.014);
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  width: var(--bl-size);
+  height: calc(var(--bl-size) * 0.92);
+  perspective: calc(var(--bl-size) * 5);
+  vertical-align: middle;
+  pointer-events: none;
+}
+
+/* Tones ------------------------------------------------------------------ */
+.bl3d--dark {
+  --sail-face: linear-gradient(150deg, #e0edff 0%, #8ec1ff 26%, #3b82f6 60%, #1d4ed8 100%);
+  --sail-side: #1e3a8a;
+  --keel-face: linear-gradient(90deg, #ecfdf5 0%, #6ee7b7 40%, #10b981 100%);
+  --keel-side: #047857;
+  --bl-shadow: rgba(0, 0, 0, 0.55);
+}
+
+.bl3d--light {
+  --sail-face: linear-gradient(150deg, #bfdbfe 0%, #4f8ff7 30%, #1d4ed8 68%, #1e3a8a 100%);
+  --sail-side: #172554;
+  --keel-face: linear-gradient(90deg, #a7f3d0 0%, #10b981 50%, #047857 100%);
+  --keel-side: #064e3b;
+  --bl-shadow: rgba(15, 23, 42, 0.3);
+}
+
+/* Object & parts ---------------------------------------------------------- */
+.bl3d-object {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transform-origin: 50% 55%;
+  transform: rotateX(12deg) rotateY(-24deg);
+}
+
+.bl3d-part {
+  position: absolute;
+  transform-style: preserve-3d;
+}
+
+.bl3d-sail {
+  left: calc(var(--bl-size) * 0.19);
+  top: calc(var(--bl-size) * 0.02);
+  width: calc(var(--bl-size) * 0.5);
+  height: calc(var(--bl-size) * 0.75);
+  transform: skewX(-8deg);
+}
+
+.bl3d-keel {
+  left: calc(var(--bl-size) * 0.05);
+  top: calc(var(--bl-size) * 0.6);
+  width: calc(var(--bl-size) * 0.86);
+  height: calc(var(--bl-size) * 0.068);
+  transform: rotate(-17deg);
+}
+
+.bl3d-slice,
+.bl3d-cap {
+  position: absolute;
+  inset: 0;
+  backface-visibility: visible;
+}
+
+.bl3d-sail .bl3d-slice,
+.bl3d-sail .bl3d-cap {
+  clip-path: polygon(78% 0, 100% 100%, 0 100%);
+}
+
+.bl3d-keel .bl3d-slice,
+.bl3d-keel .bl3d-cap {
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+/* Extrusion slices: darker towards the back, lighter towards the face */
+.bl3d-slice {
+  transform: translateZ(calc((var(--i) - var(--bl-mid)) * var(--bl-d)));
+  filter: brightness(calc(0.72 + var(--i) * 0.05));
+}
+
+.bl3d-sail .bl3d-slice { background: var(--sail-side); }
+.bl3d-keel .bl3d-slice { background: var(--keel-side); }
+
+.bl3d-cap--front {
+  transform: translateZ(calc((var(--bl-mid) + 0.5) * var(--bl-d)));
+}
+
+.bl3d-cap--back {
+  transform: translateZ(calc((var(--bl-mid) + 0.5) * var(--bl-d) * -1)) rotateY(180deg);
+  filter: brightness(0.82);
+}
+
+.bl3d-sail .bl3d-cap { background: var(--sail-face); }
+.bl3d-keel .bl3d-cap { background: var(--keel-face); }
+
+/* Glossy specular sweep across the front face */
+.bl3d-cap--front::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.65) 46%,
+    transparent 62%
+  );
+  background-size: 260% 100%;
+  background-position: 120% 0;
+  animation: bl3d-shine 5.5s ease-in-out infinite;
+}
+
+/* Contact shadow */
+.bl3d-shadow {
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  bottom: calc(var(--bl-size) * -0.12);
+  height: calc(var(--bl-size) * 0.12);
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, var(--bl-shadow) 0%, transparent 70%);
+  transform-origin: center;
+}
+
+/* Motions ---------------------------------------------------------------- */
+.bl3d--sway .bl3d-object {
+  animation: bl3d-sway 6s ease-in-out infinite;
+}
+.bl3d--sway .bl3d-shadow {
+  animation: bl3d-shadow-sway 6s ease-in-out infinite;
+}
+
+.bl3d--spin .bl3d-object {
+  animation: bl3d-spin 2.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.bl3d--spin .bl3d-shadow {
+  animation: bl3d-shadow-pulse 2.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.bl3d--spin .bl3d-cap--front::after {
+  animation-duration: 2.4s;
+}
+
+@keyframes bl3d-sway {
+  0%, 100% { transform: rotateX(14deg) rotateY(-30deg) translateY(0); }
+  50%      { transform: rotateX(6deg) rotateY(-4deg) translateY(calc(var(--bl-size) * -0.04)); }
+}
+
+@keyframes bl3d-shadow-sway {
+  0%, 100% { transform: scaleX(1); opacity: 1; }
+  50%      { transform: scaleX(0.82); opacity: 0.7; }
+}
+
+@keyframes bl3d-spin {
+  0%   { transform: rotateX(12deg) rotateY(0deg) translateY(0); }
+  50%  { transform: rotateX(12deg) rotateY(180deg) translateY(calc(var(--bl-size) * -0.09)); }
+  100% { transform: rotateX(12deg) rotateY(360deg) translateY(0); }
+}
+
+@keyframes bl3d-shadow-pulse {
+  0%, 100% { transform: scaleX(1); opacity: 1; }
+  50%      { transform: scaleX(0.55); opacity: 0.45; }
+}
+
+@keyframes bl3d-shine {
+  0%, 55% { background-position: 120% 0; }
+  100%    { background-position: -120% 0; }
+}
+
+/* Brand placements -------------------------------------------------------- */
+.pen-logo-emblem .bl3d {
+  margin-top: -2px;
+}
+
+/* ==========================================================================
+   LOGO LOADER
+   ========================================================================== */
+
+.logo-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  text-align: center;
+  animation: logo-loader-in 0.35s ease both;
+}
+
+.logo-loader--page {
+  min-height: min(62vh, 560px);
+  padding: 32px 16px;
+}
+
+.logo-loader--section {
+  min-height: 230px;
+  padding: 28px 16px;
+}
+
+.logo-loader--inline {
+  flex-direction: row;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.logo-loader--fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  gap: 18px;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(16, 185, 129, 0.18) 0%, transparent 42%),
+    radial-gradient(circle at 50% 100%, rgba(59, 130, 246, 0.14) 0%, transparent 50%),
+    linear-gradient(180deg, #03170f 0%, #041c15 50%, #020d09 100%);
+}
+
+.logo-loader--overlay {
+  position: fixed;
+  top: 72px;
+  left: 260px;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  background: rgba(244, 247, 246, 0.86);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: logo-loader-overlay-in 0.2s ease both;
+}
+
+@media (max-width: 768px) {
+  .logo-loader--overlay {
+    top: 60px;
+    left: 0;
+    z-index: 85;
+  }
+}
+
+/* Orb: track ring + rotating gradient arc + glow behind the logo */
+.logo-loader-orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 120px;
+  height: 120px;
+}
+
+.logo-loader--page .logo-loader-orb,
+.logo-loader--overlay .logo-loader-orb { width: 156px; height: 156px; }
+.logo-loader--fullscreen .logo-loader-orb { width: 188px; height: 188px; }
+.logo-loader--inline .logo-loader-orb { width: auto; height: auto; }
+
+.logo-loader--section .logo-loader-orb,
+.logo-loader--page .logo-loader-orb,
+.logo-loader--overlay .logo-loader-orb,
+.logo-loader--fullscreen .logo-loader-orb {
+  padding-bottom: 6px;
+}
+
+.logo-loader-orb::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid rgba(15, 23, 42, 0.06);
+}
+
+.logo-loader--inline .logo-loader-orb::before { display: none; }
+.logo-loader--fullscreen .logo-loader-orb::before { border-color: rgba(255, 255, 255, 0.07); }
+
+.logo-loader-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 200deg,
+    rgba(16, 185, 129, 0.15) 230deg,
+    #10b981 300deg,
+    #3b82f6 360deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  animation: logo-loader-ring 1.3s linear infinite;
+}
+
+.logo-loader-glow {
+  position: absolute;
+  inset: 12%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(16, 185, 129, 0.24) 0%,
+    rgba(59, 130, 246, 0.12) 45%,
+    transparent 72%
+  );
+  animation: logo-loader-glow 2.4s ease-in-out infinite;
+}
+
+/* Copy */
+.logo-loader-wordmark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.logo-loader-wordmark strong {
+  color: #ffffff;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.logo-loader-wordmark span {
+  color: #34d399;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+}
+
+.logo-loader-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.logo-loader-message {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  color: #0f3d31;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.logo-loader--inline .logo-loader-message { font-size: 13px; }
+.logo-loader--fullscreen .logo-loader-message { color: #a7f3d0; font-weight: 600; }
+
+.logo-loader-hint {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.logo-loader--fullscreen .logo-loader-hint { color: rgba(255, 255, 255, 0.55); }
+
+.logo-loader-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 4px;
+}
+
+.logo-loader-dots i {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: logo-loader-dot 1.2s ease-in-out infinite;
+}
+
+.logo-loader-dots i:nth-child(2) { animation-delay: 0.15s; }
+.logo-loader-dots i:nth-child(3) { animation-delay: 0.3s; }
+
+.logo-loader-bar {
+  position: relative;
+  width: 168px;
+  height: 3px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.08);
+}
+
+.logo-loader--fullscreen .logo-loader-bar { background: rgba(255, 255, 255, 0.1); }
+
+.logo-loader-bar span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 42%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #10b981, #3b82f6);
+  animation: logo-loader-bar 1.3s ease-in-out infinite;
+}
+
+@keyframes logo-loader-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes logo-loader-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes logo-loader-ring {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes logo-loader-glow {
+  0%, 100% { transform: scale(0.9); opacity: 0.7; }
+  50%      { transform: scale(1.08); opacity: 1; }
+}
+
+@keyframes logo-loader-dot {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40%           { opacity: 1; transform: translateY(-3px); }
+}
+
+@keyframes logo-loader-bar {
+  0%   { transform: translateX(-110%); }
+  100% { transform: translateX(250%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bl3d-object,
+  .bl3d-shadow,
+  .bl3d-cap--front::after,
+  .logo-loader-ring,
+  .logo-loader-glow,
+  .logo-loader-dots i,
+  .logo-loader-bar span {
+    animation: none !important;
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "runs": [
+    {
+      "ts": "2026-09-07T22:24:49.178Z",
+      "sessionsAnalyzed": 1,
+      "kept": 0,
+      "keptRate": 0,
+      "patternsLearned": 5,
+      "sources": [
+        "autoclaw-native"
+      ],
+      "estTokens": 4,
+      "gitEnriched": false
+    }
+  ],
+  "summary": {
+    "totalRuns": 1,
+    "totalSessions": 1,
+    "totalKept": 0,
+    "avgKeptRate": 0,
+    "totalPatterns": 5,
+    "tokens": {
+      "estimated": 4,
+      "real": 0,
+      "hasReal": false
+    },
+    "totalCostUsd": 0,
+    "lastRun": {
+      "ts": "2026-09-07T22:24:49.178Z",
+      "sessionsAnalyzed": 1,
+      "kept": 0,
+      "keptRate": 0,
+      "patternsLearned": 5,
+      "sources": [
+        "autoclaw-native"
+      ],
+      "estTokens": 4,
+      "gitEnriched": false
+    }
+  },
+  "trends": {
+    "keptRate": [
+      {
+        "ts": "2026-09-07T22:24:49.178Z",
+        "value": 0
+      }
+    ],
+    "patterns": [
+      {
+        "ts": "2026-09-07T22:24:49.178Z",
+        "value": 5
+      }
+    ],
+    "estTokens": [
+      {
+        "ts": "2026-09-07T22:24:49.178Z",
+        "value": 4
+      }
+    ],
+    "realTokens": [
+      {
+        "ts": "2026-09-07T22:24:49.178Z",
+        "value": 0
+      }
+    ]
+  }
+}

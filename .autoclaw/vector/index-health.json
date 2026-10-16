@@ -1,0 +1,20 @@
+{
+  "c:/Users/Som John Maduemezie/sales-execution-analytics": {
+    "schemaVersion": 1,
+    "project": "c:/Users/Som John Maduemezie/sales-execution-analytics",
+    "provider": "none",
+    "model": "none-hashed-bow",
+    "dimension": 768,
+    "chunkCount": 240,
+    "staleIndex": false,
+    "embeddingDegraded": false,
+    "indexedAt": "2026-09-07T22:24:44.142Z",
+    "lastRun": {
+      "filesIndexed": 43,
+      "chunksIndexed": 240,
+      "chunksDeleted": 0,
+      "incremental": false,
+      "cancelled": false
+    }
+  }
+}

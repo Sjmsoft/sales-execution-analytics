@@ -1,0 +1,19 @@
+{
+  "agents": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "extension_id": "Anthropic.claude-code",
+      "detected": true,
+      "rules_path": ".claude\\rules\\cross-agent-protocol.md",
+      "inbox_path": ".autoclaw/orchestrator/comms/inboxes/claude-code/",
+      "hooks_supported": false,
+      "last_heartbeat": null,
+      "status": "detected",
+      "loop_mechanism": "slash-loop",
+      "keepalive_template": "templates/keepalive/claude-code.md"
+    }
+  ],
+  "ide": "Visual Studio Code",
+  "provisioned_at": "2026-09-07T22:18:05.497Z"
+}

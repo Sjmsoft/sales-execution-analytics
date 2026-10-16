@@ -1,0 +1,933 @@
+/* ==========================================================================
+   PEN EDGE ENTERPRISE LOGIN - MODERN UI / UX DESIGN SYSTEM
+   ========================================================================== */
+
+/* ── Main Full-Screen Layout ── */
+.pen-login-page {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #060e17;
+  background-image: 
+    radial-gradient(at 15% 15%, rgba(6, 95, 70, 0.28) 0px, transparent 50%),
+    radial-gradient(at 85% 20%, rgba(30, 58, 138, 0.3) 0px, transparent 50%),
+    radial-gradient(at 50% 85%, rgba(14, 116, 144, 0.22) 0px, transparent 55%),
+    radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 28px 28px;
+  position: relative;
+  overflow-x: hidden;
+  padding: 32px 20px;
+  box-sizing: border-box;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #f1f5f9;
+}
+
+/* Ambient Animated Glow Orbs */
+.pen-login-page::before {
+  content: "";
+  position: absolute;
+  width: 550px;
+  height: 550px;
+  border-radius: 50%;
+  top: -120px;
+  left: -80px;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.12) 0%, rgba(6, 182, 212, 0.04) 50%, transparent 70%);
+  filter: blur(60px);
+  pointer-events: none;
+  animation: penOrbFloat 14s ease-in-out infinite alternate;
+}
+
+.pen-login-page::after {
+  content: "";
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  bottom: -150px;
+  right: -100px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.14) 0%, rgba(99, 102, 241, 0.05) 50%, transparent 70%);
+  filter: blur(70px);
+  pointer-events: none;
+  animation: penOrbFloat 18s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes penOrbFloat {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(40px, 30px) scale(1.08);
+  }
+  100% {
+    transform: translate(-30px, -20px) scale(0.95);
+  }
+}
+
+/* ── Split Container (Showcase + Sign-In Form) ── */
+.pen-login-shell {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 1080px;
+  min-height: 600px;
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  border-radius: 28px;
+  background: rgba(10, 21, 34, 0.72);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 
+    0 24px 64px -12px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+  animation: penCardEntrance 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes penCardEntrance {
+  0% {
+    opacity: 0;
+    transform: translateY(24px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ==========================================================================
+   LEFT PANEL: BRAND & LIVE ANALYTICS SHOWCASE
+   ========================================================================== */
+.pen-showcase-pane {
+  position: relative;
+  padding: 48px 44px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: linear-gradient(145deg, rgba(16, 185, 129, 0.06) 0%, rgba(15, 23, 42, 0.4) 50%, rgba(2, 6, 23, 0.8) 100%);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.pen-showcase-pane::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #10b981, #3b82f6, transparent);
+}
+
+/* Top Branding Bar */
+.pen-brand-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.pen-brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+}
+
+.pen-logo-emblem {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #064e3b 0%, #065f46 50%, #0369a1 100%);
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.25);
+  flex-shrink: 0;
+}
+
+.pen-emblem-sail {
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  width: 17px;
+  height: 25px;
+  background: #60a5fa;
+  clip-path: polygon(78% 0, 100% 100%, 0 100%);
+  transform: skewX(-8deg);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+}
+
+.pen-emblem-keel {
+  position: absolute;
+  top: 24px;
+  left: 6px;
+  width: 30px;
+  height: 9px;
+  border-top: 2.5px solid #a7f3d0;
+  transform: rotate(-17deg);
+}
+
+.pen-brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.pen-brand-text strong {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  line-height: 1.1;
+}
+
+.pen-brand-text span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: #34d399;
+  text-transform: uppercase;
+}
+
+/* System Live Pill */
+.pen-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 9999px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #6ee7b7;
+}
+
+.pen-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: penPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes penPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+}
+
+/* Showcase Hero Copy */
+.pen-showcase-hero {
+  margin-bottom: 28px;
+}
+
+.pen-showcase-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #38bdf8;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 12px;
+}
+
+.pen-showcase-hero h2 {
+  font-size: 27px;
+  line-height: 1.25;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0 0 12px 0;
+  letter-spacing: -0.02em;
+}
+
+.pen-showcase-hero h2 .highlight-gradient {
+  background: linear-gradient(120deg, #34d399 0%, #60a5fa 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.pen-showcase-hero p {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #94a3b8;
+  margin: 0;
+}
+
+/* Showcase Interactive Preview Cards */
+.pen-showcase-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+.pen-metric-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pen-metric-card:hover {
+  background: rgba(20, 32, 54, 0.8);
+  border-color: rgba(56, 189, 248, 0.3);
+  transform: translateX(4px);
+}
+
+.pen-metric-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.pen-metric-icon-wrap {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pen-metric-icon-wrap.sales {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.pen-metric-icon-wrap.activity {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.pen-metric-icon-wrap.geo {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.pen-metric-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.pen-metric-label {
+  font-size: 11.5px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.pen-metric-val {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pen-metric-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pen-metric-badge.green {
+  background: rgba(16, 185, 129, 0.16);
+  color: #34d399;
+}
+
+.pen-metric-badge.blue {
+  background: rgba(56, 189, 248, 0.16);
+  color: #38bdf8;
+}
+
+.pen-metric-badge.purple {
+  background: rgba(168, 85, 247, 0.16);
+  color: #d8b4fe;
+}
+
+/* Showcase Bottom Trust Bar */
+.pen-showcase-trust {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  color: #64748b;
+}
+
+.pen-trust-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pen-trust-item svg {
+  color: #10b981;
+}
+
+/* ==========================================================================
+   RIGHT PANEL: STREAMLINED MODERN SIGN-IN CARD
+   ========================================================================== */
+.pen-auth-pane {
+  padding: 48px 44px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: rgba(13, 27, 42, 0.85);
+  position: relative;
+}
+
+/* Mobile Brand Header (Visible only on small screens) */
+.pen-auth-mobile-brand {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  justify-content: center;
+}
+
+.pen-auth-header {
+  margin-bottom: 28px;
+}
+
+.pen-auth-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  color: #60a5fa;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  margin-bottom: 12px;
+}
+
+.pen-auth-header h1 {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  margin: 0 0 8px 0;
+  line-height: 1.2;
+}
+
+.pen-auth-header p {
+  font-size: 13.5px;
+  color: #94a3b8;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Form Container */
+.pen-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* Input Fields */
+.pen-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.pen-field-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pen-field-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #cbd5e1;
+  letter-spacing: 0.2px;
+}
+
+.pen-forgot-link {
+  font-size: 12px;
+  font-weight: 600;
+  color: #38bdf8;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pen-forgot-link:hover {
+  color: #7dd3fc;
+  text-decoration: underline;
+}
+
+/* Input Box & Icon Wrapper */
+.pen-input-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.pen-input-leading-icon {
+  position: absolute;
+  left: 14px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: color 0.2s ease;
+}
+
+.pen-input-box:focus-within .pen-input-leading-icon {
+  color: #34d399;
+}
+
+.pen-text-input {
+  width: 100%;
+  height: 46px;
+  padding: 10px 42px 10px 42px;
+  font-size: 13.5px;
+  color: #ffffff;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.pen-text-input:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(15, 23, 42, 0.85);
+}
+
+.pen-text-input:focus {
+  outline: none;
+  background: rgba(15, 23, 42, 0.95);
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2), 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.pen-text-input::placeholder {
+  color: #64748b;
+}
+
+/* Trailing buttons (Password Eye & Clear) */
+.pen-input-trailing-btn {
+  position: absolute;
+  right: 10px;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pen-input-trailing-btn:hover {
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Caps Lock Warning Banner */
+.pen-caps-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  padding: 5px 10px;
+  border-radius: 8px;
+  margin-top: 4px;
+}
+
+/* Modern Checkbox Row */
+.pen-form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+
+.pen-remember-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pen-remember-control input {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.pen-custom-checkbox {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.pen-remember-control input:checked ~ .pen-custom-checkbox {
+  background: #10b981;
+  border-color: #10b981;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+}
+
+.pen-remember-text {
+  font-size: 12.5px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.pen-remember-control:hover .pen-remember-text {
+  color: #e2e8f0;
+}
+
+/* Error Notification Card */
+.pen-error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+  font-size: 12.5px;
+  line-height: 1.4;
+  animation: penShake 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.pen-error-banner svg {
+  color: #ef4444;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+@keyframes penShake {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(2px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-3px, 0, 0); }
+  40%, 60% { transform: translate3d(3px, 0, 0); }
+}
+
+/* Submit CTA Button */
+.pen-submit-btn {
+  width: 100%;
+  height: 48px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #059669 0%, #0d9488 50%, #0284c7 100%);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(5, 150, 105, 0.35);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.pen-submit-btn::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.6s ease;
+}
+
+.pen-submit-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(5, 150, 105, 0.45);
+  background: linear-gradient(135deg, #047857 0%, #0f766e 50%, #0369a1 100%);
+}
+
+.pen-submit-btn:hover:not(:disabled)::before {
+  left: 100%;
+}
+
+.pen-submit-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.pen-submit-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Auth Card Footer */
+.pen-auth-footer {
+  margin-top: 28px;
+  text-align: center;
+  font-size: 11.5px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.pen-auth-footer a {
+  color: #94a3b8;
+  text-decoration: none;
+}
+
+.pen-auth-footer a:hover {
+  color: #e2e8f0;
+}
+
+/* ==========================================================================
+   INTERACTIVE FORGOT PASSWORD MODAL / DIALOG
+   ========================================================================== */
+.pen-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: penFadeIn 0.2s ease-out;
+}
+
+@keyframes penFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.pen-modal-card {
+  width: 100%;
+  max-width: 440px;
+  background: #0f1c2e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  padding: 30px 28px;
+  position: relative;
+  animation: penModalPop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  color: #f1f5f9;
+}
+
+@keyframes penModalPop {
+  0% { transform: scale(0.92) translateY(12px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.pen-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.pen-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pen-modal-title h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+}
+
+.pen-modal-close {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  padding: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.pen-modal-close:hover {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.pen-modal-desc {
+  font-size: 13px;
+  color: #94a3b8;
+  line-height: 1.5;
+  margin: 0 0 20px 0;
+}
+
+.pen-modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.pen-modal-cancel {
+  flex: 1;
+  height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pen-modal-cancel:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.pen-modal-submit {
+  flex: 1.3;
+  height: 42px;
+  border: none;
+  background: linear-gradient(135deg, #059669 0%, #0284c7 100%);
+  color: #ffffff;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.pen-modal-submit:hover:not(:disabled) {
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+  transform: translateY(-1px);
+}
+
+.pen-modal-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ==========================================================================
+   RESPONSIVE DESIGN (Tablets & Mobile Viewports)
+   ========================================================================== */
+@media (max-width: 960px) {
+  .pen-login-shell {
+    grid-template-columns: 1fr;
+    max-width: 500px;
+    min-height: auto;
+  }
+
+  .pen-showcase-pane {
+    display: none;
+  }
+
+  .pen-auth-pane {
+    padding: 38px 28px;
+  }
+
+  .pen-auth-mobile-brand {
+    display: flex;
+  }
+}
+
+@media (max-width: 480px) {
+  .pen-login-page {
+    padding: 16px 12px;
+  }
+
+  .pen-login-shell {
+    border-radius: 20px;
+  }
+
+  .pen-auth-pane {
+    padding: 28px 20px;
+  }
+
+  .pen-auth-header h1 {
+    font-size: 24px;
+  }
+
+  .pen-auth-header p {
+    font-size: 12.5px;
+  }
+
+  .pen-text-input {
+    height: 44px;
+    font-size: 13px;
+  }
+
+  .pen-submit-btn {
+    height: 44px;
+    font-size: 13.5px;
+  }
+}

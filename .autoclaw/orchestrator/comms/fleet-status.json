@@ -1,0 +1,35 @@
+{
+  "agent_count": 1,
+  "agents": [
+    {
+      "done": 0,
+      "id": "claude-code",
+      "inflight": 0,
+      "role": "",
+      "status": "alive"
+    }
+  ],
+  "awaiting_you": 0,
+  "claims": {
+    "by_agent": {},
+    "total": 0
+  },
+  "cycle": "waiting",
+  "generated_at": "2026-09-08T17:41:53.178Z",
+  "lanes": {
+    "awaiting_review": 0,
+    "claimable": 0,
+    "in_flight": 0,
+    "stuck": 0
+  },
+  "live_count": 0,
+  "review_queue": {
+    "delivered_unreviewed": 0,
+    "depth": 0,
+    "gated": false,
+    "oldest_age_ms": 0,
+    "wip_cap": 6
+  },
+  "schema_version": 1,
+  "self_agent_id": "claude-code"
+}

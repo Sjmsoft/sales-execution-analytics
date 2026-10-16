@@ -1,0 +1,398 @@
+{
+  "schema": "autoclaw.contextPack.v1",
+  "markdown_path": ".autoclaw/orchestrator/sprints/next-claude-code.context.md",
+  "generated_at": "2026-09-09T07:31:41.053Z",
+  "workspace_root_hash": "3e1460eb264f1eef",
+  "scope": {
+    "task": "Next available work for claude-code: Auto-dispatched by orchestrator-loop. Agent claude-code is idle.",
+    "agent_id": "claude-code",
+    "sprint": 1,
+    "task_ids": [
+      "next-claude-code"
+    ]
+  },
+  "mode": "balanced",
+  "query_mode": "balanced",
+  "degraded": false,
+  "notes": [
+    "mode: balanced",
+    "query-mode: balanced"
+  ],
+  "evidence": [
+    {
+      "id": "rag:0:code",
+      "kind": "code",
+      "source_ref": ".claude/rules/cross-agent-protocol.md",
+      "retrieval_arm": "vector",
+      "score": 0.5,
+      "freshness": "unknown",
+      "included_reason": "code chunk retrieved by vector similarity"
+    },
+    {
+      "id": "rag:1:code",
+      "kind": "code",
+      "source_ref": ".claude/rules/cross-agent-protocol.md",
+      "retrieval_arm": "vector",
+      "score": 0.5714285714285714,
+      "freshness": "unknown",
+      "included_reason": "code chunk retrieved by vector similarity"
+    },
+    {
+      "id": "rag:2:code",
+      "kind": "code",
+      "source_ref": ".claude/rules/cross-agent-protocol.md",
+      "retrieval_arm": "vector",
+      "score": 0.5714285714285714,
+      "freshness": "unknown",
+      "included_reason": "code chunk retrieved by vector similarity"
+    },
+    {
+      "id": "rag:3:code",
+      "kind": "code",
+      "source_ref": ".claude/rules/cross-agent-protocol.md",
+      "retrieval_arm": "vector",
+      "score": 0.5,
+      "freshness": "unknown",
+      "included_reason": "code chunk retrieved by vector similarity"
+    },
+    {
+      "id": "rag:4:code",
+      "kind": "code",
+      "source_ref": "README.md",
+      "retrieval_arm": "vector",
+      "score": 0.35714285714285715,
+      "freshness": "unknown",
+      "included_reason": "code chunk retrieved by vector similarity"
+    },
+    {
+      "id": "rag:5:learning",
+      "kind": "learning",
+      "source_ref": ".autoclaw/vector/preferences.json",
+      "retrieval_arm": "file",
+      "freshness": "unknown",
+      "included_reason": "learned pattern from saved preferences (file fallback)"
+    },
+    {
+      "id": "rag:6:learning",
+      "kind": "learning",
+      "source_ref": ".autoclaw/vector/preferences.json",
+      "retrieval_arm": "file",
+      "freshness": "unknown",
+      "included_reason": "learned pattern from saved preferences (file fallback)"
+    },
+    {
+      "id": "rag:7:learning",
+      "kind": "learning",
+      "source_ref": ".autoclaw/vector/preferences.json",
+      "retrieval_arm": "file",
+      "freshness": "unknown",
+      "included_reason": "learned pattern from saved preferences (file fallback)"
+    },
+    {
+      "id": "rag:8:style",
+      "kind": "style",
+      "source_ref": ".autoclaw/agent-style.md",
+      "retrieval_arm": "file",
+      "freshness": "unknown",
+      "included_reason": "agent style guide (file)"
+    },
+    {
+      "id": "rag:9:memory",
+      "kind": "memory",
+      "source_ref": ".autoclaw/kdream/memory/MEMORY.md",
+      "retrieval_arm": "file",
+      "freshness": "unknown",
+      "included_reason": "recent project memory summary (file)"
+    },
+    {
+      "id": "kg:0",
+      "kind": "kg",
+      "source_ref": "kg:evt:c:/Users/Som John Maduemezie/sales-execution-analytics:next-claude-code:progress:next-claude-code-1788938791142-71eaf8d1",
+      "score": 0.25,
+      "captured_at": "2026-09-09T07:26:31.399Z",
+      "freshness": "current",
+      "included_reason": "durable KG fact ranked by hybrid fusion (balanced)"
+    },
+    {
+      "id": "kg:1",
+      "kind": "kg",
+      "source_ref": "kg:dispatch:c:/Users/Som John Maduemezie/sales-execution-analytics:next-claude-code-1788938791142-71eaf8d1",
+      "score": 0.25,
+      "captured_at": "2026-09-09T07:26:31.278Z",
+      "freshness": "current",
+      "included_reason": "durable KG fact ranked by hybrid fusion (balanced)"
+    },
+    {
+      "id": "kg:2",
+      "kind": "kg",
+      "source_ref": "kg:evt:c:/Users/Som John Maduemezie/sales-execution-analytics:next-claude-code:progress:next-claude-code-1788889283231-c124e075",
+      "score": 0.25,
+      "captured_at": "2026-09-08T17:41:23.443Z",
+      "freshness": "current",
+      "included_reason": "durable KG fact ranked by hybrid fusion (balanced)"
+    },
+    {
+      "id": "kg:3",
+      "kind": "kg",
+      "source_ref": "kg:dispatch:c:/Users/Som John Maduemezie/sales-execution-analytics:next-claude-code-1788889283231-c124e075",
+      "score": 0.25,
+      "captured_at": "2026-09-08T17:41:23.356Z",
+      "freshness": "current",
+      "included_reason": "durable KG fact ranked by hybrid fusion (balanced)"
+    },
+    {
+      "id": "kg:4",
+      "kind": "kg",
+      "source_ref": "kg:evt:c:/Users/Som John Maduemezie/sales-execution-analytics:next-claude-code:progress:next-claude-code-1788888952945-544ba393",
+      "score": 0.25,
+      "captured_at": "2026-09-08T17:35:53.202Z",
+      "freshness": "current",
+      "included_reason": "durable KG fact ranked by hybrid fusion (balanced)"
+    },
+    {
+      "id": "kg:5",
+      "kind": "kg",
+      "source_ref": "kg:dispatch:c:/Users/Som John Maduemezie/sales-execution-analytics:next-claude-code-1788888952945-544ba393",
+      "score": 0.25,
+      "captured_at": "2026-09-08T17:35:53.073Z",
+      "freshness": "current",
+      "included_reason": "durable KG fact ranked by hybrid fusion (balanced)"
+    }
+  ],
+  "hashes": [
+    {
+      "evidence_id": "rag:0:code",
+      "source_hash": "bc68eaa227d1a6a83a1ba09ce173e95e2ccbbdfc4b5c28b7e9ab0a999b881afa"
+    },
+    {
+      "evidence_id": "rag:1:code",
+      "source_hash": "bc68eaa227d1a6a83a1ba09ce173e95e2ccbbdfc4b5c28b7e9ab0a999b881afa"
+    },
+    {
+      "evidence_id": "rag:2:code",
+      "source_hash": "bc68eaa227d1a6a83a1ba09ce173e95e2ccbbdfc4b5c28b7e9ab0a999b881afa"
+    },
+    {
+      "evidence_id": "rag:3:code",
+      "source_hash": "bc68eaa227d1a6a83a1ba09ce173e95e2ccbbdfc4b5c28b7e9ab0a999b881afa"
+    },
+    {
+      "evidence_id": "rag:4:code",
+      "source_hash": "b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5"
+    },
+    {
+      "evidence_id": "rag:5:learning",
+      "source_hash": "69f7b2255abb2bd15ad10a95610fd6292bf0c44e6cf0edf73da260d3fd86c450"
+    },
+    {
+      "evidence_id": "rag:6:learning",
+      "source_hash": "69f7b2255abb2bd15ad10a95610fd6292bf0c44e6cf0edf73da260d3fd86c450"
+    },
+    {
+      "evidence_id": "rag:7:learning",
+      "source_hash": "69f7b2255abb2bd15ad10a95610fd6292bf0c44e6cf0edf73da260d3fd86c450"
+    },
+    {
+      "evidence_id": "rag:8:style",
+      "source_hash": "5617dd2b678a55265668a504c6135293a00d7db2c4d60e424ce2c7019baf11af"
+    },
+    {
+      "evidence_id": "rag:9:memory",
+      "source_hash": "eef142a3332f9197b3eeb7193b3bbe2580b826ea2efb551991e9a17781d717d2"
+    },
+    {
+      "evidence_id": "kg:0",
+      "content_hash": "d5343e5c8a770545bfd22635ec56c1cfd771b06247bd59fda60e8eeed56d9880",
+      "source_hash": "1f687df1e05da7f1adeac751c7634853569b4db383ff82463690a8a208a3eac8"
+    },
+    {
+      "evidence_id": "kg:1",
+      "content_hash": "d5343e5c8a770545bfd22635ec56c1cfd771b06247bd59fda60e8eeed56d9880",
+      "source_hash": "789ff2c8f2d64b673ee0e7acab45fc1ee0bdaf3f583051283337a65aa01860dd"
+    },
+    {
+      "evidence_id": "kg:2",
+      "content_hash": "d5343e5c8a770545bfd22635ec56c1cfd771b06247bd59fda60e8eeed56d9880",
+      "source_hash": "54818123f140764fa3fdd389671fb41ab74b8160c21ec8f6be999ba3026294c8"
+    },
+    {
+      "evidence_id": "kg:3",
+      "content_hash": "d5343e5c8a770545bfd22635ec56c1cfd771b06247bd59fda60e8eeed56d9880",
+      "source_hash": "09dd24eaae7805b0c254ce3ee7b330daf4638abd5c45fc44d9f966b559a634c2"
+    },
+    {
+      "evidence_id": "kg:4",
+      "content_hash": "d5343e5c8a770545bfd22635ec56c1cfd771b06247bd59fda60e8eeed56d9880",
+      "source_hash": "b9cb2371075b5c24a1964b6dc7f73b1dc97b7c3e99fe836fafa04668289598c0"
+    },
+    {
+      "evidence_id": "kg:5",
+      "content_hash": "d5343e5c8a770545bfd22635ec56c1cfd771b06247bd59fda60e8eeed56d9880",
+      "source_hash": "6f846ada4c2d8564abf8345151df73b155145c2e4cd5159af65a7b206ba26b7f"
+    }
+  ],
+  "summary": {
+    "task": "Next available work for claude-code: Auto-dispatched by orchestrator-loop. Agent claude-code is idle.",
+    "agent_id": "claude-code",
+    "sprint": 1,
+    "task_ids": [
+      "next-claude-code"
+    ],
+    "used_code": true,
+    "code_hits": 5,
+    "learning_hits": 3,
+    "kg_hits": 6,
+    "degraded": false,
+    "notes": [
+      "mode: balanced",
+      "query-mode: balanced"
+    ],
+    "generated_at": "2026-09-09T07:31:41.053Z",
+    "mode": "balanced",
+    "spine_block_ids": [
+      "ctx:c:/users/som-john-maduemezie/sales-execution-analytics:project:root"
+    ],
+    "query_mode": "balanced",
+    "evidence": [
+      {
+        "id": "rag:0:code",
+        "kind": "code",
+        "source_ref": ".claude/rules/cross-agent-protocol.md",
+        "retrieval_arm": "vector",
+        "score": 0.5,
+        "freshness": "unknown",
+        "included_reason": "code chunk retrieved by vector similarity"
+      },
+      {
+        "id": "rag:1:code",
+        "kind": "code",
+        "source_ref": ".claude/rules/cross-agent-protocol.md",
+        "retrieval_arm": "vector",
+        "score": 0.5714285714285714,
+        "freshness": "unknown",
+        "included_reason": "code chunk retrieved by vector similarity"
+      },
+      {
+        "id": "rag:2:code",
+        "kind": "code",
+        "source_ref": ".claude/rules/cross-agent-protocol.md",
+        "retrieval_arm": "vector",
+        "score": 0.5714285714285714,
+        "freshness": "unknown",
+        "included_reason": "code chunk retrieved by vector similarity"
+      },
+      {
+        "id": "rag:3:code",
+        "kind": "code",
+        "source_ref": ".claude/rules/cross-agent-protocol.md",
+        "retrieval_arm": "vector",
+        "score": 0.5,
+        "freshness": "unknown",
+        "included_reason": "code chunk retrieved by vector similarity"
+      },
+      {
+        "id": "rag:4:code",
+        "kind": "code",
+        "source_ref": "README.md",
+        "retrieval_arm": "vector",
+        "score": 0.35714285714285715,
+        "freshness": "unknown",
+        "included_reason": "code chunk retrieved by vector similarity"
+      },
+      {
+        "id": "rag:5:learning",
+        "kind": "learning",
+        "source_ref": ".autoclaw/vector/preferences.json",
+        "retrieval_arm": "file",
+        "freshness": "unknown",
+        "included_reason": "learned pattern from saved preferences (file fallback)"
+      },
+      {
+        "id": "rag:6:learning",
+        "kind": "learning",
+        "source_ref": ".autoclaw/vector/preferences.json",
+        "retrieval_arm": "file",
+        "freshness": "unknown",
+        "included_reason": "learned pattern from saved preferences (file fallback)"
+      },
+      {
+        "id": "rag:7:learning",
+        "kind": "learning",
+        "source_ref": ".autoclaw/vector/preferences.json",
+        "retrieval_arm": "file",
+        "freshness": "unknown",
+        "included_reason": "learned pattern from saved preferences (file fallback)"
+      },
+      {
+        "id": "rag:8:style",
+        "kind": "style",
+        "source_ref": ".autoclaw/agent-style.md",
+        "retrieval_arm": "file",
+        "freshness": "unknown",
+        "included_reason": "agent style guide (file)"
+      },
+      {
+        "id": "rag:9:memory",
+        "kind": "memory",
+        "source_ref": ".autoclaw/kdream/memory/MEMORY.md",
+        "retrieval_arm": "file",
+        "freshness": "unknown",
+        "included_reason": "recent project memory summary (file)"
+      },
+      {
+        "id": "kg:0",
+        "kind": "kg",
+        "source_ref": "kg:evt:c:/Users/Som John Maduemezie/sales-execution-analytics:next-claude-code:progress:next-claude-code-1788938791142-71eaf8d1",
+        "score": 0.25,
+        "captured_at": "2026-09-09T07:26:31.399Z",
+        "freshness": "current",
+        "included_reason": "durable KG fact ranked by hybrid fusion (balanced)"
+      },
+      {
+        "id": "kg:1",
+        "kind": "kg",
+        "source_ref": "kg:dispatch:c:/Users/Som John Maduemezie/sales-execution-analytics:next-claude-code-1788938791142-71eaf8d1",
+        "score": 0.25,
+        "captured_at": "2026-09-09T07:26:31.278Z",
+        "freshness": "current",
+        "included_reason": "durable KG fact ranked by hybrid fusion (balanced)"
+      },
+      {
+        "id": "kg:2",
+        "kind": "kg",
+        "source_ref": "kg:evt:c:/Users/Som John Maduemezie/sales-execution-analytics:next-claude-code:progress:next-claude-code-1788889283231-c124e075",
+        "score": 0.25,
+        "captured_at": "2026-09-08T17:41:23.443Z",
+        "freshness": "current",
+        "included_reason": "durable KG fact ranked by hybrid fusion (balanced)"
+      },
+      {
+        "id": "kg:3",
+        "kind": "kg",
+        "source_ref": "kg:dispatch:c:/Users/Som John Maduemezie/sales-execution-analytics:next-claude-code-1788889283231-c124e075",
+        "score": 0.25,
+        "captured_at": "2026-09-08T17:41:23.356Z",
+        "freshness": "current",
+        "included_reason": "durable KG fact ranked by hybrid fusion (balanced)"
+      },
+      {
+        "id": "kg:4",
+        "kind": "kg",
+        "source_ref": "kg:evt:c:/Users/Som John Maduemezie/sales-execution-analytics:next-claude-code:progress:next-claude-code-1788888952945-544ba393",
+        "score": 0.25,
+        "captured_at": "2026-09-08T17:35:53.202Z",
+        "freshness": "current",
+        "included_reason": "durable KG fact ranked by hybrid fusion (balanced)"
+      },
+      {
+        "id": "kg:5",
+        "kind": "kg",
+        "source_ref": "kg:dispatch:c:/Users/Som John Maduemezie/sales-execution-analytics:next-claude-code-1788888952945-544ba393",
+        "score": 0.25,
+        "captured_at": "2026-09-08T17:35:53.073Z",
+        "freshness": "current",
+        "included_reason": "durable KG fact ranked by hybrid fusion (balanced)"
+      }
+    ]
+  }
+}

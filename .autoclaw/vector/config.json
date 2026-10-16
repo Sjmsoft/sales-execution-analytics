@@ -1,0 +1,7 @@
+{
+  "embedding": {
+    "provider": "none",
+    "model": "none-hashed-bow",
+    "dimension": 768
+  }
+}
