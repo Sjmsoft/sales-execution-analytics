@@ -240,11 +240,16 @@ function UnifiedMap({
     };
   }, [focusTarget, userLocation, checkInState, selectedOutlet, regionName, staffName]);
 
+  // Quantize map coordinates to 4 decimal places (~11m resolution) to prevent micro-meter GPS jitter from changing the iframe URL
+  const quantizeCoord = (val: number) => Number(val.toFixed(4));
+  const stableLat = quantizeCoord(coords.lat);
+  const stableLng = quantizeCoord(coords.lng);
+
   const bboxDeltaLat = 0.005;
   const bboxDeltaLon = 0.007;
-  const bbox = `${coords.lng - bboxDeltaLon}%2C${coords.lat - bboxDeltaLat}%2C${coords.lng + bboxDeltaLon}%2C${coords.lat + bboxDeltaLat}`;
-  const osmEmbedUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${coords.lat}%2C${coords.lng}`;
-  const gmapsEmbedUrl = `https://maps.google.com/maps?q=${coords.lat},${coords.lng}&z=16&output=embed`;
+  const bbox = `${stableLng - bboxDeltaLon}%2C${stableLat - bboxDeltaLat}%2C${stableLng + bboxDeltaLon}%2C${stableLat + bboxDeltaLat}`;
+  const osmEmbedUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${stableLat}%2C${stableLng}`;
+  const gmapsEmbedUrl = `https://maps.google.com/maps?q=${stableLat},${stableLng}&z=16&output=embed`;
 
   const externalOsmUrl = `https://www.openstreetmap.org/?mlat=${coords.lat}&mlon=${coords.lng}#map=17/${coords.lat}/${coords.lng}`;
   const externalGmapsUrl = `https://maps.google.com/maps/search/?api=1&query=${coords.lat},${coords.lng}`;
@@ -338,7 +343,7 @@ function UnifiedMap({
 
       <div className="checkin-map-frame-wrapper">
         <iframe
-          key={`${mapLayer}-${coords.lat}-${coords.lng}`}
+          key={mapLayer}
           title="Field Territory Map"
           src={mapLayer === "osm" ? osmEmbedUrl : gmapsEmbedUrl}
           className="checkin-map-iframe"

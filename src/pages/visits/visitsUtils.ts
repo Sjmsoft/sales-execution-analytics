@@ -54,6 +54,9 @@ export function distanceInMeters(
 export const DEFAULT_ALLOWED_GPS_DISTANCE = 500;
 
 export function formatDistance(meters: number): string {
+  if (meters <= 15) {
+    return "On Site (< 15m)";
+  }
   if (meters < 1000) {
     return `${Math.round(meters)}m`;
   }
@@ -98,7 +101,7 @@ export const toErrorMessage = (error: unknown, fallback: string) => {
 
 export const VISIT_OUTCOMES = ["Successful", "Partial", "Pending"] as const;
 
-/** Acquire device geolocation with high-accuracy and smart fallback */
+/** Acquire device geolocation with high-accuracy, smart fallback, and sensor stabilization */
 export function getCurrentPosition(options?: {
   forceStandard?: boolean;
   timeoutMs?: number;
@@ -112,8 +115,8 @@ export function getCurrentPosition(options?: {
 
     const highTimeout = options?.timeoutMs ?? 15000;
     const standardTimeout = 12000;
-    // Always default to 0 for check-in to get a fresh position rather than stale cached coordinates
-    const maxAge = options?.maximumAgeMs ?? 0;
+    // Default to 5000ms cache window to avoid hardware sensor thrashing and cold jitter, unless explicitly forced to 0
+    const maxAge = options?.maximumAgeMs !== undefined ? options.maximumAgeMs : 5000;
 
     if (options?.forceStandard) {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
