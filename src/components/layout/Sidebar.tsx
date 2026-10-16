@@ -295,7 +295,7 @@ export default function Sidebar({
                             <>
                               <div className="nav-item-left">
                                 <Icon className="nav-icon" aria-hidden="true" />
-                                <span>{item.label}</span>
+                                <span>{isBA && item.path === "/check-in" ? "Daily Attendance" : isBA && item.path === "/visits" ? "Attendance History" : item.label}</span>
                                 {item.path === "/settings/notifications" && unreadNotifCount > 0 && (
                                   <span
                                     style={{

@@ -239,12 +239,16 @@
   color: #0f172a;
 }
 
-/* ── Category Selection Cards ── */
 .checkin-category-grid {
   display: grid;
-  grid-templateColumns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   margin-bottom: 24px;
+}
+
+.checkin-category-grid.single-category {
+  grid-template-columns: 1fr;
+  max-width: 620px;
 }
 
 @media (max-width: 640px) {
