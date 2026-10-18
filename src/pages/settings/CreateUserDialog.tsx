@@ -57,7 +57,13 @@ export function CreateUserDialog({
   const eligibleManagers = getEligibleManagers(roleKey, primaryRegion, allUsers);
   const selectedRoleDef = SYSTEM_ROLES.find((r) => r.key === roleKey);
 
-  const isNationalRole = roleKey === "administrator" || roleKey === "national_sales_manager" || roleKey === "hr";
+  const isNationalRole =
+    roleKey === "administrator" ||
+    roleKey === "national_sales_manager" ||
+    roleKey === "hr" ||
+    roleKey.includes("admin") ||
+    roleKey.includes("human_resource") ||
+    roleKey.includes("national_sales");
 
   function toggleRegion(r: string) {
     if (isNationalRole) return;

@@ -5,6 +5,8 @@ import {
   Search,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   X,
   Key,
   UserCheck,
@@ -36,6 +38,10 @@ export function UserManagementSection() {
   const [regionFilter, setRegionFilter] = useState("all");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Modals
   const [editingUser, setEditingUser] = useState<UserAccount | null>(null);
@@ -132,6 +138,36 @@ export function UserManagementSection() {
   }, [filteredUsers, users]);
 
   const orphanedCount = orphanedUsersList.length;
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [search, regionFilter, roleFilter, statusFilter]);
+
+  // Pagination calculations
+  const totalItems = filteredUsers.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const startItem = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endItem = Math.min(currentPage * pageSize, totalItems);
+
+  const paginatedUsers = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredUsers.slice(start, start + pageSize);
+  }, [filteredUsers, currentPage, pageSize]);
+
+  const getPageNumbers = () => {
+    if (totalPages <= 5) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    if (currentPage <= 3) {
+      return [1, 2, 3, 4, "...", totalPages];
+    }
+    if (currentPage >= totalPages - 2) {
+      return [1, "...", totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    }
+    return [1, "...", currentPage - 1, currentPage, currentPage + 1, "...", totalPages];
+  };
 
   // Save changes from Edit User modal
   async function handleSaveEditedUser(updated: UserAccount) {
@@ -380,7 +416,8 @@ export function UserManagementSection() {
             </button>
           </div>
         ) : (
-          <div className="table-wrapper">
+          <>
+            <div className="table-wrapper">
             <table className="um-table">
               <thead>
                 <tr>
@@ -390,7 +427,7 @@ export function UserManagementSection() {
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map((u) => {
+                {paginatedUsers.map((u) => {
                   const roleDef = SYSTEM_ROLES.find((r) => r.key === u.role_key);
                   const hierarchy = validateUserHierarchy(u, users);
                   const initials = u.name
@@ -543,6 +580,156 @@ export function UserManagementSection() {
               </tbody>
             </table>
           </div>
+
+            {/* ── Pagination Bar ── */}
+            <div
+              className="um-pagination-bar"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "12px 18px",
+                borderTop: "1px solid #e5e7eb",
+                background: "#ffffff",
+                fontSize: "0.85rem",
+                color: "#4b5563",
+                flexWrap: "wrap",
+                gap: "12px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+                <span>
+                  Showing <strong>{startItem}</strong>–<strong>{endItem}</strong> of <strong>{totalItems}</strong> users
+                </span>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <label htmlFor="um-page-size-select" style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+                    Per page:
+                  </label>
+                  <select
+                    id="um-page-size-select"
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setPage(1);
+                    }}
+                    style={{
+                      padding: "4px 8px",
+                      borderRadius: "6px",
+                      border: "1px solid #d1d5db",
+                      background: "#ffffff",
+                      fontSize: "0.8rem",
+                      outline: "none",
+                      color: "#374151",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <option value={5}>5</option>
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: "32px",
+                      height: "32px",
+                      borderRadius: "6px",
+                      border: "1px solid #d1d5db",
+                      background: "#ffffff",
+                      color: currentPage === 1 ? "#9ca3af" : "#374151",
+                      cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                      transition: "all 0.15s ease",
+                    }}
+                    title="Previous Page"
+                    aria-label="Previous Page"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+
+                  {getPageNumbers().map((item, idx) => {
+                    if (item === "...") {
+                      return (
+                        <span
+                          key={`ellipsis-${idx}`}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            width: "28px",
+                            height: "32px",
+                            color: "#9ca3af",
+                            fontSize: "0.85rem",
+                          }}
+                        >
+                          &hellip;
+                        </span>
+                      );
+                    }
+                    const pageNum = Number(item);
+                    const isActive = pageNum === currentPage;
+                    return (
+                      <button
+                        key={pageNum}
+                        type="button"
+                        onClick={() => setPage(pageNum)}
+                        style={{
+                          minWidth: "32px",
+                          height: "32px",
+                          padding: "0 6px",
+                          borderRadius: "6px",
+                          border: isActive ? "1px solid #075544" : "1px solid #d1d5db",
+                          background: isActive ? "#075544" : "#ffffff",
+                          color: isActive ? "#ffffff" : "#374151",
+                          fontWeight: isActive ? 600 : 400,
+                          cursor: "pointer",
+                          fontSize: "0.8rem",
+                          transition: "all 0.15s ease",
+                        }}
+                        aria-current={isActive ? "page" : undefined}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: "32px",
+                      height: "32px",
+                      borderRadius: "6px",
+                      border: "1px solid #d1d5db",
+                      background: "#ffffff",
+                      color: currentPage === totalPages ? "#9ca3af" : "#374151",
+                      cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+                      transition: "all 0.15s ease",
+                    }}
+                    title="Next Page"
+                    aria-label="Next Page"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
 

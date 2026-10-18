@@ -28,7 +28,19 @@ import {
   CheckCircle2,
   Compass,
   MessageSquare,
+  Sun,
+  Moon,
+  Monitor,
+  RotateCcw,
+  Sparkles,
+  Sliders,
+  PanelLeftClose,
+  PanelLeftOpen,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react";
+import { useAppearance } from "../hooks/useAppearance";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { UserManagementSection } from "./settings/UserManagementSection";
@@ -101,27 +113,51 @@ function Toggle({
   );
 }
 
+const TAB_LABELS: Record<TabId, string> = {
+  profile: "Profile",
+  security: "Security",
+  notifications: "Notifications",
+  appearance: "Appearance",
+  regional: "Regional & Language",
+  privacy: "Privacy & Security",
+  drinksAndProducts: "Drinks & Products",
+  drinkCategories: "Drink Categories",
+  outletTypes: "Outlet Types",
+  paymentMethods: "Payment Methods",
+  visitOutcomes: "Visit Outcomes",
+  regions: "Regions",
+  geofencing: "Geofencing & Integrations",
+  communications: "Communications & Calls",
+  users: "User Management",
+  roles: "Role Management",
+};
+
 function SubnavButton({
   id,
   icon: Icon,
   label,
   active,
+  collapsed = false,
   onClick,
 }: {
   id: TabId;
   icon: React.ElementType;
   label: string;
   active: boolean;
+  collapsed?: boolean;
   onClick: (id: TabId) => void;
 }) {
   return (
     <button
       onClick={() => onClick(id)}
-      className={`settings-tab${active ? " settings-tab--active" : ""}`}
+      className={`settings-tab${active ? " settings-tab--active" : ""}${collapsed ? " settings-tab--collapsed" : ""}`}
       type="button"
+      title={label}
+      aria-label={label}
     >
-      <Icon size={16} aria-hidden="true" />
-      <span>{label}</span>
+      <Icon size={16} aria-hidden="true" className="settings-tab-icon" />
+      {!collapsed && <span>{label}</span>}
+      {collapsed && active && <span className="settings-tab-active-dot" />}
     </button>
   );
 }
@@ -466,6 +502,66 @@ export default function Settings() {
   /* tab state */
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
 
+  /* settings menu sidebar collapse state */
+  const [menuSidebarCollapsed, setMenuSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("settings_menu_collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleMenuSidebar = () => {
+    setMenuSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("settings_menu_collapsed", String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
+  /* settings menu groups collapse state */
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem("settings_collapsed_groups");
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const toggleGroup = (groupId: string) => {
+    setCollapsedGroups((prev) => {
+      const next = { ...prev, [groupId]: !prev[groupId] };
+      try {
+        localStorage.setItem("settings_collapsed_groups", JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const group1 = ["profile", "security", "notifications", "appearance", "regional", "privacy"];
+    const group2 = ["drinksAndProducts", "drinkCategories", "outletTypes", "paymentMethods", "visitOutcomes", "regions"];
+    const group3 = ["geofencing", "communications"];
+    const group4 = ["users", "roles"];
+
+    if (group1.includes(activeTab) && collapsedGroups.account) {
+      setCollapsedGroups((prev) => ({ ...prev, account: false }));
+    } else if (group2.includes(activeTab) && collapsedGroups.catalog) {
+      setCollapsedGroups((prev) => ({ ...prev, catalog: false }));
+    } else if (group3.includes(activeTab) && collapsedGroups.integrations) {
+      setCollapsedGroups((prev) => ({ ...prev, integrations: false }));
+    } else if (group4.includes(activeTab) && collapsedGroups.admin) {
+      setCollapsedGroups((prev) => ({ ...prev, admin: false }));
+    }
+  }, [activeTab]);
+
   if (!authLoading && !isAdmin) {
     return <Navigate to="/" replace />;
   }
@@ -558,10 +654,16 @@ export default function Settings() {
   }, []);
 
   /* ── Appearance section ── */
-  const [colorScheme, setColorScheme] = useState<"light" | "dark" | "system">(
-    "light"
-  );
-  const [compactMode, setCompactMode] = useState(false);
+  const {
+    colorScheme,
+    setColorScheme,
+    compactMode,
+    setCompactMode,
+    sidebarCollapsed,
+    setSidebarCollapsed,
+    resolvedTheme,
+    resetToDefaults,
+  } = useAppearance();
 
   /* ── Regional section ── */
   const [currency, setCurrency] = useState("NGN");
@@ -615,43 +717,144 @@ export default function Settings() {
       </div>
 
       {/* Main layout */}
-      <div className="settings-layout">
-        <aside className="settings-sidebar">
+      <div className={`settings-layout${menuSidebarCollapsed ? " settings-layout--collapsed" : ""}`}>
+        <aside
+          className={`settings-sidebar${menuSidebarCollapsed ? " settings-sidebar--collapsed" : ""}`}
+          aria-label="Settings Navigation"
+        >
+          {/* Top Collapse/Expand Toggle Header */}
+          <div className={`settings-sidebar-header${menuSidebarCollapsed ? " settings-sidebar-header--collapsed" : ""}`}>
+            {!menuSidebarCollapsed ? (
+              <div style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
+                <span className="settings-sidebar-header-title">Settings Navigation</span>
+              </div>
+            ) : (
+              <span className="settings-sidebar-current-pill">
+                {TAB_LABELS[activeTab]}
+              </span>
+            )}
+            <button
+              type="button"
+              className="settings-sidebar-collapse-btn"
+              onClick={toggleMenuSidebar}
+              title={menuSidebarCollapsed ? "Expand settings menu" : "Collapse settings menu"}
+              aria-label={menuSidebarCollapsed ? "Expand settings menu" : "Collapse settings menu"}
+            >
+              {menuSidebarCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+            </button>
+          </div>
+
           {/* Group 1: My Account */}
           <div className="settings-sidebar-group">
-            <div className="settings-sidebar-group-title">My Account</div>
-            <SubnavButton id="profile" icon={User} label="Profile" active={activeTab === "profile"} onClick={setActiveTab} />
-            <SubnavButton id="security" icon={Lock} label="Security" active={activeTab === "security"} onClick={setActiveTab} />
-            <SubnavButton id="notifications" icon={Bell} label="Notifications" active={activeTab === "notifications"} onClick={setActiveTab} />
-            <SubnavButton id="appearance" icon={Palette} label="Appearance" active={activeTab === "appearance"} onClick={setActiveTab} />
-            <SubnavButton id="regional" icon={Globe} label="Regional & Language" active={activeTab === "regional"} onClick={setActiveTab} />
-            <SubnavButton id="privacy" icon={Shield} label="Privacy & Security" active={activeTab === "privacy"} onClick={setActiveTab} />
+            {!menuSidebarCollapsed ? (
+              <button
+                type="button"
+                className="settings-sidebar-group-header"
+                onClick={() => toggleGroup("account")}
+                aria-expanded={!collapsedGroups.account}
+              >
+                <span className="settings-sidebar-group-title">My Account</span>
+                <ChevronDown
+                  size={14}
+                  className={`settings-group-chevron${collapsedGroups.account ? " settings-group-chevron--collapsed" : ""}`}
+                />
+              </button>
+            ) : (
+              <div className="settings-sidebar-divider" title="My Account" />
+            )}
+            {(!collapsedGroups.account || menuSidebarCollapsed) && (
+              <div className="settings-sidebar-group-items">
+                <SubnavButton id="profile" icon={User} label="Profile" active={activeTab === "profile"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                <SubnavButton id="security" icon={Lock} label="Security" active={activeTab === "security"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                <SubnavButton id="notifications" icon={Bell} label="Notifications" active={activeTab === "notifications"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                <SubnavButton id="appearance" icon={Palette} label="Appearance" active={activeTab === "appearance"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                <SubnavButton id="regional" icon={Globe} label="Regional & Language" active={activeTab === "regional"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                <SubnavButton id="privacy" icon={Shield} label="Privacy & Security" active={activeTab === "privacy"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+              </div>
+            )}
           </div>
 
           {/* Group 2: Product Catalog */}
           <div className="settings-sidebar-group">
-            <div className="settings-sidebar-group-title">Product Catalog & Regions</div>
-            <SubnavButton id="drinksAndProducts" icon={Wine} label="Drinks & Products" active={activeTab === "drinksAndProducts"} onClick={setActiveTab} />
-            <SubnavButton id="drinkCategories" icon={Tag} label="Drink Categories" active={activeTab === "drinkCategories"} onClick={setActiveTab} />
-            <SubnavButton id="outletTypes" icon={Building2} label="Outlet Types" active={activeTab === "outletTypes"} onClick={setActiveTab} />
-            <SubnavButton id="paymentMethods" icon={CreditCard} label="Payment Methods" active={activeTab === "paymentMethods"} onClick={setActiveTab} />
-            <SubnavButton id="visitOutcomes" icon={CheckCircle2} label="Visit Outcomes" active={activeTab === "visitOutcomes"} onClick={setActiveTab} />
-            <SubnavButton id="regions" icon={MapPin} label="Regions" active={activeTab === "regions"} onClick={setActiveTab} />
+            {!menuSidebarCollapsed ? (
+              <button
+                type="button"
+                className="settings-sidebar-group-header"
+                onClick={() => toggleGroup("catalog")}
+                aria-expanded={!collapsedGroups.catalog}
+              >
+                <span className="settings-sidebar-group-title">Product Catalog & Regions</span>
+                <ChevronDown
+                  size={14}
+                  className={`settings-group-chevron${collapsedGroups.catalog ? " settings-group-chevron--collapsed" : ""}`}
+                />
+              </button>
+            ) : (
+              <div className="settings-sidebar-divider" title="Product Catalog & Regions" />
+            )}
+            {(!collapsedGroups.catalog || menuSidebarCollapsed) && (
+              <div className="settings-sidebar-group-items">
+                <SubnavButton id="drinksAndProducts" icon={Wine} label="Drinks & Products" active={activeTab === "drinksAndProducts"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                <SubnavButton id="drinkCategories" icon={Tag} label="Drink Categories" active={activeTab === "drinkCategories"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                <SubnavButton id="outletTypes" icon={Building2} label="Outlet Types" active={activeTab === "outletTypes"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                <SubnavButton id="paymentMethods" icon={CreditCard} label="Payment Methods" active={activeTab === "paymentMethods"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                <SubnavButton id="visitOutcomes" icon={CheckCircle2} label="Visit Outcomes" active={activeTab === "visitOutcomes"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                <SubnavButton id="regions" icon={MapPin} label="Regions" active={activeTab === "regions"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+              </div>
+            )}
           </div>
 
           {/* Group 3: Integrations & Field Tracking */}
           <div className="settings-sidebar-group">
-            <div className="settings-sidebar-group-title">Integrations & Tracking</div>
-            <SubnavButton id="geofencing" icon={Compass} label="Geofencing & Integrations" active={activeTab === "geofencing"} onClick={setActiveTab} />
-            <SubnavButton id="communications" icon={MessageSquare} label="Communications & Calls" active={activeTab === "communications"} onClick={setActiveTab} />
+            {!menuSidebarCollapsed ? (
+              <button
+                type="button"
+                className="settings-sidebar-group-header"
+                onClick={() => toggleGroup("integrations")}
+                aria-expanded={!collapsedGroups.integrations}
+              >
+                <span className="settings-sidebar-group-title">Integrations & Tracking</span>
+                <ChevronDown
+                  size={14}
+                  className={`settings-group-chevron${collapsedGroups.integrations ? " settings-group-chevron--collapsed" : ""}`}
+                />
+              </button>
+            ) : (
+              <div className="settings-sidebar-divider" title="Integrations & Tracking" />
+            )}
+            {(!collapsedGroups.integrations || menuSidebarCollapsed) && (
+              <div className="settings-sidebar-group-items">
+                <SubnavButton id="geofencing" icon={Compass} label="Geofencing & Integrations" active={activeTab === "geofencing"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                <SubnavButton id="communications" icon={MessageSquare} label="Communications & Calls" active={activeTab === "communications"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+              </div>
+            )}
           </div>
 
           {/* Group 4: Administration */}
           {isAdmin && (
             <div className="settings-sidebar-group">
-              <div className="settings-sidebar-group-title">Administration</div>
-              <SubnavButton id="users" icon={Users} label="User Management" active={activeTab === "users"} onClick={setActiveTab} />
-              <SubnavButton id="roles" icon={ShieldCheck} label="Role Management" active={activeTab === "roles"} onClick={setActiveTab} />
+              {!menuSidebarCollapsed ? (
+                <button
+                  type="button"
+                  className="settings-sidebar-group-header"
+                  onClick={() => toggleGroup("admin")}
+                  aria-expanded={!collapsedGroups.admin}
+                >
+                  <span className="settings-sidebar-group-title">Administration</span>
+                  <ChevronDown
+                    size={14}
+                    className={`settings-group-chevron${collapsedGroups.admin ? " settings-group-chevron--collapsed" : ""}`}
+                  />
+                </button>
+              ) : (
+                <div className="settings-sidebar-divider" title="Administration" />
+              )}
+              {(!collapsedGroups.admin || menuSidebarCollapsed) && (
+                <div className="settings-sidebar-group-items">
+                  <SubnavButton id="users" icon={Users} label="User Management" active={activeTab === "users"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                  <SubnavButton id="roles" icon={ShieldCheck} label="Role Management" active={activeTab === "roles"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                </div>
+              )}
             </div>
           )}
         </aside>
@@ -1103,41 +1306,287 @@ export default function Settings() {
 
           {/* ── Appearance ── */}
           {activeTab === "appearance" && (
-            <div className="settings-section-content">
-              <div className="settings-section-titles" style={{ marginBottom: '1.5rem' }}>
-                <h3 className="settings-section-title">Appearance</h3>
-                <p className="settings-section-subtitle">Theme, layout, and display preferences</p>
+            <div className="settings-section-content appearance-section-container">
+              <div className="appearance-header-banner">
+                <div className="settings-section-titles">
+                  <h3 className="settings-section-title" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <Palette size={20} style={{ color: "#10b981" }} /> Appearance & Theme
+                  </h3>
+                  <p className="settings-section-subtitle">
+                    Customize display theme, layout density, and desktop navigation preferences
+                  </p>
+                </div>
+                <div className="appearance-status-pill">
+                  <CheckCircle2 size={13} />
+                  <span>Preferences saved & active</span>
+                </div>
               </div>
-          <div className="settings-form">
-            <SettingRow
-              label="Color scheme"
-              description="Choose your preferred display theme"
-            >
-              <div className="settings-segmented">
-                {(["light", "dark", "system"] as const).map((scheme) => (
-                  <button
-                    key={scheme}
-                    type="button"
-                    className={`settings-seg-btn${colorScheme === scheme ? " settings-seg-btn--active" : ""}`}
-                    onClick={() => setColorScheme(scheme)}
+
+              {/* Theme Picker Block */}
+              <div className="appearance-block">
+                <div className="appearance-block-title">
+                  <Sparkles size={16} /> Theme & Color Scheme
+                </div>
+                <p className="appearance-block-desc">
+                  Choose your preferred workspace aesthetic. System mode dynamically mirrors your operating system display settings.
+                </p>
+
+                <div className="theme-picker-grid">
+                  {/* Light Theme Card */}
+                  <div
+                    className={`theme-card${colorScheme === "light" ? " theme-card--active" : ""}`}
+                    onClick={() => setColorScheme("light")}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setColorScheme("light"); }}
                   >
-                    {scheme.charAt(0).toUpperCase() + scheme.slice(1)}
-                  </button>
-                ))}
+                    <div className="theme-card-preview preview--light">
+                      <div className="preview-sidebar" />
+                      <div className="preview-body">
+                        <div className="preview-header" />
+                        <div className="preview-cards">
+                          <div className="preview-card" />
+                          <div className="preview-card" />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="theme-card-info">
+                      <div className="theme-card-title-group">
+                        <Sun className="theme-card-icon" />
+                        <span className="theme-card-title">Light Theme</span>
+                      </div>
+                      {colorScheme === "light" && (
+                        <span className="theme-card-badge">
+                          <Check size={11} /> Active
+                        </span>
+                      )}
+                    </div>
+                    <p className="theme-card-desc">
+                      High-clarity daylight theme with crisp borders and emerald accents.
+                    </p>
+                  </div>
+
+                  {/* Dark Theme Card */}
+                  <div
+                    className={`theme-card${colorScheme === "dark" ? " theme-card--active" : ""}`}
+                    onClick={() => setColorScheme("dark")}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setColorScheme("dark"); }}
+                  >
+                    <div className="theme-card-preview preview--dark">
+                      <div className="preview-sidebar" />
+                      <div className="preview-body">
+                        <div className="preview-header" />
+                        <div className="preview-cards">
+                          <div className="preview-card" />
+                          <div className="preview-card" />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="theme-card-info">
+                      <div className="theme-card-title-group">
+                        <Moon className="theme-card-icon" />
+                        <span className="theme-card-title">Dark Theme</span>
+                      </div>
+                      {colorScheme === "dark" && (
+                        <span className="theme-card-badge">
+                          <Check size={11} /> Active
+                        </span>
+                      )}
+                    </div>
+                    <p className="theme-card-desc">
+                      Obsidian & deep emerald OLED theme engineered to minimize eye strain.
+                    </p>
+                  </div>
+
+                  {/* System Theme Card */}
+                  <div
+                    className={`theme-card${colorScheme === "system" ? " theme-card--active" : ""}`}
+                    onClick={() => setColorScheme("system")}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setColorScheme("system"); }}
+                  >
+                    <div className="theme-card-preview preview--system">
+                      <div className="preview-split-box">
+                        Auto OS Sync
+                      </div>
+                    </div>
+                    <div className="theme-card-info">
+                      <div className="theme-card-title-group">
+                        <Monitor className="theme-card-icon" />
+                        <span className="theme-card-title">System Auto</span>
+                      </div>
+                      {colorScheme === "system" && (
+                        <span className="theme-card-badge">
+                          <Check size={11} /> Active ({resolvedTheme === "dark" ? "Dark" : "Light"})
+                        </span>
+                      )}
+                    </div>
+                    <p className="theme-card-desc">
+                      Automatically syncs with Windows or macOS daylight and night schedules.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Quick Segmented Switch */}
+                <div style={{ marginTop: "12px" }}>
+                  <SettingRow
+                    label="Quick Scheme Switch"
+                    description="Switch active color palette instantly"
+                  >
+                    <div className="settings-segmented">
+                      {(["light", "dark", "system"] as const).map((scheme) => (
+                        <button
+                          key={scheme}
+                          type="button"
+                          className={`settings-seg-btn${colorScheme === scheme ? " settings-seg-btn--active" : ""}`}
+                          onClick={() => setColorScheme(scheme)}
+                        >
+                          {scheme === "light" ? "Light" : scheme === "dark" ? "Dark" : "System Sync"}
+                        </button>
+                      ))}
+                    </div>
+                  </SettingRow>
+                </div>
               </div>
-            </SettingRow>
-            <SettingRow
-              label="Compact mode"
-              description="Reduce spacing to fit more data on screen"
-            >
-              <Toggle
-                id="compact-mode"
-                checked={compactMode}
-                onChange={setCompactMode}
-              />
-            </SettingRow>
-          </div>
-          </div>
+
+              {/* Information Density / Compact Mode Block */}
+              <div className="appearance-block">
+                <div className="appearance-block-title">
+                  <Sliders size={16} /> Information Density
+                </div>
+                <p className="appearance-block-desc">
+                  Adjust interface padding and table spacing according to your monitor size and reading preferences.
+                </p>
+
+                <div className="density-card-container">
+                  {/* Comfortable */}
+                  <div
+                    className={`density-option-card${!compactMode ? " density-option-card--active" : ""}`}
+                    onClick={() => setCompactMode(false)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setCompactMode(false); }}
+                  >
+                    <div className="density-preview-mockup">
+                      <div className="density-preview-row">
+                        <span className="density-dot" />
+                        <span className="density-line" />
+                        <span className="density-tag" />
+                      </div>
+                      <div className="density-preview-row">
+                        <span className="density-dot" />
+                        <span className="density-line" style={{ width: "60%" }} />
+                        <span className="density-tag" />
+                      </div>
+                    </div>
+                    <div className="theme-card-info">
+                      <strong className="theme-card-title">Comfortable (Standard)</strong>
+                      {!compactMode && (
+                        <span className="theme-card-badge"><Check size={11} /> Active</span>
+                      )}
+                    </div>
+                    <p className="theme-card-desc">
+                      Standard spacious padding, ideal for everyday browsing and touch displays.
+                    </p>
+                  </div>
+
+                  {/* Compact */}
+                  <div
+                    className={`density-option-card compact-active${compactMode ? " density-option-card--active" : ""}`}
+                    onClick={() => setCompactMode(true)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setCompactMode(true); }}
+                  >
+                    <div className="density-preview-mockup">
+                      <div className="density-preview-row">
+                        <span className="density-dot" />
+                        <span className="density-line" />
+                        <span className="density-tag" />
+                      </div>
+                      <div className="density-preview-row">
+                        <span className="density-dot" />
+                        <span className="density-line" style={{ width: "60%" }} />
+                        <span className="density-tag" />
+                      </div>
+                    </div>
+                    <div className="theme-card-info">
+                      <strong className="theme-card-title">Compact (High Density)</strong>
+                      {compactMode && (
+                        <span className="theme-card-badge"><Check size={11} /> Active</span>
+                      )}
+                    </div>
+                    <p className="theme-card-desc">
+                      Tighter padding and smaller row heights. Shows up to 35% more data per screen.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: "12px" }}>
+                  <SettingRow
+                    label="Compact mode"
+                    description="Toggle compact table rows and reduced card padding across all pages"
+                  >
+                    <Toggle
+                      id="compact-mode"
+                      checked={compactMode}
+                      onChange={setCompactMode}
+                    />
+                  </SettingRow>
+                </div>
+              </div>
+
+              {/* Desktop Sidebar Layout Behavior */}
+              <div className="appearance-block">
+                <div className="appearance-block-title">
+                  {sidebarCollapsed ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />} Desktop Navigation
+                </div>
+                <p className="appearance-block-desc">
+                  Choose your default desktop sidebar behavior. You can also toggle this at any time using <strong>Ctrl+B</strong> or the header button.
+                </p>
+
+                <SettingRow
+                  label="Sidebar default state"
+                  description="Choose whether the sidebar opens in full width or compact icon-rail mode"
+                >
+                  <div className="settings-segmented">
+                    <button
+                      type="button"
+                      className={`settings-seg-btn${!sidebarCollapsed ? " settings-seg-btn--active" : ""}`}
+                      onClick={() => setSidebarCollapsed(false)}
+                    >
+                      Expanded
+                    </button>
+                    <button
+                      type="button"
+                      className={`settings-seg-btn${sidebarCollapsed ? " settings-seg-btn--active" : ""}`}
+                      onClick={() => setSidebarCollapsed(true)}
+                    >
+                      Collapsed (Rail)
+                    </button>
+                  </div>
+                </SettingRow>
+              </div>
+
+              {/* Actions Footer */}
+              <div className="appearance-actions-bar">
+                <button
+                  type="button"
+                  className="appearance-reset-btn"
+                  onClick={resetToDefaults}
+                  title="Reset appearance to application defaults"
+                >
+                  <RotateCcw size={14} />
+                  <span>Reset to System Defaults</span>
+                </button>
+                <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                  Active profile: <strong>{resolvedTheme === "dark" ? "Dark Mode" : "Light Mode"}</strong> &bull; {compactMode ? "Compact" : "Standard"} Density
+                </div>
+              </div>
+            </div>
           )}
 
           {/* ── Regional ── */}

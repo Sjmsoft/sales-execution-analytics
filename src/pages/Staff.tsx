@@ -165,7 +165,7 @@ export default function Staff() {
     }
 
     loadData();
-  }, []);
+  }, [userScope]);
 
   // Filter options
   const roles = useMemo(() => {
@@ -214,40 +214,12 @@ export default function Staff() {
   return (
     <div className="team-activity-container">
       {/* ── 1. PAGE HEADER ── */}
-      <div
-        style={{
-          background: "#ffffff",
-          border: "1px solid #e2e8f0",
-          borderRadius: "16px",
-          padding: "24px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: "16px",
-          boxShadow: "0 2px 8px rgba(0, 0, 0, 0.02)",
-        }}
-      >
+      <div className="team-header-box">
         <div>
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "22px",
-              fontWeight: 800,
-              color: "#092c1f",
-              letterSpacing: "-0.4px",
-            }}
-          >
+          <h1 className="team-header-title">
             Team
           </h1>
-          <p
-            style={{
-              margin: "4px 0 0 0",
-              fontSize: "13.5px",
-              color: "#526359",
-              fontWeight: 500,
-            }}
-          >
+          <p className="team-header-subtitle">
             Monitor active staff, field activity, and sales contribution by role and region.
           </p>
         </div>
@@ -344,7 +316,7 @@ export default function Staff() {
       <div className="ta-content-card">
         {/* Directory Title */}
         <div style={{ paddingBottom: "4px" }}>
-          <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 700, color: "#092c1f" }}>
+          <h3 className="team-directory-title">
             Team directory
           </h3>
         </div>
@@ -450,7 +422,7 @@ export default function Staff() {
                           <span className="ta-staff-name" style={{ fontSize: "13.5px" }}>
                             {member.name}
                           </span>
-                          <span style={{ fontSize: "12px", color: "#64748b" }}>
+                          <span className="ta-staff-email" style={{ fontSize: "12px" }}>
                             {member.email}
                           </span>
                         </div>
@@ -464,13 +436,13 @@ export default function Staff() {
 
                     {/* Region */}
                     <td>
-                      <span style={{ color: "#334155", fontSize: "13px" }}>
+                      <span className="ta-member-region" style={{ fontSize: "13px" }}>
                         {member.region}
                       </span>
                     </td>
 
                     {/* Sales */}
-                    <td style={{ textAlign: "right", fontWeight: 600, color: "#1e293b", fontSize: "13px" }}>
+                    <td style={{ textAlign: "right", fontWeight: 600, fontSize: "13px" }}>
                       {member.salesCount}
                     </td>
 
@@ -482,8 +454,8 @@ export default function Staff() {
                     </td>
 
                     {/* Last activity */}
-                    <td style={{ textAlign: "right", color: "#64748b", fontSize: "12.5px" }}>
-                      {member.lastActivity}
+                    <td style={{ textAlign: "right", fontSize: "12.5px" }}>
+                      <span className="ta-member-last-act">{member.lastActivity}</span>
                     </td>
                   </tr>
                 ))

@@ -87,7 +87,7 @@ export default function MobileNav({
           { label: "Messages & Calls", path: "/messages", icon: MessageSquare, badge: "Live" },
           { label: "Notifications Hub", path: "/notifications", icon: Bell, badge: unreadNotifCount > 0 ? `${unreadNotifCount}` : null },
           { label: isBA ? "Daily Attendance" : "Check-In & Attendance", path: "/check-in", icon: ClipboardCheck, badge: "GPS" },
-          { label: isBA ? "Attendance History" : "Visits & Attendance History", path: "/visits", icon: History, badge: null },
+          { label: "Outlet Visits History", path: "/visits", icon: History, badge: null },
           ...(!isBA ? [{ label: "Outlets Directory", path: "/outlets", icon: Store, badge: null }] : []),
           { label: "Sales Transactions", path: "/sales", icon: ShoppingCart, badge: null },
           { label: "Record New Sale", path: "/sales/new", icon: Plus, badge: "Action" },

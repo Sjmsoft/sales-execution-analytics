@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
@@ -27,6 +27,67 @@ type AppLayoutProps = {
 
 export default function AppLayout({ children }: AppLayoutProps) {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [desktopCollapsed, setDesktopCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("penedge_sidebar_collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleDesktopCollapsed = useCallback(() => {
+    setDesktopCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("penedge_sidebar_collapsed", String(next));
+      } catch {}
+      // Broadcast asynchronously to prevent interrupting the current React commit/render cycle
+      window.setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent("penedge_appearance_change", {
+            detail: { sidebarCollapsed: next, source: "AppLayout" },
+          })
+        );
+      }, 0);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleAppearanceChange = (e: Event) => {
+      const custom = e as CustomEvent<{ sidebarCollapsed?: boolean; source?: string }>;
+      // Ignore self-dispatched events to avoid redundant state flips
+      if (custom.detail?.source === "AppLayout") return;
+      if (custom.detail && custom.detail.sidebarCollapsed !== undefined) {
+        const nextVal = Boolean(custom.detail.sidebarCollapsed);
+        setDesktopCollapsed((curr) => (curr !== nextVal ? nextVal : curr));
+      }
+    };
+    window.addEventListener("penedge_appearance_change", handleAppearanceChange);
+    return () => window.removeEventListener("penedge_appearance_change", handleAppearanceChange);
+  }, []);
+
+  // Keyboard shortcut Ctrl+B or Cmd+B to toggle sidebar on desktop
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        toggleDesktopCollapsed();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [toggleDesktopCollapsed]);
+
   const { staff, role } = useAuth();
   const [loginSuccess, setLoginSuccess] = useState(
     () => Boolean(sessionStorage.getItem("login-success")),
@@ -61,15 +122,21 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const routeLoading = completedRouteCycle < routeCycle;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${desktopCollapsed ? "sidebar-is-collapsed" : ""}`}>
       {/* ── Desktop Sidebar (Hidden on Mobile) ── */}
       <Sidebar
         mobileOpen={false}
         onClose={() => setMobileDrawerOpen(false)}
+        collapsed={desktopCollapsed}
+        onToggleCollapse={toggleDesktopCollapsed}
       />
 
-      <div className="app-main">
-        <Header onMenuClick={() => setMobileDrawerOpen(true)} />
+      <div className={`app-main ${desktopCollapsed ? "main-collapsed" : ""}`}>
+        <Header
+          onMenuClick={() => setMobileDrawerOpen(true)}
+          sidebarCollapsed={desktopCollapsed}
+          onToggleSidebar={toggleDesktopCollapsed}
+        />
 
         <main className={`app-content ${pathname.startsWith("/messages") ? "messages-route" : ""}`}>
           {loginSuccess && (

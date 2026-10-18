@@ -6,13 +6,15 @@ import {
   BarChart3,
   Bell,
   BriefcaseBusiness,
-  ChartNoAxesCombined,
+  ChevronLeft,
+  ChevronRight,
   ClipboardCheck,
   Gauge,
   LayoutDashboard,
   LogOut,
   MapPin,
   MapPinPlus,
+  ChartNoAxesCombined,
   MessageSquare,
   Network,
   Search,
@@ -33,6 +35,8 @@ import { getUnreadNotificationsCount, subscribeNotifications } from "../../servi
 type SidebarProps = {
   mobileOpen: boolean;
   onClose: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 };
 
 const navigationIcons: Record<string, LucideIcon> = {
@@ -91,6 +95,8 @@ const navigationGroups: NavigationGroup[] = [
 export default function Sidebar({
   mobileOpen,
   onClose,
+  collapsed = false,
+  onToggleCollapse,
 }: SidebarProps) {
   const { staff, role, signOut } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
@@ -117,8 +123,8 @@ export default function Sidebar({
   const visibleItems = useMemo(
     () =>
       navigationItems.filter((item) => {
-        // Unified Check-In & Attendance is enabled for all users across the organization
-        if (item.path === "/check-in" || item.path === "/attendance") {
+        // Unified Check-In & Attendance and Outlet Visits History are enabled for all users across the organization
+        if (item.path === "/check-in" || item.path === "/attendance" || item.path === "/visits") {
           return true;
         }
         // Messages & Calls is enabled for all users across the organization
@@ -212,19 +218,42 @@ export default function Sidebar({
       )}
 
       <aside
-        className={`sidebar ${mobileOpen ? "sidebar-open" : ""}`}
+        className={`sidebar ${mobileOpen ? "sidebar-open" : ""} ${collapsed ? "collapsed" : ""}`}
         aria-label="Main Navigation"
       >
         {/* ── Brand Logo Header ── */}
         <div className="sidebar-logo">
-          <Link to="/" className="sidebar-brand-wrapper" onClick={onClose}>
-            <BrandLogo3D size={44} tone="dark" motion="sway" />
+          <Link
+            to="/"
+            className="sidebar-brand-wrapper"
+            onClick={onClose}
+            title={collapsed ? "Pen Edge Sales Dashboard" : undefined}
+          >
+            <BrandLogo3D size={collapsed ? 34 : 44} tone="dark" motion="sway" />
 
-            <div className="sidebar-brand-text">
-              <strong>Pen Edge</strong>
-              <span>SALES DASHBOARD</span>
-            </div>
+            {!collapsed && (
+              <div className="sidebar-brand-text">
+                <strong>Pen Edge</strong>
+                <span>SALES DASHBOARD</span>
+              </div>
+            )}
           </Link>
+
+          {onToggleCollapse && (
+            <button
+              type="button"
+              className="sidebar-collapse-toggle-btn desktop-only"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onToggleCollapse();
+              }}
+              title={collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)"}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+            </button>
+          )}
 
           {mobileOpen && (
             <button
@@ -239,29 +268,31 @@ export default function Sidebar({
         </div>
 
         {/* ── Quick Search Filter ── */}
-        <div className="sidebar-search-container">
-          <div className="sidebar-search-wrap">
-            <Search className="sidebar-search-icon" size={14} aria-hidden="true" />
-            <input
-              type="text"
-              className="sidebar-search-input"
-              placeholder="Find menu item..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              aria-label="Search navigation items"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                className="sidebar-search-clear"
-                onClick={() => setSearchQuery("")}
-                aria-label="Clear search"
-              >
-                <X size={12} />
-              </button>
-            )}
+        {!collapsed && (
+          <div className="sidebar-search-container">
+            <div className="sidebar-search-wrap">
+              <Search className="sidebar-search-icon" size={14} aria-hidden="true" />
+              <input
+                type="text"
+                className="sidebar-search-input"
+                placeholder="Find menu item..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Search navigation items"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="sidebar-search-clear"
+                  onClick={() => setSearchQuery("")}
+                  aria-label="Clear search"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* ── Navigation Tree ── */}
         <nav className="sidebar-nav">
@@ -290,14 +321,17 @@ export default function Sidebar({
                           className={({ isActive }) =>
                             `nav-item ${isActive ? "nav-item-active" : ""}`
                           }
+                          data-tooltip={item.label}
+                          title={collapsed ? item.label : undefined}
                         >
                           {({ isActive }) => (
                             <>
                               <div className="nav-item-left">
                                 <Icon className="nav-icon" aria-hidden="true" />
-                                <span>{isBA && item.path === "/check-in" ? "Daily Attendance" : isBA && item.path === "/visits" ? "Attendance History" : item.label}</span>
+                                <span>{isBA && item.path === "/check-in" ? "Daily Attendance" : item.label}</span>
                                 {item.path === "/settings/notifications" && unreadNotifCount > 0 && (
                                   <span
+                                    className="nav-item-badge"
                                     style={{
                                       fontSize: 10,
                                       fontWeight: 800,
@@ -328,18 +362,23 @@ export default function Sidebar({
         {/* ── Sidebar Footer & User Profile Card ── */}
         <div className="sidebar-footer">
           <div className="sidebar-profile-card">
-            <div className="sidebar-profile-user">
+            <div
+              className="sidebar-profile-user"
+              title={`${staff?.name ?? "Active Staff"} (${role?.name ?? "Sales Staff"})`}
+            >
               <div className="sidebar-profile-avatar" aria-hidden="true">
                 {initials}
               </div>
-              <div className="sidebar-profile-meta">
-                <span className="sidebar-profile-name" title={staff?.name ?? "User"}>
-                  {staff?.name ?? "Active Staff"}
-                </span>
-                <span className="sidebar-profile-role" title={role?.name ?? "Staff Role"}>
-                  {role?.name ?? "Sales Staff"}
-                </span>
-              </div>
+              {!collapsed && (
+                <div className="sidebar-profile-meta">
+                  <span className="sidebar-profile-name" title={staff?.name ?? "User"}>
+                    {staff?.name ?? "Active Staff"}
+                  </span>
+                  <span className="sidebar-profile-role" title={role?.name ?? "Staff Role"}>
+                    {role?.name ?? "Sales Staff"}
+                  </span>
+                </div>
+              )}
             </div>
 
             <button
@@ -353,10 +392,12 @@ export default function Sidebar({
             </button>
           </div>
 
-          <div className="sidebar-app-meta">
-            <span>Sales Execution</span>
-            <span>v1.0.0</span>
-          </div>
+          {!collapsed && (
+            <div className="sidebar-app-meta">
+              <span>Sales Execution</span>
+              <span>v1.0.0</span>
+            </div>
+          )}
         </div>
       </aside>
     </>

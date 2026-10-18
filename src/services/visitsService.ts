@@ -20,6 +20,7 @@ export type VisitRecord = {
   gps: boolean;
   photo: boolean;
   photoUrl: string | null;
+  signOutPhotoRef?: string | null;
   type: VisitType;
   notes?: string | null;
 };
@@ -86,6 +87,7 @@ function mapVisit(row: VisitRow): VisitRecord {
     gps: row.gps_latitude !== null && row.gps_longitude !== null,
     photo: Boolean(row.sign_out_photo_url),
     photoUrl: null,
+    signOutPhotoRef: row.sign_out_photo_url ?? null,
     type: row.visit_type ?? "outlet",
     notes: row.notes ?? null,
   };
@@ -223,6 +225,7 @@ export async function getStaffAttendanceHistory(
       ...visit,
       photo: Boolean(photoUrl || row.sign_out_photo_url),
       photoUrl,
+      signOutPhotoRef: row.sign_out_photo_url ?? null,
     };
   }));
 }
@@ -256,6 +259,7 @@ export async function getStaffCheckInHistory(
       ...visit,
       photo: Boolean(photoUrl || row.sign_out_photo_url),
       photoUrl,
+      signOutPhotoRef: row.sign_out_photo_url ?? null,
     };
   }));
 }
@@ -270,12 +274,17 @@ export function isUserAdminOrHR(
     roleKey === "administrator" ||
     roleKey === "admin" ||
     roleKey.includes("admin") ||
-    role?.hierarchy_level === 1;
+    roleName.includes("admin") ||
+    role?.hierarchy_level === 1 ||
+    roleKey === "a0000000-0000-4000-8000-000000000001";
   const isHR =
     roleKey === "hr" ||
     roleKey.includes("human_resource") ||
+    roleKey.includes("human resource") ||
     roleName.includes("human resource") ||
-    roleName.includes("hr");
+    roleName.includes("hr") ||
+    roleKey === "a0000000-0000-4000-8000-000000000002" ||
+    (roleKey.includes("hr") && !roleKey.includes("rsm") && !roleKey.includes("vsr"));
   return Boolean(isAdmin || isHR);
 }
 

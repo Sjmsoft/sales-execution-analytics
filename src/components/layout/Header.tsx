@@ -1,17 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { LogOut, MapPin, MessageSquare } from "lucide-react";
+import { LogOut, MapPin, MessageSquare, PanelLeftClose, PanelLeftOpen, Download, WifiOff } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import BrandLogo3D from "../brand/BrandLogo3D";
 import { getUnreadMessagesCount, messagingEvents } from "../../services/messagingService";
 import NotificationCenter from "./NotificationCenter";
+import { usePWA } from "../../hooks/usePWA";
 
 type HeaderProps = {
   onMenuClick: () => void;
+  sidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
 };
 
-export default function Header({ onMenuClick }: HeaderProps) {
+export default function Header({
+  onMenuClick,
+  sidebarCollapsed = false,
+  onToggleSidebar,
+}: HeaderProps) {
   const { staff, role, signOut } = useAuth();
+  const { isInstallable, isOffline, installApp } = usePWA();
 
   const initials = useMemo(() => {
     if (!staff?.name) return "PE";
@@ -49,9 +57,27 @@ export default function Header({ onMenuClick }: HeaderProps) {
         </Link>
       </div>
 
-      {/* ── Desktop Header Title ── */}
-      <div className="header-title">
-        <h1>Sales Execution Analytics</h1>
+      {/* ── Desktop Left Cluster: Sidebar Toggle & Title ── */}
+      <div className="header-left-cluster">
+        {onToggleSidebar && (
+          <button
+            type="button"
+            className="desktop-sidebar-toggle-btn"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onToggleSidebar();
+            }}
+            title={sidebarCollapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)"}
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          </button>
+        )}
+
+        <div className="header-title">
+          <h1>Sales Execution Analytics</h1>
+        </div>
       </div>
 
       {/* ── Header Right: User Info & Actions ── */}
@@ -100,6 +126,58 @@ export default function Header({ onMenuClick }: HeaderProps) {
             </span>
           )}
         </Link>
+
+        {/* Offline Status Indicator */}
+        {isOffline && (
+          <span
+            className="pwa-offline-pill"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              padding: "4px 8px",
+              background: "#fef3c7",
+              border: "1px solid #fde68a",
+              color: "#92400e",
+              borderRadius: 20,
+              fontSize: "0.75rem",
+              fontWeight: 600,
+            }}
+            title="Working offline with cached data"
+          >
+            <WifiOff size={13} />
+            <span className="desktop-only">Offline</span>
+          </span>
+        )}
+
+        {/* Install PWA Button */}
+        {isInstallable && (
+          <button
+            type="button"
+            className="pwa-install-header-btn desktop-only"
+            onClick={installApp}
+            title="Install Pen Edge App to desktop or device"
+            aria-label="Install App"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 12px",
+              background: "#075544",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: 8,
+              fontSize: "0.78rem",
+              fontWeight: 600,
+              cursor: "pointer",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <Download size={14} />
+            <span>Install App</span>
+          </button>
+        )}
 
         {/* Notifications Center Quick Trigger */}
         <NotificationCenter />

@@ -138,39 +138,19 @@ export default function Notifications() {
   const broadcastCount = notifications.filter((n) => n.type === "broadcast").length;
 
   return (
-    <div style={{ padding: "24px 28px", maxWidth: 1200, margin: "0 auto" }}>
+    <div className="notif-hub-container">
       {/* ── Page Header ── */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: 24,
-          flexWrap: "wrap",
-          gap: 16,
-        }}
-      >
+      <div className="notif-hub-header">
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-            <div
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: 10,
-                background: "#ecfdf5",
-                color: "#059669",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
+          <div className="notif-hub-header-left">
+            <div className="notif-hub-icon">
               <Bell size={20} />
             </div>
             <div>
-              <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" }}>
+              <h1 className="notif-hub-title">
                 Notifications Hub
               </h1>
-              <p style={{ margin: 0, fontSize: 13, color: "#64748b" }}>
+              <p className="notif-hub-subtitle">
                 Review live push directives, sales quota assignments, and field notifications.
               </p>
             </div>
@@ -178,25 +158,12 @@ export default function Notifications() {
         </div>
 
         {/* Action Buttons */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div className="notif-hub-actions-row">
           {isAdmin && (
             <button
               type="button"
               onClick={() => setShowDispatchModal(true)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "8px 14px",
-                background: "#059669",
-                color: "#ffffff",
-                border: "none",
-                borderRadius: 8,
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: "pointer",
-                boxShadow: "0 1px 3px rgba(5, 150, 105, 0.3)",
-              }}
+              className="notif-hub-btn notif-hub-btn-primary"
             >
               <Send size={14} />
               <span>Broadcast Notification</span>
@@ -207,19 +174,7 @@ export default function Notifications() {
             type="button"
             onClick={handleMarkAllRead}
             disabled={unreadCount === 0}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "8px 14px",
-              background: "#ffffff",
-              color: unreadCount > 0 ? "#059669" : "#94a3b8",
-              border: "1px solid #e2e8f0",
-              borderRadius: 8,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: unreadCount > 0 ? "pointer" : "not-allowed",
-            }}
+            className="notif-hub-btn notif-hub-btn-secondary"
           >
             <CheckCheck size={15} />
             <span>Mark All as Read</span>
@@ -229,19 +184,7 @@ export default function Notifications() {
             type="button"
             onClick={handleClearRead}
             disabled={notifications.length === unreadCount}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "8px 14px",
-              background: "#ffffff",
-              color: "#475569",
-              border: "1px solid #e2e8f0",
-              borderRadius: 8,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
+            className="notif-hub-btn notif-hub-btn-secondary"
             title="Clear all already-read notifications"
           >
             <Trash2 size={15} />
@@ -252,19 +195,7 @@ export default function Notifications() {
             type="button"
             onClick={handleClearAll}
             disabled={notifications.length === 0}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "8px 14px",
-              background: "#fee2e2",
-              color: "#dc2626",
-              border: "1px solid #fecaca",
-              borderRadius: 8,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: notifications.length > 0 ? "pointer" : "not-allowed",
-            }}
+            className="notif-hub-btn notif-hub-btn-danger"
             title="Clear all notifications"
           >
             <Trash2 size={15} />
@@ -274,124 +205,61 @@ export default function Notifications() {
       </div>
 
       {/* ── Metric Highlights ── */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-          gap: 16,
-          marginBottom: 24,
-        }}
-      >
-        <div
-          style={{
-            background: "#ffffff",
-            border: "1px solid #e2e8f0",
-            borderRadius: 12,
-            padding: "16px 20px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
-          }}
-        >
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 6 }}>
+      <div className="notif-hub-metrics-grid">
+        <div className="notif-hub-metric-card">
+          <div className="notif-hub-metric-label">
             TOTAL ALERTS
           </div>
-          <div style={{ fontSize: 26, fontWeight: 800, color: "#0f172a" }}>
+          <div className="notif-hub-metric-val">
             {notifications.length}
           </div>
         </div>
 
-        <div
-          style={{
-            background: unreadCount > 0 ? "#ecfdf5" : "#ffffff",
-            border: `1px solid ${unreadCount > 0 ? "#a7f3d0" : "#e2e8f0"}`,
-            borderRadius: 12,
-            padding: "16px 20px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
-          }}
-        >
-          <div style={{ fontSize: 12, fontWeight: 600, color: unreadCount > 0 ? "#047857" : "#64748b", marginBottom: 6 }}>
+        <div className={`notif-hub-metric-card ${unreadCount > 0 ? "metric-unread" : ""}`}>
+          <div className="notif-hub-metric-label">
             UNREAD NOTIFICATIONS
           </div>
-          <div style={{ fontSize: 26, fontWeight: 800, color: unreadCount > 0 ? "#059669" : "#0f172a" }}>
+          <div className="notif-hub-metric-val val-unread">
             {unreadCount}
           </div>
         </div>
 
-        <div
-          style={{
-            background: "#ffffff",
-            border: "1px solid #e2e8f0",
-            borderRadius: 12,
-            padding: "16px 20px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
-          }}
-        >
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 6 }}>
-            TARGETS & QUOTAS
+        <div className="notif-hub-metric-card">
+          <div className="notif-hub-metric-label">
+            TARGETS &amp; QUOTAS
           </div>
-          <div style={{ fontSize: 26, fontWeight: 800, color: "#059669" }}>
+          <div className="notif-hub-metric-val val-target">
             {targetCount}
           </div>
         </div>
 
-        <div
-          style={{
-            background: "#ffffff",
-            border: "1px solid #e2e8f0",
-            borderRadius: 12,
-            padding: "16px 20px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
-          }}
-        >
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 6 }}>
-            BROADCASTS & DIRECTIVES
+        <div className="notif-hub-metric-card">
+          <div className="notif-hub-metric-label">
+            BROADCASTS &amp; DIRECTIVES
           </div>
-          <div style={{ fontSize: 26, fontWeight: 800, color: "#e11d48" }}>
+          <div className="notif-hub-metric-val val-broadcast">
             {broadcastCount}
           </div>
         </div>
       </div>
 
       {/* ── Search & Filter Bar ── */}
-      <div
-        style={{
-          background: "#ffffff",
-          border: "1px solid #e2e8f0",
-          borderRadius: 12,
-          padding: "12px 18px",
-          marginBottom: 20,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 16,
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 260 }}>
-          <Search size={16} color="#94a3b8" />
+      <div className="notif-hub-filter-bar">
+        <div className="notif-hub-search-box">
+          <Search size={16} className="notif-search-icon" />
           <input
             type="text"
+            className="notif-hub-search-input"
             placeholder="Search notifications by title, content, or sender..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              border: "none",
-              outline: "none",
-              width: "100%",
-              fontSize: 13,
-              color: "#1e293b",
-            }}
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery("")}
-              style={{
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                color: "#94a3b8",
-                padding: 2,
-              }}
+              className="notif-search-clear-btn"
+              aria-label="Clear search"
             >
               <X size={14} />
             </button>
@@ -399,7 +267,7 @@ export default function Notifications() {
         </div>
 
         {/* Filter Pills */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <div className="notif-hub-pills-row">
           {[
             { id: "all", label: "All" },
             { id: "unread", label: `Unread (${unreadCount})` },
@@ -412,17 +280,7 @@ export default function Notifications() {
               key={tab.id}
               type="button"
               onClick={() => setFilterType(tab.id as any)}
-              style={{
-                padding: "6px 12px",
-                borderRadius: 20,
-                fontSize: 12,
-                fontWeight: filterType === tab.id ? 700 : 500,
-                background: filterType === tab.id ? "#059669" : "#f1f5f9",
-                color: filterType === tab.id ? "#ffffff" : "#475569",
-                border: "none",
-                cursor: "pointer",
-                transition: "all 0.15s ease",
-              }}
+              className={`notif-hub-pill ${filterType === tab.id ? "active" : ""}`}
             >
               {tab.label}
             </button>
@@ -431,36 +289,16 @@ export default function Notifications() {
       </div>
 
       {/* ── Notification List ── */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="notif-hub-list">
         {filteredNotifications.length === 0 ? (
-          <div
-            style={{
-              background: "#ffffff",
-              border: "1px dashed #cbd5e1",
-              borderRadius: 16,
-              padding: "60px 24px",
-              textAlign: "center",
-            }}
-          >
-            <div
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: "50%",
-                background: "#f1f5f9",
-                color: "#94a3b8",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: 12,
-              }}
-            >
+          <div className="notif-hub-empty-state">
+            <div className="notif-hub-empty-icon">
               <Sparkles size={26} />
             </div>
-            <h3 style={{ margin: "0 0 6px 0", fontSize: 16, fontWeight: 700, color: "#1e293b" }}>
+            <h3 className="notif-hub-empty-title">
               {filterType === "unread" ? "All Caught Up!" : "No Notifications Found"}
             </h3>
-            <p style={{ margin: "0 0 16px 0", fontSize: 13, color: "#64748b" }}>
+            <p className="notif-hub-empty-desc">
               {filterType === "unread"
                 ? "You have marked all notifications as read."
                 : searchQuery
@@ -474,48 +312,11 @@ export default function Notifications() {
             return (
               <div
                 key={item.id}
-                style={{
-                  background: isUnread ? "#fafffd" : "#ffffff",
-                  border: `1px solid ${isUnread ? "#a7f3d0" : "#e2e8f0"}`,
-                  borderRadius: 12,
-                  padding: "16px 20px",
-                  display: "flex",
-                  alignItems: "flex-start",
-                  justifyContent: "space-between",
-                  gap: 16,
-                  transition: "all 0.15s ease",
-                  boxShadow: isUnread ? "0 2px 6px rgba(16, 185, 129, 0.06)" : "0 1px 2px rgba(0,0,0,0.02)",
-                }}
+                className={`notif-hub-card ${isUnread ? "unread" : "read"}`}
               >
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flex: 1 }}>
+                <div className="notif-hub-card-left">
                   {/* Category Icon */}
-                  <div
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 10,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                      background:
-                        item.type === "target"
-                          ? "#ecfdf5"
-                          : item.type === "broadcast"
-                          ? "#fff1f2"
-                          : item.type === "attendance"
-                          ? "#f0fdf4"
-                          : "#f8fafc",
-                      color:
-                        item.type === "target"
-                          ? "#059669"
-                          : item.type === "broadcast"
-                          ? "#e11d48"
-                          : item.type === "attendance"
-                          ? "#16a34a"
-                          : "#64748b",
-                    }}
-                  >
+                  <div className={`notif-hub-card-icon type-${item.type}`}>
                     {item.type === "target" ? (
                       <Target size={20} />
                     ) : item.type === "broadcast" ? (
@@ -527,75 +328,40 @@ export default function Notifications() {
                     )}
                   </div>
 
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          textTransform: "uppercase",
-                          padding: "1px 7px",
-                          borderRadius: 4,
-                          background: isUnread ? "#ecfdf5" : "#f1f5f9",
-                          color: isUnread ? "#059669" : "#64748b",
-                        }}
-                      >
+                  <div className="notif-hub-card-body">
+                    <div className="notif-hub-card-meta-row">
+                      <span className={`notif-hub-type-badge ${isUnread ? "unread" : ""}`}>
                         {item.category || item.type}
                       </span>
 
                       {item.priority === "urgent" && (
-                        <span
-                          style={{
-                            fontSize: 10.5,
-                            fontWeight: 800,
-                            padding: "1px 6px",
-                            borderRadius: 4,
-                            background: "#fee2e2",
-                            color: "#dc2626",
-                          }}
-                        >
+                        <span className="notif-hub-urgent-pill">
                           ⚡ URGENT
                         </span>
                       )}
 
-                      <span style={{ fontSize: 11.5, color: "#94a3b8" }}>
+                      <span className="notif-hub-time">
                         {formatDateTime(item.createdAt)}
                       </span>
 
                       {isUnread && (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            color: "#059669",
-                            background: "#d1fae5",
-                            padding: "1px 6px",
-                            borderRadius: 999,
-                          }}
-                        >
+                        <span className="notif-hub-new-pill">
                           New
                         </span>
                       )}
                     </div>
 
-                    <h4
-                      style={{
-                        margin: "0 0 6px 0",
-                        fontSize: 15,
-                        fontWeight: isUnread ? 800 : 700,
-                        color: isUnread ? "#064e3b" : "#0f172a",
-                      }}
-                    >
+                    <h4 className="notif-hub-card-title">
                       {item.title}
                     </h4>
 
-                    <p style={{ margin: "0 0 10px 0", fontSize: 13, color: "#475569", lineHeight: 1.5 }}>
+                    <p className="notif-hub-card-msg">
                       {item.message}
                     </p>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <div className="notif-hub-card-footer">
                       {item.sender && (
-                        <span style={{ fontSize: 11.5, color: "#64748b", fontWeight: 600 }}>
+                        <span className="notif-hub-sender">
                           From: {item.sender}
                         </span>
                       )}
@@ -607,18 +373,7 @@ export default function Notifications() {
                             if (!item.isRead) markNotificationAsRead(item.id);
                             navigate(item.link!);
                           }}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 4,
-                            background: "transparent",
-                            border: "none",
-                            padding: 0,
-                            fontSize: 12.5,
-                            fontWeight: 700,
-                            color: "#059669",
-                            cursor: "pointer",
-                          }}
+                          className="notif-hub-link-action"
                         >
                           <span>{item.actionLabel || "View Action"}</span>
                           <ArrowRight size={13} />
@@ -629,24 +384,11 @@ export default function Notifications() {
                 </div>
 
                 {/* Per-item Actions */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                <div className="notif-hub-card-actions">
                   <button
                     type="button"
                     onClick={() => handleToggleRead(item)}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 4,
-                      padding: "6px 10px",
-                      borderRadius: 6,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      background: item.isRead ? "#f1f5f9" : "#ecfdf5",
-                      color: item.isRead ? "#64748b" : "#059669",
-                      border: `1px solid ${item.isRead ? "#e2e8f0" : "#a7f3d0"}`,
-                      cursor: "pointer",
-                      transition: "all 0.15s ease",
-                    }}
+                    className={`notif-hub-toggle-btn ${item.isRead ? "read" : "unread"}`}
                     title={item.isRead ? "Mark as unread" : "Mark as read"}
                   >
                     <Check size={13} />
@@ -656,19 +398,7 @@ export default function Notifications() {
                   <button
                     type="button"
                     onClick={() => clearNotification(item.id)}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 32,
-                      height: 32,
-                      borderRadius: 6,
-                      background: "#f8fafc",
-                      color: "#64748b",
-                      border: "1px solid #e2e8f0",
-                      cursor: "pointer",
-                      transition: "all 0.15s ease",
-                    }}
+                    className="notif-hub-dismiss-btn"
                     title="Clear notification"
                     aria-label="Clear notification"
                   >
@@ -683,71 +413,31 @@ export default function Notifications() {
 
       {/* ── Admin Test Dispatch Modal ── */}
       {showDispatchModal && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: "rgba(15, 23, 42, 0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-            padding: 16,
-          }}
-        >
-          <div
-            style={{
-              background: "#ffffff",
-              borderRadius: 16,
-              width: "100%",
-              maxWidth: 520,
-              padding: 24,
-              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 18,
-              }}
-            >
-              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#0f172a" }}>
+        <div className="notif-modal-backdrop">
+          <div className="notif-modal-card">
+            <div className="notif-modal-header">
+              <h3 className="notif-modal-title">
                 Send Broadcast / Test Notification
               </h3>
               <button
                 type="button"
                 onClick={() => setShowDispatchModal(false)}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                  color: "#64748b",
-                }}
+                className="notif-modal-close-btn"
+                aria-label="Close modal"
               >
                 <X size={18} />
               </button>
             </div>
 
             <form onSubmit={handleSendTestNotification}>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 5 }}>
+              <div className="notif-modal-field">
+                <label>
                   Notification Type
                 </label>
                 <select
                   value={testType}
                   onChange={(e) => setTestType(e.target.value as NotificationType)}
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    borderRadius: 8,
-                    border: "1px solid #cbd5e1",
-                    fontSize: 13,
-                  }}
+                  className="notif-modal-input"
                 >
                   <option value="broadcast">📢 Management Broadcast</option>
                   <option value="target">🎯 Target & Quota Alert</option>
@@ -756,20 +446,14 @@ export default function Notifications() {
                 </select>
               </div>
 
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 5 }}>
+              <div className="notif-modal-field">
+                <label>
                   Priority Level
                 </label>
                 <select
                   value={testPriority}
                   onChange={(e) => setTestPriority(e.target.value as any)}
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    borderRadius: 8,
-                    border: "1px solid #cbd5e1",
-                    fontSize: 13,
-                  }}
+                  className="notif-modal-input"
                 >
                   <option value="normal">Normal</option>
                   <option value="high">High</option>
@@ -777,8 +461,8 @@ export default function Notifications() {
                 </select>
               </div>
 
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 5 }}>
+              <div className="notif-modal-field">
+                <label>
                   Title
                 </label>
                 <input
@@ -787,19 +471,12 @@ export default function Notifications() {
                   value={testTitle}
                   onChange={(e) => setTestTitle(e.target.value)}
                   required
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    borderRadius: 8,
-                    border: "1px solid #cbd5e1",
-                    fontSize: 13,
-                    boxSizing: "border-box",
-                  }}
+                  className="notif-modal-input"
                 />
               </div>
 
-              <div style={{ marginBottom: 20 }}>
-                <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 5 }}>
+              <div className="notif-modal-field">
+                <label>
                   Message Content
                 </label>
                 <textarea
@@ -808,46 +485,21 @@ export default function Notifications() {
                   value={testMessage}
                   onChange={(e) => setTestMessage(e.target.value)}
                   required
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    borderRadius: 8,
-                    border: "1px solid #cbd5e1",
-                    fontSize: 13,
-                    boxSizing: "border-box",
-                    fontFamily: "inherit",
-                  }}
+                  className="notif-modal-input"
                 />
               </div>
 
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <div className="notif-modal-actions">
                 <button
                   type="button"
                   onClick={() => setShowDispatchModal(false)}
-                  style={{
-                    padding: "8px 16px",
-                    borderRadius: 8,
-                    border: "1px solid #cbd5e1",
-                    background: "#ffffff",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
+                  className="notif-modal-btn cancel"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  style={{
-                    padding: "8px 18px",
-                    borderRadius: 8,
-                    border: "none",
-                    background: "#059669",
-                    color: "#ffffff",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
+                  className="notif-modal-btn submit"
                 >
                   Dispatch Live
                 </button>

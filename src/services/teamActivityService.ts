@@ -303,7 +303,7 @@ export async function fetchTeamActivityData(
       type: isAttendance ? "attendance" : "visit",
       staffName: v.staff || "Field Rep",
       staffRole: isAttendance ? "Field Staff" : "Field Executive",
-      staffRegion: "Territory",
+      staffRegion: v.staffRegion || v.outletRegion || v.outletState || "National",
       description: isAttendance
         ? `Shift Check-in: ${v.status || "Completed"}`
         : `Outlet visit: ${v.outcome || v.status || "Completed"}`,
@@ -335,6 +335,9 @@ export async function fetchTeamActivityData(
   });
 
   visitsData.forEach((v) => {
+    if (v.staffRegion) regionSet.add(v.staffRegion);
+    if (v.outletRegion) regionSet.add(v.outletRegion);
+    if (v.outletState) regionSet.add(v.outletState);
     if (v.staff) staffSet.add(v.staff);
   });
 

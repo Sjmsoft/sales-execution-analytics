@@ -54,19 +54,38 @@ export function getUserScope(staff: any | null, role: any | null): UserScope {
     });
   }
 
-  // Tier 1: National View (Admin, NSM, HR) -> Sees all staff activity data from all regions and users
-  const isNational =
+  const isAdmin =
     roleKey === "administrator" ||
     roleKey === "admin" ||
     roleKey.includes("admin") ||
-    roleKey === "national_sales_manager" ||
-    roleKey === "nsm" ||
+    roleName.includes("admin") ||
+    role?.hierarchy_level === 1 ||
+    staff?.role === 1 ||
+    roleKey === "a0000000-0000-4000-8000-000000000001";
+
+  const isHR =
     roleKey === "hr" ||
     roleKey.includes("human_resource") ||
-    roleName.includes("national sales") ||
+    roleKey.includes("human resource") ||
     roleName.includes("human resource") ||
+    roleName.includes("hr") ||
+    roleKey === "a0000000-0000-4000-8000-000000000002" ||
+    (roleKey.includes("hr") && !roleKey.includes("rsm") && !roleKey.includes("vsr"));
+
+  const isNSM =
+    roleKey === "national_sales_manager" ||
+    roleKey === "nsm" ||
+    roleKey.includes("national_sales") ||
+    roleName.includes("national sales") ||
+    roleKey === "a0000000-0000-4000-8000-000000000003";
+
+  // Tier 1: National View (Admin, NSM, HR) -> Sees all staff activity data from all regions and users
+  const isNational =
+    isAdmin ||
+    isHR ||
+    isNSM ||
     role?.hierarchy_level === 1 ||
-    (role?.hierarchy_level === 2 && role?.can_view_all_sales === true);
+    (role?.hierarchy_level === 2 && (role?.can_view_all_sales === true || role?.can_manage_staff === true));
 
   // Tier 2: Regional View (RSM, SE) -> Only sees data of staff from their assigned regions
   const isRegional =
@@ -97,7 +116,7 @@ export function getUserScope(staff: any | null, role: any | null): UserScope {
     staffName,
     staffEmail,
     roleKey,
-    assignedRegions: rawRegions,
+    assignedRegions: isNational ? [] : rawRegions,
   };
 }
 

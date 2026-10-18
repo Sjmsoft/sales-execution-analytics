@@ -54,7 +54,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Sales", path: "/sales", icon: "sales", roles: baAllowedRoles },
   { label: "Targets", path: "/targets", icon: "targets", roles: baAllowedRoles },
   { label: "Outlets", path: "/outlets", icon: "outlets", roles: generalStaffRoles },
-  { label: "Outlet Visits History", path: "/visits", icon: "visits", roles: baAllowedRoles },
+  { label: "Outlet Visits History", path: "/visits", icon: "visits", roles: allStaffRoles },
   { label: "Reports", path: "/reports", icon: "reports", roles: generalStaffRoles },
 
   { label: "Field Team Performance", path: "/reports/field-performance", icon: "users", roles: generalStaffRoles },

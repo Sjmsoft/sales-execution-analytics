@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  AlertCircle,
   Calendar,
   Camera,
   ChevronLeft,
@@ -68,7 +69,9 @@ export function VisitsTable({
   hasActiveFilters = false,
   loading = false,
 }: VisitsTableProps) {
-  const [previewPhoto, setPreviewPhoto] = useState<{ url: string; title: string } | null>(null);
+  const [previewPhoto, setPreviewPhoto] = useState<{ url: string; title: string; ref?: string | null } | null>(null);
+  const [previewPhotoFailed, setPreviewPhotoFailed] = useState(false);
+  const [failedThumbs, setFailedThumbs] = useState<Record<string, boolean>>({});
 
   if (loading) {
     return (
@@ -201,25 +204,12 @@ export function VisitsTable({
                           <Store size={15} />
                         </div>
                         <div className="outlet-cell-copy">
-                          <strong title={visit.outlet}>{visit.outlet}</strong>
+                          <strong className="outlet-name-text" title={visit.outlet}>{visit.outlet}</strong>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
                             <small className="outlet-id-tag">ID: {visit.id.slice(0, 8)}</small>
                             {visit.notes && (
                               <span
-                                style={{
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: 4,
-                                  fontSize: 11,
-                                  color: "#4a5a54",
-                                  background: "#edf3f0",
-                                  padding: "1px 6px",
-                                  borderRadius: 4,
-                                  maxWidth: 220,
-                                  whiteSpace: "nowrap",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                }}
+                                className="outlet-note-badge"
                                 title={`Note: ${visit.notes}`}
                               >
                                 <FileText size={10} style={{ flexShrink: 0 }} />
@@ -289,27 +279,48 @@ export function VisitsTable({
                     </td>
                     <td>
                       <div className="actions-cell-right">
-                        {visit.photoUrl ? (
+                        {visit.photoUrl && !failedThumbs[visit.id] ? (
                           <button
                             type="button"
                             className="visit-photo-thumb-btn"
-                            onClick={() =>
+                            onClick={() => {
+                              setPreviewPhotoFailed(false);
                               setPreviewPhoto({
                                 url: visit.photoUrl!,
                                 title: `${visit.outlet} checkout photo`,
-                              })
-                            }
+                                ref: visit.signOutPhotoRef,
+                              });
+                            }}
                             title="View sign-out photo"
                           >
-                            <img src={visit.photoUrl} alt={`Photo at ${visit.outlet}`} />
+                            <img
+                              src={visit.photoUrl}
+                              alt={`Photo at ${visit.outlet}`}
+                              onError={() => setFailedThumbs((prev) => ({ ...prev, [visit.id]: true }))}
+                            />
                             <span className="zoom-hint">
                               <Eye size={12} />
                             </span>
                           </button>
-                        ) : visit.photo ? (
-                          <span className="no-photo-text" style={{ color: "#059669", fontWeight: 600 }}>
-                            Proof On File
-                          </span>
+                        ) : visit.photo || failedThumbs[visit.id] ? (
+                          <button
+                            type="button"
+                            className={`visit-photo-thumb-btn ${failedThumbs[visit.id] ? "thumb-failed" : "thumb-fallback"}`}
+                            onClick={() => {
+                              setPreviewPhotoFailed(false);
+                              setPreviewPhoto({
+                                url: visit.photoUrl || "",
+                                title: `${visit.outlet} checkout photo`,
+                                ref: visit.signOutPhotoRef,
+                              });
+                            }}
+                            title={failedThumbs[visit.id] ? "Photo not found — click to view reference" : "Photo evidence on file"}
+                          >
+                            <Camera size={14} />
+                            <span className="zoom-hint">
+                              <Eye size={12} />
+                            </span>
+                          </button>
                         ) : (
                           <span className="no-photo-text">No photo</span>
                         )}
@@ -626,7 +637,30 @@ export function VisitsTable({
               </div>
             </div>
             <div className="photo-lightbox-body">
-              <img src={previewPhoto.url} alt={previewPhoto.title} />
+              {previewPhotoFailed || !previewPhoto.url ? (
+                <div style={{ padding: "32px 20px", textAlign: "center", color: "#64748b" }}>
+                  <div style={{ width: 48, height: 48, borderRadius: 12, background: "#fef3c7", color: "#d97706", display: "grid", placeItems: "center", margin: "0 auto 12px" }}>
+                    <AlertCircle size={26} />
+                  </div>
+                  <strong style={{ display: "block", fontSize: 16, color: "#1e293b", marginBottom: 6 }}>
+                    Photo Not Found
+                  </strong>
+                  <p style={{ fontSize: 13, color: "#64748b", maxWidth: 440, margin: "0 auto 14px", lineHeight: 1.5 }}>
+                    The photo could not be found or loaded from storage.
+                  </p>
+                  {previewPhoto.ref && (
+                    <div style={{ fontSize: 12, background: "#f1f5f9", padding: "6px 12px", borderRadius: 6, display: "inline-block", fontFamily: "monospace", color: "#475569" }}>
+                      File Reference: {previewPhoto.ref}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <img
+                  src={previewPhoto.url}
+                  alt={previewPhoto.title}
+                  onError={() => setPreviewPhotoFailed(true)}
+                />
+              )}
             </div>
           </div>
         </div>

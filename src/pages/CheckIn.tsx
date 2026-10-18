@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   CalendarCheck,
@@ -6,12 +7,11 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Clock,
   Compass,
   ExternalLink,
   Eye,
+  FileText,
   History,
   LocateFixed,
   LogOut,
@@ -20,6 +20,7 @@ import {
   Search,
   ShieldCheck,
   Store,
+  UserRound,
   X,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
@@ -31,13 +32,29 @@ import {
   getAllActiveVisits,
   checkOutVisit,
   uploadVisitSignOutPhoto,
-  getStaffCheckInHistory,
   isUserAdminOrHR,
   type VisitRecord,
   type VisitType,
 } from "../services/visitsService";
 import type { ActiveVisit } from "../services/visitsService";
 import { SignOutDialog } from "./visits/SignOutDialog";
+
+export type ShiftSummaryData = {
+  visitId: string;
+  visitType: "attendance" | "outlet";
+  outletName: string;
+  region?: string;
+  staffName: string;
+  staffRole: string;
+  checkInAt: string;
+  checkOutAt: string;
+  durationText: string;
+  outcome: string;
+  notes?: string;
+  photoUrl?: string | null;
+  gpsVerified: boolean;
+  gpsCoords?: { lat: number; lng: number; accuracy?: number } | null;
+};
 import {
   getUserScope,
   filterOutletsByScope,
@@ -377,6 +394,7 @@ function UnifiedMap({
 // ── Main Unified Check-In Component ──────────────────────────────────────────
 
 export default function CheckIn() {
+  const navigate = useNavigate();
   const { staff, role } = useAuth();
   const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
   const isBA = roleKey === "brand_ambassador" || roleKey === "ba" || roleKey === "vsr";
@@ -476,20 +494,31 @@ export default function CheckIn() {
   const [verifiedGpsData, setVerifiedGpsData] = useState<VerifiedGpsData | null>(null);
   const [gpsErrorMessage, setGpsErrorMessage] = useState("");
 
-  // History Log State
-  const [checkInHistory, setCheckInHistory] = useState<VisitRecord[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(true);
-  const [historyTab, setHistoryTab] = useState<"all" | "attendance" | "outlet">("all");
-  const [historySearch, setHistorySearch] = useState("");
+  // Photo Evidence Modal & Completed Shift Summary State
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
   const [previewPhotoRecord, setPreviewPhotoRecord] = useState<VisitRecord | null>(null);
-  const [historyPage, setHistoryPage] = useState(1);
-  const historyPageSize = 6;
+  const [isLoadingPhotoModal, setIsLoadingPhotoModal] = useState(false);
+  const [photoModalError, setPhotoModalError] = useState(false);
+  const [completedShiftSummary, setCompletedShiftSummary] = useState<ShiftSummaryData | null>(null);
+
+  function closePhotoModal() {
+    setPreviewPhotoUrl(null);
+    setPreviewPhotoRecord(null);
+    setIsLoadingPhotoModal(false);
+    setPhotoModalError(false);
+  }
 
   // Admin & HR Force Check-Out Capabilities
   const canAdminCheckOut = useMemo(
-    () => isUserAdminOrHR(role, staff?.assigned_role),
-    [role, staff?.assigned_role]
+    () =>
+      isUserAdminOrHR(
+        role,
+        staff?.assigned_role ||
+        (staff as any)?.user_roles?.key ||
+        (staff as any)?.user_roles?.name ||
+        (typeof (staff as any)?.role === "string" ? (staff as any).role : undefined)
+      ),
+    [role, staff]
   );
   const [allActiveVisits, setAllActiveVisits] = useState<ActiveVisit[]>([]);
   const [loadingActiveVisits, setLoadingActiveVisits] = useState(false);
@@ -553,23 +582,7 @@ export default function CheckIn() {
     void loadOutcomes();
   }, []);
 
-  // Load check-in history
-  const loadHistory = useCallback(async () => {
-    if (!staff?.id) return;
-    setLoadingHistory(true);
-    try {
-      const records = await getStaffCheckInHistory(staff.id);
-      setCheckInHistory(records);
-    } catch (err) {
-      console.error("Failed to load staff check-in history:", err);
-    } finally {
-      setLoadingHistory(false);
-    }
-  }, [staff?.id]);
 
-  useEffect(() => {
-    void loadHistory();
-  }, [loadHistory]);
 
   // Restore active check-in session from DB
   useEffect(() => {
@@ -772,8 +785,8 @@ export default function CheckIn() {
       const dist = hasOutletGps
         ? providerCheck.distanceMeters
         : userCoords
-        ? Math.round(distanceInMeters(userCoords, { latitude: outletLat, longitude: outletLng }))
-        : 0;
+          ? Math.round(distanceInMeters(userCoords, { latitude: outletLat, longitude: outletLng }))
+          : 0;
 
       const allowedRadius = providerCheck.allowedRadiusMeters || 500;
       const isWithinPerimeter = !hasOutletGps || dist <= allowedRadius;
@@ -904,7 +917,6 @@ export default function CheckIn() {
       });
       setElapsed(0);
       setPageStatus("checked-in");
-      void loadHistory();
     } catch (err: unknown) {
       setPageStatus("idle");
       setActionError(toErrorMessage(err, "Unable to complete check-in. Please try again."));
@@ -939,11 +951,13 @@ export default function CheckIn() {
         }
       }
 
+      const checkOutIso = new Date().toISOString();
       await checkOutVisit(checkInState.visitId, {
         outcome: checkoutOutcome.trim() || "Successful",
         notes: checkoutNotes.trim() || (checkInState.visitType === "attendance" ? "Shift completed" : "Visit completed"),
         photoPath,
         staffId: staff?.id,
+        checkOutAt: checkOutIso,
       });
 
       if (staff?.id) {
@@ -952,6 +966,34 @@ export default function CheckIn() {
         } catch (e) { }
       }
 
+      // Calculate shift duration
+      const durationSeconds = Math.max(1, Math.round((new Date(checkOutIso).getTime() - new Date(checkInState.checkInTime).getTime()) / 1000));
+      const durHrs = Math.floor(durationSeconds / 3600);
+      const durMins = Math.floor((durationSeconds % 3600) / 60);
+      const durationText = durHrs > 0 ? `${durHrs}h ${durMins}m` : `${Math.max(1, durMins)} min${durMins !== 1 ? "s" : ""}`;
+
+      // Open shift summary dialog
+      setCompletedShiftSummary({
+        visitId: checkInState.visitId,
+        visitType: checkInState.visitType,
+        outletName: checkInState.outletName,
+        region: selectedOutlet?.state || selectedOutlet?.region_id || staff?.region || "Assigned Territory",
+        staffName: staff?.name || "Representative",
+        staffRole: role?.name || (isBA ? "Brand Ambassador" : "Sales Representative"),
+        checkInAt: checkInState.checkInTime,
+        checkOutAt: checkOutIso,
+        durationText,
+        outcome: checkoutOutcome.trim() || "Successful",
+        notes: checkoutNotes.trim(),
+        photoUrl: photoPreview || photoPath || null,
+        gpsVerified: Boolean(gpsStatus === "verified" || verifiedGpsData || userLocation),
+        gpsCoords: verifiedGpsData
+          ? { lat: verifiedGpsData.latitude, lng: verifiedGpsData.longitude, accuracy: verifiedGpsData.accuracy ?? undefined }
+          : userLocation
+            ? { lat: userLocation.latitude, lng: userLocation.longitude, accuracy: userLocation.accuracy ?? undefined }
+            : null,
+      });
+
       setPageStatus("checked-out");
       setCheckInState(null);
       setCheckoutPhoto(null);
@@ -959,34 +1001,11 @@ export default function CheckIn() {
       setCheckoutNotes("");
       setGpsStatus("idle");
       setVerifiedGpsData(null);
-      void loadHistory();
     } catch (err: unknown) {
       setPageStatus("checked-in");
       setActionError(toErrorMessage(err, "Unable to complete check-out. Please try again."));
     }
   }
-
-  // History filtering & pagination
-  const filteredHistory = useMemo(() => {
-    return checkInHistory.filter((item) => {
-      if (isBA && item.type !== "attendance") return false;
-      if (!isBA && historyTab !== "all" && item.type !== historyTab) return false;
-      if (historySearch.trim()) {
-        const q = historySearch.toLowerCase();
-        const matchOutlet = (item.outlet || "").toLowerCase().includes(q);
-        const matchOutcome = (item.outcome || "").toLowerCase().includes(q);
-        const matchNotes = (item.notes || "").toLowerCase().includes(q);
-        return matchOutlet || matchOutcome || matchNotes;
-      }
-      return true;
-    });
-  }, [checkInHistory, historyTab, historySearch, isBA]);
-
-  const totalHistoryPages = Math.ceil(filteredHistory.length / historyPageSize) || 1;
-  const paginatedHistory = useMemo(() => {
-    const start = (historyPage - 1) * historyPageSize;
-    return filteredHistory.slice(start, start + historyPageSize);
-  }, [filteredHistory, historyPage, historyPageSize]);
 
   if (showLoader) {
     return (
@@ -1064,16 +1083,16 @@ export default function CheckIn() {
         </div>
 
         <div className="checkin-stat-chips">
-          <div className="checkin-stat-chip">
-            <CalendarCheck size={14} color="#059669" />
-            <span>Attendance Shifts: <strong>{checkInHistory.filter((h) => h.type === "attendance").length}</strong></span>
-          </div>
-          {!isBA && (
-            <div className="checkin-stat-chip">
-              <Store size={14} color="#0284c7" />
-              <span>Store Visits: <strong>{checkInHistory.filter((h) => h.type === "outlet").length}</strong></span>
-            </div>
-          )}
+          <button
+            type="button"
+            className="checkin-stat-chip"
+            onClick={() => navigate("/visits")}
+            style={{ cursor: "pointer", border: "1px solid #cbd5e1", background: "#f8fafc" }}
+            title="View complete Outlet Visits & Attendance History"
+          >
+            <History size={14} color="#059669" />
+            <span style={{ fontWeight: 600 }}>Outlet Visits History</span>
+          </button>
         </div>
       </div>
 
@@ -1088,7 +1107,9 @@ export default function CheckIn() {
               <div className="checkin-admin-strip-title">
                 <span>Admin &amp; HR Check-Out Control</span>
                 <span className="checkin-admin-role-badge">
-                  {roleKey === "hr" ? "HR Management" : "System Administrator"}
+                  {userScope.isNational && (roleKey === "hr" || roleKey.includes("human_resource") || roleKey.includes("hr"))
+                    ? "HR Management"
+                    : "System Administrator"}
                 </span>
               </div>
               <div className="checkin-admin-strip-subtitle">
@@ -1298,8 +1319,8 @@ export default function CheckIn() {
                     {isCompressingPhoto
                       ? "Compressing Photo..."
                       : checkoutPhoto
-                      ? "Change Evidence Photo"
-                      : "Capture Photo (Camera)"}
+                        ? "Change Evidence Photo"
+                        : "Capture Photo (Camera)"}
                   </span>
                   <input
                     type="file"
@@ -1760,7 +1781,7 @@ export default function CheckIn() {
 
       {/* ── Interactive Radar Map ── */}
       <UnifiedMap
-        regionName={staff?.region}
+        regionName={userScope.isNational ? "All Regions" : (staff?.region || "National")}
         selectedOutlet={selectedOutlet}
         checkInState={checkInState}
         outletCount={assignedRegionOutlets.length}
@@ -1770,249 +1791,101 @@ export default function CheckIn() {
         staffName={staff?.name}
       />
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          BOTTOM SECTION: UNIFIED CHECK-IN HISTORY & STATS LOG
-          ══════════════════════════════════════════════════════════════════════ */}
-      <div className="checkin-history-section">
-        <div className="checkin-stat-grid-mini">
-          <div className="checkin-mini-stat-card">
-            <span>{isBA ? "Total Shifts" : "Total Check-Ins"}</span>
-            <strong>{isBA ? checkInHistory.filter((i) => i.type === "attendance").length : checkInHistory.length}</strong>
-          </div>
-          <div className="checkin-mini-stat-card">
-            <span>Attendance Shifts</span>
-            <strong style={{ color: "#0369a1" }}>{checkInHistory.filter((i) => i.type === "attendance").length}</strong>
-          </div>
-          {!isBA && (
-            <div className="checkin-mini-stat-card">
-              <span>Outlet Visits</span>
-              <strong style={{ color: "#d97706" }}>{checkInHistory.filter((i) => i.type === "outlet").length}</strong>
-            </div>
-          )}
-          <div className="checkin-mini-stat-card">
-            <span>Verified GPS Rate</span>
-            <strong style={{ color: "#059669" }}>{checkInHistory.length > 0 ? "100%" : "—"}</strong>
-          </div>
-        </div>
 
-        <div className="checkin-history-header-row">
-          <div className="checkin-history-title-wrap">
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: "#ecfdf5", color: "#059669", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <History size={18} />
-            </div>
-            <div>
-              <h3>{isBA ? "My Shift Attendance History Log" : "My Check-In History Log"}</h3>
-              <p>
-                {isBA
-                  ? "Personal audit log of your verified daily work-shift attendance and duty hours."
-                  : "Personal audit log of all work-shift attendance and retail trade store visits."}
-              </p>
-            </div>
-          </div>
-
-          {!isBA && (
-            <div className="checkin-history-tabs">
-              <button
-                type="button"
-                onClick={() => {
-                  setHistoryTab("all");
-                  setHistoryPage(1);
-                }}
-                className={`checkin-history-tab-btn ${historyTab === "all" ? "active" : ""}`}
-              >
-                All ({checkInHistory.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setHistoryTab("attendance");
-                  setHistoryPage(1);
-                }}
-                className={`checkin-history-tab-btn ${historyTab === "attendance" ? "active" : ""}`}
-              >
-                Shifts ({checkInHistory.filter((i) => i.type === "attendance").length})
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setHistoryTab("outlet");
-                  setHistoryPage(1);
-                }}
-                className={`checkin-history-tab-btn ${historyTab === "outlet" ? "active" : ""}`}
-              >
-                Visits ({checkInHistory.filter((i) => i.type === "outlet").length})
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* History Search Bar */}
-        <div className="checkin-search-bar">
-          <Search size={15} color="#94a3b8" />
-          <input
-            type="text"
-            value={historySearch}
-            onChange={(e) => {
-              setHistorySearch(e.target.value);
-              setHistoryPage(1);
-            }}
-            placeholder="Search history by outlet, outcome, or notes..."
-          />
-        </div>
-
-        {/* History Table */}
-        {loadingHistory ? (
-          <div style={{ padding: "36px", textAlign: "center", color: "#64748b", fontSize: 13 }}>
-            <RefreshCw size={20} className="animate-spin" style={{ display: "inline-block", marginRight: 8, verticalAlign: "middle" }} />
-            Loading check-in history...
-          </div>
-        ) : paginatedHistory.length === 0 ? (
-          <div style={{ padding: "40px", textAlign: "center", background: "#f8fafc", borderRadius: 12, color: "#64748b", fontSize: 13.5 }}>
-            No check-in records found.
-          </div>
-        ) : (
-          <div className="checkin-table-wrap">
-            <table className="checkin-table">
-              <thead>
-                <tr>
-                  <th>Date & Time</th>
-                  <th>Category</th>
-                  <th>Location / Outlet</th>
-                  <th>Duration</th>
-                  <th>Outcome / Status</th>
-                  <th>Evidence Photo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedHistory.map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      <div style={{ fontWeight: 800, color: "#0f172a" }}>{item.date}</div>
-                      <div style={{ fontSize: 11.5, color: "#64748b" }}>{item.time}</div>
-                    </td>
-
-                    <td>
-                      <span className={`checkin-type-badge ${item.type === "attendance" ? "attendance" : "outlet"}`}>
-                        {item.type === "attendance" ? <CalendarCheck size={12} /> : <Store size={12} />}
-                        {item.type === "attendance" ? "Shift Attendance" : "Store Visit"}
-                      </span>
-                    </td>
-
-                    <td>
-                      <strong style={{ color: "#0f172a", display: "block" }}>{item.outlet}</strong>
-                      {item.notes && (
-                        <div style={{ fontSize: 11.5, color: "#64748b", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {item.notes}
-                        </div>
-                      )}
-                    </td>
-
-                    <td style={{ color: "#334155", fontWeight: 600 }}>
-                      {item.duration}
-                    </td>
-
-                    <td>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        <span className={`checkin-status-badge ${item.status === "Active" ? "active" : "completed"}`}>
-                          {item.status === "Active" ? "● Active Now" : item.outcome || "Completed"}
-                        </span>
-                        {item.status === "Active" && canAdminCheckOut && (
-                          <button
-                            type="button"
-                            className="checkin-row-checkout-btn"
-                            onClick={() => {
-                              setAdminSelectedVisit({
-                                ...item,
-                                checkInAt: item.date + "T" + (item.time.split(" - ")[0] || "08:00:00"),
-                              });
-                            }}
-                            title={`Admin/HR: Force check out ${item.staff}`}
-                          >
-                            <LogOut size={11} />
-                            <span>Check Out</span>
-                          </button>
-                        )}
-                      </div>
-                    </td>
-
-                    <td>
-                      {item.photoUrl ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewPhotoUrl(item.photoUrl);
-                            setPreviewPhotoRecord(item);
-                          }}
-                          className="checkin-view-photo-btn"
-                        >
-                          <Eye size={12} />
-                          <span>View Photo</span>
-                        </button>
-                      ) : item.photo ? (
-                        <span style={{ fontSize: 11.5, color: "#059669", fontWeight: 600 }}>Proof On File</span>
-                      ) : (
-                        <span style={{ fontSize: 11.5, color: "#94a3b8" }}>No photo</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {/* Pagination Controls */}
-            {totalHistoryPages > 1 && (
-              <div className="checkin-pagination">
-                <span className="checkin-pagination-info">
-                  Showing Page {historyPage} of {totalHistoryPages} ({filteredHistory.length} total records)
-                </span>
-                <div className="checkin-pagination-btns">
-                  <button
-                    type="button"
-                    onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
-                    disabled={historyPage === 1}
-                    className="checkin-pagination-btn"
-                    aria-label="Previous page"
-                  >
-                    <ChevronLeft size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setHistoryPage((p) => Math.min(totalHistoryPages, p + 1))}
-                    disabled={historyPage === totalHistoryPages}
-                    className="checkin-pagination-btn"
-                    aria-label="Next page"
-                  >
-                    <ChevronRight size={15} />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
 
       {/* ── Evidence Photo Modal ── */}
-      {previewPhotoUrl && (
-        <div className="checkin-modal-backdrop" onClick={() => setPreviewPhotoUrl(null)}>
-          <div className="checkin-modal-card" onClick={(e) => e.stopPropagation()}>
+      {(previewPhotoUrl || previewPhotoRecord || isLoadingPhotoModal) && (
+        <div className="checkin-modal-backdrop" onClick={closePhotoModal}>
+          <div className="checkin-modal-card checkin-photo-modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="checkin-modal-top">
-              <strong>Evidence Photo: {previewPhotoRecord?.outlet ?? "Check-In"}</strong>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div className="checkin-photo-modal-icon">
+                  <Camera size={18} />
+                </div>
+                <div>
+                  <strong style={{ display: "block" }}>
+                    Evidence Photo: {previewPhotoRecord?.outlet ?? "Check-In Record"}
+                  </strong>
+                  {previewPhotoRecord?.date && (
+                    <span style={{ fontSize: 11.5, color: "#64748b" }}>
+                      {previewPhotoRecord.date} at {previewPhotoRecord.time}
+                    </span>
+                  )}
+                </div>
+              </div>
               <button
                 type="button"
-                onClick={() => setPreviewPhotoUrl(null)}
+                onClick={closePhotoModal}
                 className="checkin-modal-close"
                 aria-label="Close modal"
               >
                 <X size={18} />
               </button>
             </div>
-            <img
-              src={previewPhotoUrl}
-              alt="Evidence Capture"
-              className="checkin-modal-img"
-            />
+
+            <div className="checkin-photo-modal-body">
+              {isLoadingPhotoModal ? (
+                <div className="checkin-photo-loading-box">
+                  <RefreshCw size={28} className="animate-spin" />
+                  <span>Loading high-resolution evidence photo...</span>
+                </div>
+              ) : previewPhotoUrl && !photoModalError ? (
+                <div className="checkin-photo-wrapper">
+                  <img
+                    src={previewPhotoUrl}
+                    alt="Evidence Capture"
+                    className="checkin-modal-img"
+                    onError={() => {
+                      if (previewPhotoRecord) {
+                        const cached =
+                          localStorage.getItem(`visit_photo_${previewPhotoRecord.id}`) ||
+                          (previewPhotoRecord.signOutPhotoRef
+                            ? localStorage.getItem(`visit_photo_${previewPhotoRecord.signOutPhotoRef}`)
+                            : null);
+                        if (cached && cached !== previewPhotoUrl) {
+                          setPreviewPhotoUrl(cached);
+                          return;
+                        }
+                      }
+                      setPhotoModalError(true);
+                    }}
+                  />
+                  <div className="checkin-photo-modal-actions">
+                    <a
+                      href={previewPhotoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="checkin-photo-action-btn"
+                      title="Open full size image in new tab"
+                    >
+                      <ExternalLink size={13} />
+                      <span>Full Size</span>
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <div className="checkin-photo-error-box">
+                  <AlertCircle size={32} color="#d97706" />
+                  <strong>Photo Not Found</strong>
+                  <p>
+                    The verification photo could not be found or loaded from storage.
+                  </p>
+                  {previewPhotoRecord?.signOutPhotoRef && (
+                    <span className="checkin-photo-ref-tag">
+                      Reference: {previewPhotoRecord.signOutPhotoRef}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="checkin-modal-caption">
-              Captured by {previewPhotoRecord?.staff} on {previewPhotoRecord?.date} at {previewPhotoRecord?.time}
+              Captured by <strong>{previewPhotoRecord?.staff || "Field Representative"}</strong>
+              {previewPhotoRecord?.type && (
+                <span className={`checkin-type-badge ${previewPhotoRecord.type}`} style={{ marginLeft: 6, padding: "2px 8px", fontSize: 11 }}>
+                  {previewPhotoRecord.type === "attendance" ? "Shift Attendance" : "Outlet Visit"}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -2231,7 +2104,6 @@ export default function CheckIn() {
               setPageStatus("checked-out");
               setCheckInState(null);
             }
-            void loadHistory();
             setAdminSelectedVisit(null);
             setAdminSuccessNotice(
               `Successfully checked out ${adminSelectedVisit.staff} from ${adminSelectedVisit.outlet}.`
@@ -2240,6 +2112,207 @@ export default function CheckIn() {
           }}
           onClose={() => setAdminSelectedVisit(null)}
         />
+      )}
+
+      {/* ── Shift Summary Dialog (Post Check-Out) ── */}
+      {completedShiftSummary && (
+        <div className="checkin-modal-backdrop" onClick={() => setCompletedShiftSummary(null)}>
+          <div
+            className="checkin-modal-card checkin-summary-modal-card"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="shift-summary-title"
+          >
+            {/* Header */}
+            <div className="checkin-summary-header">
+              <div className="checkin-summary-header-badge">
+                <CheckCircle2 size={26} className="checkin-summary-check-icon" />
+              </div>
+              <div className="checkin-summary-header-copy">
+                <span className="checkin-summary-pill">
+                  {completedShiftSummary.visitType === "attendance" ? "Attendance Shift Closed" : "Outlet Visit Closed"}
+                </span>
+                <h3 id="shift-summary-title">Shift Completed Successfully!</h3>
+                <p>
+                  Your checkout record and evidence have been verified and synced to the system.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="checkin-summary-close-btn"
+                onClick={() => setCompletedShiftSummary(null)}
+                aria-label="Close summary"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="checkin-summary-body">
+              {/* KPIs: Duration, Outcome, GPS */}
+              <div className="checkin-summary-kpis">
+                <div className="checkin-summary-kpi-item duration">
+                  <div className="kpi-icon-cube">
+                    <Clock size={18} />
+                  </div>
+                  <div>
+                    <span className="kpi-label">Shift Duration</span>
+                    <strong className="kpi-value">{completedShiftSummary.durationText}</strong>
+                  </div>
+                </div>
+
+                <div className="checkin-summary-kpi-item">
+                  <div className="kpi-icon-cube" style={{ color: "#0284c7" }}>
+                    <CalendarCheck size={18} />
+                  </div>
+                  <div>
+                    <span className="kpi-label">Outcome</span>
+                    <strong className="kpi-value outcome-text">{completedShiftSummary.outcome}</strong>
+                  </div>
+                </div>
+
+                <div className="checkin-summary-kpi-item">
+                  <div className="kpi-icon-cube" style={{ color: completedShiftSummary.gpsVerified ? "#059669" : "#64748b" }}>
+                    <ShieldCheck size={18} />
+                  </div>
+                  <div>
+                    <span className="kpi-label">GPS Verification</span>
+                    <strong className="kpi-value gps-text">
+                      {completedShiftSummary.gpsVerified ? "Verified (Geofenced)" : "Standard GPS"}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Two columns: Details & Photo */}
+              <div className="checkin-summary-grid">
+                <div className="checkin-summary-left">
+                  {/* Location */}
+                  <div className="summary-info-row">
+                    <Store size={18} className="row-icon" />
+                    <div>
+                      <span className="row-label">Location / Outlet</span>
+                      <strong className="row-val">{completedShiftSummary.outletName}</strong>
+                      {completedShiftSummary.region && (
+                        <span className="row-sub">{completedShiftSummary.region}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Staff Info */}
+                  <div className="summary-info-row">
+                    <UserRound size={18} className="row-icon" />
+                    <div>
+                      <span className="row-label">Staff Representative</span>
+                      <strong className="row-val">{completedShiftSummary.staffName}</strong>
+                      <span className="row-sub">{completedShiftSummary.staffRole}</span>
+                    </div>
+                  </div>
+
+                  {/* Timestamps */}
+                  <div className="summary-info-row">
+                    <Clock size={18} className="row-icon" />
+                    <div>
+                      <span className="row-label">Clock Times</span>
+                      <div className="timing-chips-wrap">
+                        <span className="timing-chip in">
+                          In: {new Date(completedShiftSummary.checkInAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        <span className="timing-chip out">
+                          Out: {new Date(completedShiftSummary.checkOutAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Notes / Reason */}
+                  {completedShiftSummary.notes && (
+                    <div className="summary-info-row notes">
+                      <FileText size={18} className="row-icon" />
+                      <div>
+                        <span className="row-label">Sign-Off Notes</span>
+                        <p className="summary-notes-quote">
+                          &ldquo;{completedShiftSummary.notes}&rdquo;
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="checkin-summary-right">
+                  <span className="photo-card-label">Sign-Off Evidence Photo</span>
+                  {completedShiftSummary.photoUrl ? (
+                    <div
+                      className="summary-photo-card"
+                      onClick={() => {
+                        setPreviewPhotoUrl(completedShiftSummary.photoUrl || null);
+                        setPreviewPhotoRecord({
+                          id: completedShiftSummary.visitId,
+                          date: new Date(completedShiftSummary.checkOutAt).toLocaleDateString(),
+                          time: new Date(completedShiftSummary.checkOutAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                          outlet: completedShiftSummary.outletName,
+                          staff: completedShiftSummary.staffName,
+                          type: completedShiftSummary.visitType,
+                          status: "Completed",
+                          duration: completedShiftSummary.durationText,
+                          outcome: completedShiftSummary.outcome,
+                          gps: completedShiftSummary.gpsVerified,
+                          photo: true,
+                          photoUrl: completedShiftSummary.photoUrl ?? null,
+                        });
+                      }}
+                      title="Click to view full photo"
+                    >
+                      <img
+                        src={completedShiftSummary.photoUrl}
+                        alt="Sign-off proof"
+                        className="summary-photo-img"
+                      />
+                      <div className="summary-photo-overlay">
+                        <Eye size={15} />
+                        <span>View Photo</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="summary-photo-placeholder">
+                      <Camera size={26} />
+                      <span>No photo preview available</span>
+                    </div>
+                  )}
+
+                  <div className="summary-verified-tag">
+                    <Check size={14} />
+                    <span>Signed and cryptographically hashed</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="checkin-summary-footer">
+              <button
+                type="button"
+                className="checkin-summary-history-btn"
+                onClick={() => {
+                  setCompletedShiftSummary(null);
+                  navigate("/visits?tab=attendance");
+                }}
+              >
+                <History size={16} />
+                <span>View Attendance Log</span>
+              </button>
+
+              <button
+                type="button"
+                className="checkin-summary-done-btn"
+                onClick={() => setCompletedShiftSummary(null)}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

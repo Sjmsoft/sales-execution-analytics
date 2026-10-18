@@ -207,10 +207,11 @@ export function RegionsSection() {
         <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
         <input
           type="text"
+          className="um-search-input"
           placeholder="Filter regions by name, code, or state..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          style={{ width: "100%", height: "38px", paddingLeft: "36px", paddingRight: "12px", borderRadius: "8px", border: "1px solid #d1d5db", background: "#ffffff", fontSize: "0.85rem", outline: "none", boxSizing: "border-box" }}
+          style={{ width: "100%", height: "38px", paddingLeft: "36px", paddingRight: "12px", borderRadius: "8px", fontSize: "0.85rem", outline: "none", boxSizing: "border-box" }}
         />
       </div>
 

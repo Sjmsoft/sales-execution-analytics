@@ -233,27 +233,30 @@ export function GeofencingSection() {
                   display: "flex",
                   flexDirection: "column",
                   justifyContent: "space-between",
+                  minHeight: 185,
                 }}
               >
                 <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-                    <strong style={{ fontSize: 15, color: "#0f172a" }}>{meta.name}</strong>
-                    {key === "radar" && (
-                      <span style={{ fontSize: 10, fontWeight: 700, background: "#e0f2fe", color: "#0369a1", padding: "2px 8px", borderRadius: 10 }}>
-                        Jibble Benchmark
-                      </span>
-                    )}
-                    {isSelected && <CheckCircle2 size={18} color={meta.badgeColor} />}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6, gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <strong style={{ fontSize: 14.5, color: "#0f172a" }}>{meta.name}</strong>
+                      {key === "radar" && (
+                        <span style={{ fontSize: 10, fontWeight: 700, background: "#e0f2fe", color: "#0369a1", padding: "1px 7px", borderRadius: 10 }}>
+                          Jibble Benchmark
+                        </span>
+                      )}
+                    </div>
+                    {isSelected && <CheckCircle2 size={18} color={meta.badgeColor} style={{ flexShrink: 0 }} />}
                   </div>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: meta.badgeColor, display: "block", marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: meta.badgeColor, display: "block", marginBottom: 6 }}>
                     {meta.tagline}
                   </span>
-                  <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 12px 0", lineHeight: 1.4 }}>
+                  <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 10px 0", lineHeight: 1.4 }}>
                     {meta.description}
                   </p>
                 </div>
 
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: "auto", paddingTop: 8, borderTop: "1px solid #f1f5f9" }}>
                   {meta.features.slice(0, 2).map((feat, i) => (
                     <span key={i} style={{ fontSize: 10, background: "#f1f5f9", color: "#475569", padding: "2px 6px", borderRadius: 4 }}>
                       • {feat}
@@ -287,7 +290,7 @@ export function GeofencingSection() {
           )}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 18 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 18, alignItems: "start" }}>
           {/* API Key */}
           <div>
             <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 6 }}>
@@ -309,6 +312,7 @@ export function GeofencingSection() {
                   fontSize: 13,
                   fontFamily: "monospace",
                   background: config.provider === "native" ? "#f8fafc" : "#ffffff",
+                  boxSizing: "border-box",
                 }}
               />
               {config.provider !== "native" && (
@@ -321,7 +325,7 @@ export function GeofencingSection() {
                 </button>
               )}
             </div>
-            <small style={{ color: "#64748b", fontSize: 11, marginTop: 4, display: "block" }}>
+            <small style={{ color: "#64748b", fontSize: 11, marginTop: 4, display: "block", minHeight: 30 }}>
               {config.provider === "radar"
                 ? "Accepts prj_live_pk_... (Live) or prj_test_pk_... (Sandbox)."
                 : config.provider === "native"
@@ -350,6 +354,7 @@ export function GeofencingSection() {
                     border: "1px solid #cbd5e1",
                     fontSize: 13,
                     fontFamily: "monospace",
+                    boxSizing: "border-box",
                   }}
                 />
                 <button
@@ -360,7 +365,7 @@ export function GeofencingSection() {
                   {showSecret ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
-              <small style={{ color: "#64748b", fontSize: 11, marginTop: 4, display: "block" }}>
+              <small style={{ color: "#64748b", fontSize: 11, marginTop: 4, display: "block", minHeight: 30 }}>
                 Required for bulk cloud polygon syncing.
               </small>
             </div>
@@ -371,19 +376,32 @@ export function GeofencingSection() {
             <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 6 }}>
               Integration Environment
             </label>
-            <div style={{ display: "flex", gap: 10, height: 42 }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 4,
+                height: 42,
+                background: "#f1f5f9",
+                borderRadius: 10,
+                padding: 4,
+                border: "1px solid #cbd5e1",
+                boxSizing: "border-box",
+              }}
+            >
               <button
                 type="button"
                 onClick={() => handleUpdate({ environment: "production" })}
                 style={{
                   flex: 1,
-                  borderRadius: 10,
-                  border: config.environment === "production" ? "2px solid #059669" : "1px solid #cbd5e1",
-                  background: config.environment === "production" ? "#ecfdf5" : "#ffffff",
-                  color: config.environment === "production" ? "#065f46" : "#475569",
+                  borderRadius: 7,
+                  border: config.environment === "production" ? "1px solid #059669" : "none",
+                  background: config.environment === "production" ? "#ffffff" : "transparent",
+                  color: config.environment === "production" ? "#065f46" : "#64748b",
                   fontWeight: 700,
-                  fontSize: 13,
+                  fontSize: 12.5,
                   cursor: "pointer",
+                  boxShadow: config.environment === "production" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                  transition: "all 0.15s ease",
                 }}
               >
                 Production Mode
@@ -393,18 +411,25 @@ export function GeofencingSection() {
                 onClick={() => handleUpdate({ environment: "test" })}
                 style={{
                   flex: 1,
-                  borderRadius: 10,
-                  border: config.environment === "test" ? "2px solid #0284c7" : "1px solid #cbd5e1",
-                  background: config.environment === "test" ? "#f0f9ff" : "#ffffff",
-                  color: config.environment === "test" ? "#0369a1" : "#475569",
+                  borderRadius: 7,
+                  border: config.environment === "test" ? "1px solid #0284c7" : "none",
+                  background: config.environment === "test" ? "#ffffff" : "transparent",
+                  color: config.environment === "test" ? "#0369a1" : "#64748b",
                   fontWeight: 700,
-                  fontSize: 13,
+                  fontSize: 12.5,
                   cursor: "pointer",
+                  boxShadow: config.environment === "test" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                  transition: "all 0.15s ease",
                 }}
               >
                 Test / Sandbox
               </button>
             </div>
+            <small style={{ color: "#64748b", fontSize: 11, marginTop: 4, display: "block", minHeight: 30 }}>
+              {config.environment === "production"
+                ? "Live mode enforces real GPS check-in rules for active reps."
+                : "Sandbox simulates geofence events for testing and onboarding."}
+            </small>
           </div>
         </div>
 
@@ -468,32 +493,47 @@ export function GeofencingSection() {
           <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 8 }}>
             Default Geofence Perimeter Radius
           </label>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
-            {RADIUS_PRESETS.map((rad) => {
-              const active = config.defaultRadiusMeters === rad;
-              return (
-                <button
-                  key={rad}
-                  type="button"
-                  onClick={() => handleUpdate({ defaultRadiusMeters: rad })}
-                  style={{
-                    padding: "8px 16px",
-                    borderRadius: 20,
-                    border: active ? "2px solid #059669" : "1px solid #cbd5e1",
-                    background: active ? "#ecfdf5" : "#ffffff",
-                    color: active ? "#065f46" : "#334155",
-                    fontWeight: 700,
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
-                >
-                  {rad} meters {rad === 500 && "(Retail Standard)"}
-                </button>
-              );
-            })}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              {RADIUS_PRESETS.map((rad) => {
+                const active = config.defaultRadiusMeters === rad;
+                return (
+                  <button
+                    key={rad}
+                    type="button"
+                    onClick={() => handleUpdate({ defaultRadiusMeters: rad })}
+                    style={{
+                      padding: "7px 14px",
+                      borderRadius: 20,
+                      border: active ? "2px solid #059669" : "1px solid #cbd5e1",
+                      background: active ? "#ecfdf5" : "#ffffff",
+                      color: active ? "#065f46" : "#334155",
+                      fontWeight: 700,
+                      fontSize: 12.5,
+                      cursor: "pointer",
+                      boxShadow: active ? "0 1px 3px rgba(5,150,105,0.15)" : "none",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    {rad}m {rad === 500 && "· Retail Standard"}
+                  </button>
+                );
+              })}
+            </div>
 
-            {/* Custom Radius input */}
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            {/* Custom Radius input group */}
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                borderRadius: 8,
+                border: "1px solid #cbd5e1",
+                background: "#ffffff",
+                overflow: "hidden",
+                height: 36,
+                boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+              }}
+            >
               <input
                 type="number"
                 min="20"
@@ -501,17 +541,32 @@ export function GeofencingSection() {
                 value={config.defaultRadiusMeters}
                 onChange={(e) => handleUpdate({ defaultRadiusMeters: Math.max(20, Number(e.target.value) || 100) })}
                 style={{
-                  width: 90,
-                  height: 36,
+                  width: 75,
+                  height: "100%",
                   padding: "0 8px",
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
+                  border: "none",
+                  outline: "none",
                   fontSize: 13,
-                  fontWeight: 600,
+                  fontWeight: 700,
                   textAlign: "center",
+                  color: "#0f172a",
                 }}
               />
-              <span style={{ fontSize: 12, color: "#64748b" }}>meters custom</span>
+              <span
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  color: "#475569",
+                  background: "#f1f5f9",
+                  padding: "0 10px",
+                  height: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  borderLeft: "1px solid #e2e8f0",
+                }}
+              >
+                meters custom
+              </span>
             </div>
           </div>
           <small style={{ color: "#64748b", fontSize: 12 }}>

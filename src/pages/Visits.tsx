@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import {
   AlertCircle,
@@ -113,13 +114,9 @@ export default function Visits() {
   const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
   const isBA = roleKey === "brand_ambassador" || roleKey === "ba" || roleKey === "vsr";
 
-  const [activeTab, setActiveTab] = useState<VisitsTab>(isBA ? "Attendance" : "Visits");
-
-  useEffect(() => {
-    if (isBA && activeTab !== "Attendance") {
-      setActiveTab("Attendance");
-    }
-  }, [isBA, activeTab]);
+  const [searchParams] = useSearchParams();
+  const initialTab = (searchParams.get("tab")?.toLowerCase() === "attendance" ? "Attendance" : "Visits") as VisitsTab;
+  const [activeTab, setActiveTab] = useState<VisitsTab>(initialTab);
 
   const [startDate, setStartDate] = useState(DEFAULT_START);
   const [endDate, setEndDate] = useState(DEFAULT_END);
@@ -129,8 +126,15 @@ export default function Visits() {
   const [checkoutSuccessMessage, setCheckoutSuccessMessage] = useState("");
 
   const canAdminCheckOut = useMemo(
-    () => isUserAdminOrHR(role, staff?.assigned_role),
-    [role, staff?.assigned_role]
+    () =>
+      isUserAdminOrHR(
+        role,
+        staff?.assigned_role ||
+          (staff as any)?.user_roles?.key ||
+          (staff as any)?.user_roles?.name ||
+          (typeof (staff as any)?.role === "string" ? (staff as any).role : undefined)
+      ),
+    [role, staff]
   );
   const [adminCheckoutVisit, setAdminCheckoutVisit] = useState<ActiveVisit | null>(null);
 
@@ -444,15 +448,13 @@ export default function Visits() {
       <div className="visits-header-pro">
         <div className="visits-header-copy">
           <div className="visits-title-group">
-            <h2>{isBA ? "Attendance History" : "Outlet Visits History"}</h2>
+            <h2>Outlet Visits History</h2>
             <span className="visits-count-pill">
-              {scopedVisits.length} {isBA ? "attendance records" : "total records"}
+              {scopedVisits.length} records
             </span>
           </div>
           <p>
-            {isBA
-              ? "Your operational log of daily attendance check-ins, shift duration, and GPS verification."
-              : "Complete operational log of field visits, shift attendance check-ins, and GPS audits."}
+            Complete operational log of field visits, shift attendance check-ins, and GPS audits.
           </p>
         </div>
 
@@ -489,14 +491,16 @@ export default function Visits() {
           aria-label="Outlet visits views"
         >
           {(
-            isBA
-              ? ([["Attendance", CalendarCheck]] as const)
-              : ([
-                  ["Visits", Store],
-                  ["Attendance", CalendarCheck],
-                  ["Dashboard", BarChart3],
-                  ["Leaderboard", Trophy],
-                ] as const)
+            [
+              ["Visits", Store],
+              ["Attendance", CalendarCheck],
+              ...(!isBA
+                ? ([
+                    ["Dashboard", BarChart3],
+                    ["Leaderboard", Trophy],
+                  ] as const)
+                : []),
+            ] as const
           ).map(([label, Icon]) => (
             <button
               key={label}
@@ -505,14 +509,13 @@ export default function Visits() {
               aria-selected={activeTab === label}
               className={`visits-tab-pro-btn ${activeTab === label ? "active" : ""}`}
               onClick={() => {
-                if (isBA) return;
-                setActiveTab(label);
+                setActiveTab(label as VisitsTab);
                 setSelectedIds([]);
                 setCurrentPage(1);
               }}
             >
               <Icon size={15} />
-              <span>{isBA ? "Attendance History" : label}</span>
+              <span>{label}</span>
               {label === "Visits" && (
                 <span className="tab-badge">
                   {visits.filter((v) => v.type === "outlet").length}

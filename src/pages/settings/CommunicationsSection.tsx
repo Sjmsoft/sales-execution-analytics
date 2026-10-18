@@ -262,26 +262,29 @@ export function CommunicationsSection() {
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+        {/* ── Sub-section A: Feature Toggles (2 Columns) ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14, marginBottom: 14 }}>
           {/* Allow Voice Calls */}
           <div
             style={{
-              padding: 16,
+              padding: "16px 18px",
               borderRadius: 10,
               border: "1px solid #e2e8f0",
               background: settings.allowVoiceCalls ? "#f8fafc" : "#fff1f2",
               display: "flex",
-              alignItems: "flex-start",
+              alignItems: "center",
               justifyContent: "space-between",
-              gap: 12,
+              gap: 14,
             }}
           >
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <Phone size={15} color="#059669" />
-                <strong style={{ fontSize: 13, color: "#1e293b" }}>Voice Calling</strong>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <div style={{ width: 26, height: 26, borderRadius: 6, background: "#ecfdf5", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Phone size={14} color="#059669" />
+                </div>
+                <strong style={{ fontSize: 13.5, color: "#1e293b" }}>Voice Calling</strong>
               </div>
-              <p style={{ margin: "4px 0 0 0", fontSize: 12, color: "#64748b" }}>
+              <p style={{ margin: 0, fontSize: 12, color: "#64748b", lineHeight: 1.4 }}>
                 Permit field reps &amp; managers to place 1-on-1 audio calls with active waveform equalizers.
               </p>
             </div>
@@ -289,29 +292,31 @@ export function CommunicationsSection() {
               type="checkbox"
               checked={settings.allowVoiceCalls}
               onChange={(e) => updateSetting("allowVoiceCalls", e.target.checked)}
-              style={{ width: 18, height: 18, accentColor: "#059669", cursor: "pointer", marginTop: 2 }}
+              style={{ width: 19, height: 19, accentColor: "#059669", cursor: "pointer", flexShrink: 0 }}
             />
           </div>
 
           {/* Allow Video Calls */}
           <div
             style={{
-              padding: 16,
+              padding: "16px 18px",
               borderRadius: 10,
               border: "1px solid #e2e8f0",
               background: settings.allowVideoCalls ? "#f8fafc" : "#fff1f2",
               display: "flex",
-              alignItems: "flex-start",
+              alignItems: "center",
               justifyContent: "space-between",
-              gap: 12,
+              gap: 14,
             }}
           >
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <Video size={15} color="#0284c7" />
-                <strong style={{ fontSize: 13, color: "#1e293b" }}>Video Calling</strong>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <div style={{ width: 26, height: 26, borderRadius: 6, background: "#f0f9ff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Video size={14} color="#0284c7" />
+                </div>
+                <strong style={{ fontSize: 13.5, color: "#1e293b" }}>Video Calling</strong>
               </div>
-              <p style={{ margin: "4px 0 0 0", fontSize: 12, color: "#64748b" }}>
+              <p style={{ margin: 0, fontSize: 12, color: "#64748b", lineHeight: 1.4 }}>
                 Allow video calls for live retail shelf inspections, POS audits, and virtual standups.
               </p>
             </div>
@@ -319,42 +324,52 @@ export function CommunicationsSection() {
               type="checkbox"
               checked={settings.allowVideoCalls}
               onChange={(e) => updateSetting("allowVideoCalls", e.target.checked)}
-              style={{ width: 18, height: 18, accentColor: "#059669", cursor: "pointer", marginTop: 2 }}
+              style={{ width: 19, height: 19, accentColor: "#059669", cursor: "pointer", flexShrink: 0 }}
             />
           </div>
+        </div>
 
+        {/* ── Sub-section B: Call Quality & Timeouts (2 Columns) ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14 }}>
           {/* Ringing Timeout Duration */}
           <div
             style={{
-              padding: 16,
+              padding: "16px 18px",
               borderRadius: 10,
               border: "1px solid #e2e8f0",
               background: "#f8fafc",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
             }}
           >
-            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 6 }}>
-              Call Ringing Timeout Duration
-            </label>
-            <select
-              value={settings.callTimeoutSecs}
-              onChange={(e) => updateSetting("callTimeoutSecs", Number(e.target.value))}
-              style={{
-                width: "100%",
-                height: 38,
-                borderRadius: 8,
-                border: "1px solid #cbd5e1",
-                padding: "0 10px",
-                fontSize: 13,
-                background: "#ffffff",
-                cursor: "pointer",
-              }}
-            >
-              <option value={15}>15 Seconds (Quick Disconnect)</option>
-              <option value={30}>30 Seconds (Standard Teams Default)</option>
-              <option value={45}>45 Seconds (Extended Field Ring)</option>
-              <option value={60}>60 Seconds (Maximum Patience)</option>
-            </select>
-            <span style={{ fontSize: 11, color: "#64748b", marginTop: 4, display: "block" }}>
+            <div>
+              <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 6 }}>
+                Call Ringing Timeout Duration
+              </label>
+              <select
+                value={settings.callTimeoutSecs}
+                onChange={(e) => updateSetting("callTimeoutSecs", Number(e.target.value))}
+                style={{
+                  width: "100%",
+                  height: 40,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  padding: "0 12px",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: "#0f172a",
+                  background: "#ffffff",
+                  cursor: "pointer",
+                }}
+              >
+                <option value={15}>15 Seconds (Quick Disconnect)</option>
+                <option value={30}>30 Seconds (Standard Teams Default)</option>
+                <option value={45}>45 Seconds (Extended Field Ring)</option>
+                <option value={60}>60 Seconds (Maximum Patience)</option>
+              </select>
+            </div>
+            <span style={{ fontSize: 11, color: "#64748b", marginTop: 6, display: "block" }}>
               Call cancels automatically if unanswered by remote party.
             </span>
           </div>
@@ -362,34 +377,41 @@ export function CommunicationsSection() {
           {/* Audio Bitrate / Quality Mode */}
           <div
             style={{
-              padding: 16,
+              padding: "16px 18px",
               borderRadius: 10,
               border: "1px solid #e2e8f0",
               background: "#f8fafc",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
             }}
           >
-            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 6 }}>
-              Bandwidth &amp; Audio Quality Profile
-            </label>
-            <select
-              value={settings.callAudioQuality}
-              onChange={(e) => updateSetting("callAudioQuality", e.target.value as any)}
-              style={{
-                width: "100%",
-                height: 38,
-                borderRadius: 8,
-                border: "1px solid #cbd5e1",
-                padding: "0 10px",
-                fontSize: 13,
-                background: "#ffffff",
-                cursor: "pointer",
-              }}
-            >
-              <option value="low_bandwidth">Low Bandwidth (2G/3G Remote Trade Areas)</option>
-              <option value="standard">Standard Adaptive (Recommended for 4G LTE)</option>
-              <option value="high_definition">High Definition (HD Wideband Opus)</option>
-            </select>
-            <span style={{ fontSize: 11, color: "#64748b", marginTop: 4, display: "block" }}>
+            <div>
+              <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "#334155", marginBottom: 6 }}>
+                Bandwidth &amp; Audio Quality Profile
+              </label>
+              <select
+                value={settings.callAudioQuality}
+                onChange={(e) => updateSetting("callAudioQuality", e.target.value as any)}
+                style={{
+                  width: "100%",
+                  height: 40,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  padding: "0 12px",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: "#0f172a",
+                  background: "#ffffff",
+                  cursor: "pointer",
+                }}
+              >
+                <option value="standard">Standard Adaptive (Recommended for 4G LTE)</option>
+                <option value="low_bandwidth">Low Bandwidth (2G/3G Remote Trade Areas)</option>
+                <option value="high_definition">High Definition (HD Wideband Opus)</option>
+              </select>
+            </div>
+            <span style={{ fontSize: 11, color: "#64748b", marginTop: 6, display: "block" }}>
               Optimizes codec packet size for trade territories with spotty data.
             </span>
           </div>
@@ -436,78 +458,84 @@ export function CommunicationsSection() {
           {/* Allow Smart Replies */}
           <div
             style={{
-              padding: 14,
+              padding: "16px 18px",
               borderRadius: 10,
               border: "1px solid #e2e8f0",
-              background: "#f8fafc",
+              background: settings.allowSmartReplies ? "#ffffff" : "#f8fafc",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
+              gap: 12,
+              boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
             }}
           >
             <div>
-              <strong style={{ fontSize: 13, color: "#1e293b", display: "flex", alignItems: "center", gap: 6 }}>
-                <Sparkles size={14} color="#d97706" /> Smart Reply Chips
+              <strong style={{ fontSize: 13.5, color: "#1e293b", display: "flex", alignItems: "center", gap: 7 }}>
+                <Sparkles size={15} color="#d97706" /> Smart Reply Chips
               </strong>
-              <span style={{ fontSize: 11, color: "#64748b" }}>Shows 1-tap fast response chips</span>
+              <span style={{ fontSize: 12, color: "#64748b", marginTop: 2, display: "block" }}>Shows 1-tap fast response chips</span>
             </div>
             <input
               type="checkbox"
               checked={settings.allowSmartReplies}
               onChange={(e) => updateSetting("allowSmartReplies", e.target.checked)}
-              style={{ width: 18, height: 18, accentColor: "#059669", cursor: "pointer" }}
+              style={{ width: 19, height: 19, accentColor: "#059669", cursor: "pointer", flexShrink: 0 }}
             />
           </div>
 
           {/* Allow Voice Notes */}
           <div
             style={{
-              padding: 14,
+              padding: "16px 18px",
               borderRadius: 10,
               border: "1px solid #e2e8f0",
-              background: "#f8fafc",
+              background: settings.allowVoiceNotes ? "#ffffff" : "#f8fafc",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
+              gap: 12,
+              boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
             }}
           >
             <div>
-              <strong style={{ fontSize: 13, color: "#1e293b", display: "flex", alignItems: "center", gap: 6 }}>
-                <Mic size={14} color="#059669" /> Voice Note Audio
+              <strong style={{ fontSize: 13.5, color: "#1e293b", display: "flex", alignItems: "center", gap: 7 }}>
+                <Mic size={15} color="#059669" /> Voice Note Audio
               </strong>
-              <span style={{ fontSize: 11, color: "#64748b" }}>Push-to-talk audio memos</span>
+              <span style={{ fontSize: 12, color: "#64748b", marginTop: 2, display: "block" }}>Push-to-talk audio memos</span>
             </div>
             <input
               type="checkbox"
               checked={settings.allowVoiceNotes}
               onChange={(e) => updateSetting("allowVoiceNotes", e.target.checked)}
-              style={{ width: 18, height: 18, accentColor: "#059669", cursor: "pointer" }}
+              style={{ width: 19, height: 19, accentColor: "#059669", cursor: "pointer", flexShrink: 0 }}
             />
           </div>
 
           {/* Allow Location Sharing */}
           <div
             style={{
-              padding: 14,
+              padding: "16px 18px",
               borderRadius: 10,
               border: "1px solid #e2e8f0",
-              background: "#f8fafc",
+              background: settings.allowLocationSharing ? "#ffffff" : "#f8fafc",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
+              gap: 12,
+              boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
             }}
           >
             <div>
-              <strong style={{ fontSize: 13, color: "#1e293b", display: "flex", alignItems: "center", gap: 6 }}>
-                <MapPin size={14} color="#dc2626" /> GPS Location Pins
+              <strong style={{ fontSize: 13.5, color: "#1e293b", display: "flex", alignItems: "center", gap: 7 }}>
+                <MapPin size={15} color="#dc2626" /> GPS Location Pins
               </strong>
-              <span style={{ fontSize: 11, color: "#64748b" }}>Share trade coordinates in chat</span>
+              <span style={{ fontSize: 12, color: "#64748b", marginTop: 2, display: "block" }}>Share trade coordinates in chat</span>
             </div>
             <input
               type="checkbox"
               checked={settings.allowLocationSharing}
               onChange={(e) => updateSetting("allowLocationSharing", e.target.checked)}
-              style={{ width: 18, height: 18, accentColor: "#059669", cursor: "pointer" }}
+              style={{ width: 19, height: 19, accentColor: "#059669", cursor: "pointer", flexShrink: 0 }}
             />
           </div>
         </div>
@@ -518,15 +546,21 @@ export function CommunicationsSection() {
             style={{
               background: "#f8fafc",
               borderRadius: 10,
-              padding: 16,
+              padding: "18px 20px",
               border: "1px solid #e2e8f0",
             }}
           >
-            <strong style={{ fontSize: 13, color: "#0f172a", display: "block", marginBottom: 8 }}>
-              Active Smart Reply Presets (Click &times; to remove):
-            </strong>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <strong style={{ fontSize: 13, color: "#0f172a" }}>Active Smart Reply Presets</strong>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#059669", background: "#ecfdf5", border: "1px solid #a7f3d0", padding: "1px 7px", borderRadius: 12 }}>
+                  {settings.smartRepliesList.length} Chips Configured
+                </span>
+              </div>
+              <small style={{ color: "#64748b", fontSize: 11 }}>Click &times; on any chip to remove</small>
+            </div>
 
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
               {settings.smartRepliesList.map((chip) => (
                 <span
                   key={chip}
@@ -534,13 +568,14 @@ export function CommunicationsSection() {
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 6,
-                    padding: "4px 10px",
+                    padding: "5px 12px",
                     borderRadius: 20,
                     background: "#ffffff",
                     border: "1px solid #cbd5e1",
-                    fontSize: 12,
+                    fontSize: 12.5,
                     fontWeight: 600,
                     color: "#334155",
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
                   }}
                 >
                   {chip}
@@ -549,13 +584,17 @@ export function CommunicationsSection() {
                     onClick={() => handleRemoveChip(chip)}
                     style={{
                       border: "none",
-                      background: "none",
-                      color: "#94a3b8",
+                      background: "#f1f5f9",
+                      color: "#64748b",
                       cursor: "pointer",
-                      padding: 0,
-                      fontSize: 14,
-                      lineHeight: 1,
+                      padding: "0 4px",
+                      borderRadius: 10,
+                      fontSize: 13,
+                      lineHeight: "16px",
                       fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
                     }}
                     title="Remove chip"
                   >
@@ -565,46 +604,51 @@ export function CommunicationsSection() {
               ))}
             </div>
 
-            <div style={{ display: "flex", gap: 8, maxWidth: 500 }}>
-              <input
-                type="text"
-                placeholder="Add custom smart reply chip (e.g. Price approved 💰)…"
-                value={newChipText}
-                onChange={(e) => setNewChipText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleAddChip();
-                  }
-                }}
-                style={{
-                  flex: 1,
-                  height: 36,
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                  padding: "0 10px",
-                  fontSize: 13,
-                }}
-              />
+            <div style={{ display: "flex", gap: 10, maxWidth: 640 }}>
+              <div style={{ position: "relative", flex: 1 }}>
+                <input
+                  type="text"
+                  placeholder="Add custom smart reply chip (e.g. Price approved 💰)…"
+                  value={newChipText}
+                  onChange={(e) => setNewChipText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddChip();
+                    }
+                  }}
+                  style={{
+                    width: "100%",
+                    height: 38,
+                    borderRadius: 8,
+                    border: "1px solid #cbd5e1",
+                    padding: "0 12px",
+                    fontSize: 13,
+                    background: "#ffffff",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
               <button
                 type="button"
                 onClick={handleAddChip}
                 style={{
-                  height: 36,
-                  padding: "0 14px",
+                  height: 38,
+                  padding: "0 16px",
                   borderRadius: 8,
                   background: "#059669",
                   color: "#ffffff",
                   border: "none",
                   fontWeight: 600,
-                  fontSize: 12,
+                  fontSize: 12.5,
                   cursor: "pointer",
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: 4,
+                  gap: 6,
+                  flexShrink: 0,
                 }}
               >
-                <Plus size={14} /> Add Chip
+                <Plus size={15} /> Add Preset
               </button>
             </div>
           </div>

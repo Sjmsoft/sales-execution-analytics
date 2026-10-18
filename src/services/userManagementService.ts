@@ -602,7 +602,13 @@ export async function loadUserAccounts(): Promise<UserAccount[]> {
       if (matchedRole) roleKey = matchedRole.key as RoleKey;
     }
 
-    const isNationalRole = roleKey === "administrator" || roleKey === "national_sales_manager" || roleKey === "hr";
+    const isNationalRole =
+      roleKey === "administrator" ||
+      roleKey === "national_sales_manager" ||
+      roleKey === "hr" ||
+      roleKey.includes("admin") ||
+      roleKey.includes("human_resource") ||
+      roleKey.includes("national_sales");
 
     return {
       id: s.id,

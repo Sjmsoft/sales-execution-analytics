@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -22,7 +22,9 @@ import { useAuth } from "../context/AuthContext";
 import LogoLoader from "../components/brand/LogoLoader";
 import { useMinimumLoading } from "../hooks/useMinimumLoading";
 import {
+  calculateTargetsProgress,
   createMultiDrinkTargets,
+  deleteTarget,
   fetchAvailableDrinks,
   fetchStaffForTargets,
   fetchTargets,
@@ -35,6 +37,8 @@ import {
   type TargetType,
   type TargetUnit,
 } from "../services/targetsService";
+import { getSales, createSale, type Sale } from "../services/salesService";
+import { getOutlets, type Outlet } from "../services/referenceService";
 import {
   getUserScope,
   filterTargetsByScope,
@@ -113,13 +117,39 @@ export default function Targets() {
   const [pushLogs, setPushLogs] = useState<PushNotificationRecord[]>([]);
   const [notificationToast, setNotificationToast] = useState<string | null>(null);
 
-  // Load targets
+  // Sales ledger & Outlets state
+  const [salesList, setSalesList] = useState<Sale[]>([]);
+  const [outletsList, setOutletsList] = useState<Outlet[]>([]);
+
+  // Record Individual Sale Modal state
+  const [recordSaleTarget, setRecordSaleTarget] = useState<TargetRecord | null>(null);
+  const [recordOutletId, setRecordOutletId] = useState("");
+  const [recordCustomOutlet, setRecordCustomOutlet] = useState("");
+  const [recordDrinkName, setRecordDrinkName] = useState("");
+  const [recordQty, setRecordQty] = useState(1);
+  const [recordUnit, setRecordUnit] = useState<TargetUnit>("Cases");
+  const [recordSaleDate, setRecordSaleDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [recordUnitPrice, setRecordUnitPrice] = useState(70000);
+  const [isSubmittingSale, setIsSubmittingSale] = useState(false);
+
+  // Load targets and individual sales
   const loadTargetsData = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     try {
-      const data = await fetchTargets();
-      const scoped = filterTargetsByScope(data, userScope);
+      const [rawTargets, allSales, drinksList, outletsData] = await Promise.all([
+        fetchTargets(),
+        getSales().catch(() => []),
+        fetchAvailableDrinks().catch(() => []),
+        getOutlets().catch(() => []),
+      ]);
+      setSalesList(allSales);
+      setAvailableDrinks(drinksList);
+      setOutletsList(outletsData);
+
+      const computed = calculateTargetsProgress(rawTargets, allSales, drinksList);
+      const scoped = filterTargetsByScope(computed, userScope);
       setTargets(scoped);
+
       const logs = await getPushNotificationLogs();
       setPushLogs(logs);
     } catch (e) {
@@ -136,7 +166,6 @@ export default function Targets() {
       const scopedStaff = filterStaffByScope(staffData as any[], userScope);
       setStaffList(scopedStaff as any[]);
     });
-    void fetchAvailableDrinks().then(setAvailableDrinks);
   }, [loadTargetsData, userScope]);
 
   // Toggle accordion row
@@ -146,6 +175,18 @@ export default function Targets() {
       [id]: !prev[id],
     }));
   };
+
+  // Available unique regions across targets and staff for filter dropdown
+  const availableRegions = useMemo(() => {
+    const set = new Set<string>();
+    targets.forEach((t) => {
+      if (t.salesRep?.region && t.salesRep.region.trim()) set.add(t.salesRep.region.trim());
+    });
+    staffList.forEach((s) => {
+      if (s.region && s.region.trim()) set.add(s.region.trim());
+    });
+    return Array.from(set).sort();
+  }, [targets, staffList]);
 
   // Filtered targets
   const filteredTargets = useMemo(() => {
@@ -175,16 +216,21 @@ export default function Targets() {
       }
 
       // Region
-      if (regionFilter !== "All Regions" && !t.salesRep.region.includes(regionFilter)) {
+      if (regionFilter !== "All Regions" && !t.salesRep.region.toLowerCase().includes(regionFilter.toLowerCase())) {
         return false;
       }
 
-      // Date window filter
+      // Date window filter (dynamic calculation)
       if (dateFilter === "This Month") {
-        return t.startDate.includes("2026-09") || t.endDate.includes("2026-09");
+        const now = new Date();
+        const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        return t.startDate.slice(0, 7) === currentMonth || t.endDate.slice(0, 7) === currentMonth;
       }
       if (dateFilter === "Last Month") {
-        return t.startDate.includes("2026-08") || t.endDate.includes("2026-08");
+        const now = new Date();
+        now.setMonth(now.getMonth() - 1);
+        const lastMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        return t.startDate.slice(0, 7) === lastMonth || t.endDate.slice(0, 7) === lastMonth;
       }
 
       return true;
@@ -222,8 +268,80 @@ export default function Targets() {
 
   // BA personal progress metrics
   const baMetrics = useMemo(() => {
-    return getBAMetrics(staff?.id, staff?.name);
-  }, [staff]);
+    return getBAMetrics(staff?.id, staff?.name, salesList);
+  }, [staff, salesList]);
+
+  // Open Log Sale modal for specific target
+  const handleOpenRecordSaleModal = (tgt: TargetRecord) => {
+    setRecordSaleTarget(tgt);
+    const initialDrink = tgt.bundledDrinks && tgt.bundledDrinks.length > 0 ? tgt.bundledDrinks[0] : tgt.productName || tgt.title;
+    setRecordDrinkName(initialDrink);
+    setRecordUnit(tgt.unit || "Cases");
+    setRecordQty(1);
+    setRecordSaleDate(new Date().toISOString().slice(0, 10));
+    setRecordOutletId(outletsList[0]?.id || "");
+    setRecordCustomOutlet(outletsList[0]?.name || "Local Retail Outlet");
+    setRecordUnitPrice(tgt.unit === "Cases" ? 70000 : 7000);
+  };
+
+  // Submit individual sale against target
+  const handleRecordSaleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!recordSaleTarget) return;
+
+    setIsSubmittingSale(true);
+    try {
+      const totalAmount = recordQty * recordUnitPrice;
+
+      const matchedDrink = availableDrinks.find(
+        (d) => d.name.toLowerCase() === recordDrinkName.toLowerCase()
+      );
+      const drinkId = matchedDrink?.id || recordDrinkName;
+
+      await createSale({
+        outletId: recordOutletId || "outlet-1",
+        drinkTypeId: drinkId,
+        quantity: recordQty,
+        unitType: recordUnit === "Cases" ? 2 : 1,
+        unitPrice: recordUnitPrice,
+        totalAmount,
+        amountPaid: totalAmount,
+        paymentStatus: 2,
+        saleDate: recordSaleDate,
+        paymentMethod: 1,
+        staffName: recordSaleTarget.salesRep.name,
+        staffId: recordSaleTarget.salesRep.id,
+        drinkName: recordDrinkName,
+      });
+
+      // Reload sales and target progress
+      await loadTargetsData(true);
+      setRecordSaleTarget(null);
+
+      setNotificationToast(
+        `Recorded sale of ${recordQty} ${recordUnit} for ${recordSaleTarget.salesRep.name}! Target progress updated.`
+      );
+      setTimeout(() => setNotificationToast(null), 5000);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to record sale.");
+    } finally {
+      setIsSubmittingSale(false);
+    }
+  };
+
+  // Delete target handler
+  const handleDeleteTarget = async (id: string, title: string) => {
+    if (!window.confirm(`Are you sure you want to delete target "${title}"?`)) return;
+    try {
+      const updated = await deleteTarget(id);
+      const scoped = filterTargetsByScope(updated, userScope);
+      setTargets(scoped);
+      setNotificationToast(`Target "${title}" removed.`);
+      setTimeout(() => setNotificationToast(null), 4000);
+    } catch (err) {
+      console.error("Error deleting target:", err);
+    }
+  };
 
   // Clear report filters
   const handleClearFilters = () => {
@@ -384,16 +502,32 @@ export default function Targets() {
         endDate: createEndDate,
         targetType: createTargetType,
         creatorName: staff?.name || "Administrator",
+        creatorId: staff?.id,
       });
 
-      setTargets(updated);
+      const computed = calculateTargetsProgress(updated, salesList, availableDrinks);
+      const scoped = filterTargetsByScope(computed, userScope);
+      setTargets(scoped);
+      // Clear filters so new targets immediately appear
+      handleClearFilters();
       setCreateModalOpen(false);
       // Reset form
       setSelectedStaffIds([]);
       setDrinkRows([{ id: "row-1", drinkId: "", unit: "Cases", qty: 20 }]);
 
+      addNotification({
+        title: `🎯 Target Created: ${validDrinks.length > 1 ? `${validDrinks.length} Products Bundled` : validDrinks[0].drinkName}`,
+        message: `Assigned to ${chosenStaff.length} staff member(s). Target cycle: ${createTargetType}.`,
+        type: "target",
+        priority: "normal",
+        sender: staff?.name || "Administrator",
+        link: "/targets",
+        actionLabel: "View Targets",
+        category: "Targets",
+      });
+
       setNotificationToast(
-        `Successfully created ${validDrinks.length * chosenStaff.length} targets across ${chosenStaff.length} staff member(s). Notification dispatched!`
+        `Successfully created ${validDrinks.length * chosenStaff.length} target(s) across ${chosenStaff.length} staff member(s). Notification dispatched!`
       );
       setTimeout(() => setNotificationToast(null), 6000);
     } catch (err: unknown) {
@@ -635,10 +769,11 @@ export default function Targets() {
           onChange={(e) => setRegionFilter(e.target.value)}
         >
           <option value="All Regions">All Regions</option>
-          <option value="Abuja - North">Abuja - North</option>
-          <option value="Enugu">Enugu - East</option>
-          <option value="Lagos">Lagos mainland</option>
-          <option value="Portharcourt">Portharcourt - South</option>
+          {availableRegions.map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
         </select>
 
         <select
@@ -647,9 +782,9 @@ export default function Targets() {
           onChange={(e) => setDateFilter(e.target.value)}
         >
           <option value="All dates">All dates</option>
-          <option value="This Month">This Month (Sep 2026)</option>
-          <option value="Last Month">Last Month (Aug 2026)</option>
-          <option value="Q3 2026">Q3 2026</option>
+          <option value="This Month">This Month</option>
+          <option value="Last Month">Last Month</option>
+          <option value="Q4 2026">Q4 2026</option>
         </select>
       </div>
 
@@ -793,16 +928,18 @@ export default function Targets() {
                   <th>Sales Rep</th>
                   <th>Target</th>
                   <th>Period</th>
-                  <th>progress bar</th>
+                  <th>Progress vs Target</th>
                   <th>Status</th>
                   <th>Created</th>
+                  {canCreateAndPush && <th style={{ width: 110, textAlign: "center" }}>Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {filteredTargets.map((tgt) => {
                   const isExpanded = Boolean(expandedRows[tgt.id]);
                   return (
-                    <tr key={tgt.id}>
+                    <Fragment key={tgt.id}>
+                      <tr>
                       {/* Accordion toggle */}
                       <td>
                         <button
@@ -893,18 +1030,41 @@ export default function Targets() {
                           <div className="tgt-meter-bar-track">
                             <div
                               className="tgt-meter-bar-fill"
-                              style={{ width: `${Math.min(100, tgt.progressPercent)}%` }}
+                              style={{
+                                width: `${Math.min(100, tgt.progressPercent)}%`,
+                                background:
+                                  tgt.progressPercent >= 100
+                                    ? "#059669"
+                                    : tgt.status === "Behind Pace"
+                                    ? "#d97706"
+                                    : "#083e32",
+                              }}
                             />
                           </div>
-                          <span style={{ fontSize: 12, fontWeight: 700, minWidth: 48 }}>
-                            {tgt.progressPercent}% ({tgt.achievedQuantity})
-                          </span>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+                            <span style={{ fontSize: 12.5, fontWeight: 700 }}>
+                              {tgt.progressPercent}%
+                            </span>
+                            <span style={{ fontSize: 11, color: "#68746f" }}>
+                              ({tgt.achievedQuantity} of {tgt.targetQuantity} {tgt.unit})
+                            </span>
+                          </div>
                         </div>
                       </td>
 
                       {/* Status */}
                       <td>
-                        <span className="tgt-badge-active">{tgt.status}</span>
+                        <span
+                          className={
+                            tgt.status === "Completed"
+                              ? "tgt-badge-completed"
+                              : tgt.status === "Behind Pace"
+                              ? "tgt-badge-behind"
+                              : "tgt-badge-active"
+                          }
+                        >
+                          {tgt.status}
+                        </span>
                       </td>
 
                       {/* Created */}
@@ -914,7 +1074,232 @@ export default function Targets() {
                           by {tgt.createdBy}
                         </small>
                       </td>
+
+                      {/* Actions */}
+                      {canCreateAndPush && (
+                        <td style={{ textAlign: "center" }}>
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenRecordSaleModal(tgt)}
+                              style={{
+                                background: "#ecfdf5",
+                                border: "1px solid #a7f3d0",
+                                color: "#065f46",
+                                cursor: "pointer",
+                                padding: "4px 8px",
+                                borderRadius: 6,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 3,
+                                fontSize: 11,
+                                fontWeight: 600,
+                              }}
+                              title="Record individual sale against this target"
+                            >
+                              <Plus size={11} /> Sale
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTarget(tgt.id, tgt.title)}
+                              style={{
+                                background: "transparent",
+                                border: "none",
+                                color: "#ef4444",
+                                cursor: "pointer",
+                                padding: 4,
+                                borderRadius: 4,
+                              }}
+                              title="Delete target"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
+
+                    {/* Expanded Individual Sales & Variance Breakdown */}
+                    {isExpanded && (
+                      <tr key={`${tgt.id}-expanded`}>
+                        <td
+                          colSpan={canCreateAndPush ? 9 : 8}
+                          style={{
+                            padding: "14px 20px 20px",
+                            background: "#f8faf9",
+                            borderTop: "1px dashed #d1e2da",
+                            borderBottom: "1px solid #e2e8e5",
+                          }}
+                        >
+                          <div>
+                            {/* Header Bar */}
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                flexWrap: "wrap",
+                                gap: 10,
+                                marginBottom: 12,
+                              }}
+                            >
+                              <div>
+                                <h5 style={{ margin: "0 0 3px", fontSize: 13.5, fontWeight: 700, color: "#0c2b20" }}>
+                                  Individual Sales & Variance for {tgt.salesRep.name}
+                                </h5>
+                                <p style={{ margin: 0, fontSize: 11.5, color: "#64748b" }}>
+                                  Target Window: <strong>{tgt.startDate}</strong> to <strong>{tgt.endDate}</strong> · Quota:{" "}
+                                  <strong>{tgt.targetQuantity} {tgt.unit}</strong>
+                                </p>
+                              </div>
+
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <span
+                                  style={{
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    color: (tgt.variance ?? 0) <= 0 ? "#059669" : "#b45309",
+                                    padding: "4px 9px",
+                                    background: (tgt.variance ?? 0) <= 0 ? "#ecfdf5" : "#fffbeb",
+                                    border: `1px solid ${(tgt.variance ?? 0) <= 0 ? "#a7f3d0" : "#fde68a"}`,
+                                    borderRadius: 6,
+                                  }}
+                                >
+                                  {(tgt.variance ?? 0) <= 0
+                                    ? `Target Reached (+${Math.abs(tgt.variance ?? 0)} surplus)`
+                                    : `${tgt.variance} ${tgt.unit} remaining`}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="btn-secondary-target"
+                                  onClick={() => handleOpenRecordSaleModal(tgt)}
+                                  style={{ fontSize: 11, padding: "5px 10px", display: "inline-flex", alignItems: "center", gap: 4 }}
+                                >
+                                  <Plus size={12} /> Log Sale
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Summary Metrics Cards */}
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                                gap: 10,
+                                marginBottom: 14,
+                              }}
+                            >
+                              <div style={{ padding: "10px 14px", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+                                <span style={{ fontSize: 10.5, color: "#64748b", textTransform: "uppercase", fontWeight: 700 }}>
+                                  Target Quota
+                                </span>
+                                <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a", marginTop: 2 }}>
+                                  {tgt.targetQuantity} {tgt.unit}
+                                </div>
+                              </div>
+                              <div style={{ padding: "10px 14px", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+                                <span style={{ fontSize: 10.5, color: "#64748b", textTransform: "uppercase", fontWeight: 700 }}>
+                                  Achieved Volume
+                                </span>
+                                <div style={{ fontSize: 16, fontWeight: 800, color: "#059669", marginTop: 2 }}>
+                                  {tgt.achievedQuantity} {tgt.unit}
+                                </div>
+                              </div>
+                              <div style={{ padding: "10px 14px", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+                                <span style={{ fontSize: 10.5, color: "#64748b", textTransform: "uppercase", fontWeight: 700 }}>
+                                  Variance
+                                </span>
+                                <div
+                                  style={{
+                                    fontSize: 16,
+                                    fontWeight: 800,
+                                    color: (tgt.variance ?? 0) <= 0 ? "#059669" : "#dc2626",
+                                    marginTop: 2,
+                                  }}
+                                >
+                                  {(tgt.variance ?? 0) <= 0
+                                    ? `+${Math.abs(tgt.variance ?? 0)} ${tgt.unit}`
+                                    : `-${tgt.variance} ${tgt.unit}`}
+                                </div>
+                              </div>
+                              <div style={{ padding: "10px 14px", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+                                <span style={{ fontSize: 10.5, color: "#64748b", textTransform: "uppercase", fontWeight: 700 }}>
+                                  Sales Recorded
+                                </span>
+                                <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a", marginTop: 2 }}>
+                                  {tgt.matchingSales?.length || 0} transaction(s)
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Contributing Sales Table */}
+                            <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+                              <div
+                                style={{
+                                  padding: "9px 14px",
+                                  background: "#f8fafc",
+                                  borderBottom: "1px solid #e2e8f0",
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  color: "#1e293b",
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                }}
+                              >
+                                <span>Individual Sales Ledger Entries</span>
+                                <small style={{ color: "#64748b", fontWeight: 500 }}>
+                                  {tgt.matchingSales?.length || 0} matched
+                                </small>
+                              </div>
+                              {!tgt.matchingSales || tgt.matchingSales.length === 0 ? (
+                                <div style={{ padding: "18px", textAlign: "center", color: "#64748b", fontSize: 12 }}>
+                                  No individual sales recorded for this sales representative matching this product bundle yet.
+                                </div>
+                              ) : (
+                                <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                                  <thead>
+                                    <tr style={{ background: "#f8fafc", color: "#64748b", textAlign: "left" }}>
+                                      <th style={{ padding: "8px 14px" }}>Date</th>
+                                      <th style={{ padding: "8px 14px" }}>Outlet</th>
+                                      <th style={{ padding: "8px 14px" }}>Product</th>
+                                      <th style={{ padding: "8px 14px" }}>Quantity</th>
+                                      <th style={{ padding: "8px 14px" }}>Amount</th>
+                                      <th style={{ padding: "8px 14px" }}>Reference</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {tgt.matchingSales.map((sale) => (
+                                      <tr key={sale.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                                        <td style={{ padding: "8px 14px", color: "#0f172a", whiteSpace: "nowrap" }}>
+                                          {sale.sale_date}
+                                        </td>
+                                        <td style={{ padding: "8px 14px", fontWeight: 600, color: "#0f172a" }}>
+                                          {sale.outlet || "Direct Sale"}
+                                        </td>
+                                        <td style={{ padding: "8px 14px", color: "#065f46" }}>
+                                          {sale.drink_type}
+                                        </td>
+                                        <td style={{ padding: "8px 14px", fontWeight: 700 }}>
+                                          {sale.quantity} {sale.unit_type === 2 ? "Cases" : "Bottles"}
+                                        </td>
+                                        <td style={{ padding: "8px 14px", color: "#0f172a", whiteSpace: "nowrap" }}>
+                                          ₦{Number(sale.total_amount || 0).toLocaleString()}
+                                        </td>
+                                        <td style={{ padding: "8px 14px", color: "#94a3b8", fontSize: 11 }}>
+                                          {sale.reference || "N/A"}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -1318,6 +1703,175 @@ export default function Targets() {
               <div className="tgt-modal-footer">
                 <button type="submit" className="tgt-submit-btn">
                   Push Target Notification
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── RECORD SALE AGAINST TARGET MODAL ── */}
+      {recordSaleTarget && (
+        <div className="tgt-modal-backdrop" role="dialog" aria-modal="true">
+          <div className="tgt-modal-dialog" style={{ maxWidth: 520 }}>
+            <div className="tgt-modal-header">
+              <div className="tgt-modal-header-text">
+                <div style={{ textAlign: "center", marginBottom: 4, color: "#065f46" }}>
+                  <TrendingUp size={16} />
+                </div>
+                <h3>Record Sale Against Target</h3>
+                <p>
+                  Log an individual sale contributing to <strong>{recordSaleTarget.salesRep.name}</strong>'s quota ({recordSaleTarget.targetQuantity} {recordSaleTarget.unit}).
+                </p>
+              </div>
+              <button
+                type="button"
+                className="tgt-modal-close"
+                onClick={() => setRecordSaleTarget(null)}
+                aria-label="Close dialog"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleRecordSaleSubmit}>
+              <div className="tgt-modal-body">
+                {/* 1. Target Product */}
+                <div className="tgt-field-group">
+                  <span className="tgt-field-label">Target Product</span>
+                  {recordSaleTarget.bundledDrinks && recordSaleTarget.bundledDrinks.length > 0 ? (
+                    <select
+                      className="targets-select-filter"
+                      value={recordDrinkName}
+                      onChange={(e) => setRecordDrinkName(e.target.value)}
+                      required
+                    >
+                      {recordSaleTarget.bundledDrinks.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      className="targets-select-filter"
+                      value={recordDrinkName}
+                      readOnly
+                      style={{ background: "#f8fafc" }}
+                    />
+                  )}
+                </div>
+
+                {/* 2. Outlet */}
+                <div className="tgt-field-group">
+                  <span className="tgt-field-label">Retail Outlet</span>
+                  {outletsList.length > 0 ? (
+                    <select
+                      className="targets-select-filter"
+                      value={recordOutletId}
+                      onChange={(e) => setRecordOutletId(e.target.value)}
+                      required
+                    >
+                      {outletsList.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.name} {o.state ? `(${o.state})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      className="targets-select-filter"
+                      placeholder="Enter outlet or store name"
+                      value={recordCustomOutlet}
+                      onChange={(e) => setRecordCustomOutlet(e.target.value)}
+                      required
+                    />
+                  )}
+                </div>
+
+                {/* 3. Quantity & Unit */}
+                <div className="tgt-dates-row">
+                  <div className="tgt-field-group">
+                    <span className="tgt-field-label">Quantity</span>
+                    <input
+                      type="number"
+                      min={1}
+                      className="targets-select-filter"
+                      value={recordQty}
+                      onChange={(e) => setRecordQty(Math.max(1, parseInt(e.target.value) || 1))}
+                      required
+                    />
+                  </div>
+                  <div className="tgt-field-group">
+                    <span className="tgt-field-label">Unit Type</span>
+                    <select
+                      className="targets-select-filter"
+                      value={recordUnit}
+                      onChange={(e) => setRecordUnit(e.target.value as TargetUnit)}
+                    >
+                      <option value="Cases">Cases</option>
+                      <option value="Bottles">Bottles</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* 4. Sale Date & Price */}
+                <div className="tgt-dates-row">
+                  <div className="tgt-field-group">
+                    <span className="tgt-field-label">Sale Date</span>
+                    <input
+                      type="date"
+                      className="targets-select-filter"
+                      value={recordSaleDate}
+                      onChange={(e) => setRecordSaleDate(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="tgt-field-group">
+                    <span className="tgt-field-label">Unit Price (₦)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={500}
+                      className="targets-select-filter"
+                      value={recordUnitPrice}
+                      onChange={(e) => setRecordUnitPrice(Math.max(0, parseInt(e.target.value) || 0))}
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Rollup Summary */}
+                <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "10px 14px", borderRadius: 8, fontSize: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#166534" }}>
+                    <span>Total Transaction Value:</span>
+                    <strong>₦{(recordQty * recordUnitPrice).toLocaleString()}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#166534", marginTop: 4 }}>
+                    <span>Sales Progress Impact:</span>
+                    <strong>+{recordQty} {recordUnit} toward quota</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div className="tgt-modal-footer">
+                <button
+                  type="button"
+                  className="btn-secondary-target"
+                  onClick={() => setRecordSaleTarget(null)}
+                  style={{ padding: "9px 14px" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="tgt-submit-btn"
+                  style={{ width: "auto", minWidth: 160 }}
+                  disabled={isSubmittingSale}
+                >
+                  {isSubmittingSale ? "Recording sale..." : "Save & Update Progress"}
                 </button>
               </div>
             </form>

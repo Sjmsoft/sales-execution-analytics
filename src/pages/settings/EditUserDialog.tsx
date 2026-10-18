@@ -58,7 +58,13 @@ export function EditUserDialog({
     return AVAILABLE_REGIONS;
   }, [configuredRegions]);
 
-  const isNationalRole = roleKey === "administrator" || roleKey === "national_sales_manager" || roleKey === "hr";
+  const isNationalRole =
+    roleKey === "administrator" ||
+    roleKey === "national_sales_manager" ||
+    roleKey === "hr" ||
+    roleKey.includes("admin") ||
+    roleKey.includes("human_resource") ||
+    roleKey.includes("national_sales");
 
   // Region toggling
   function toggleRegion(r: string) {
