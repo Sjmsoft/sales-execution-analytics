@@ -645,9 +645,17 @@
 }
 
 @keyframes checkin-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6); }
-  70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+  }
+
+  70% {
+    box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
 }
 
 .checkin-stopwatch-big {
@@ -1019,6 +1027,49 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.checkin-photo-compression-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  margin-top: 3px;
+  width: fit-content;
+}
+
+.checkin-photo-compressing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #059669;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  padding: 8px 14px;
+  border-radius: 10px;
+}
+
+.checkin-compressing-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #a7f3d0;
+  border-top-color: #059669;
+  border-radius: 50%;
+  animation: checkin-spinner 0.7s linear infinite;
+}
+
+@keyframes checkin-spinner {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .checkin-checkout-submit-btn {
@@ -1495,6 +1546,174 @@
 }
 
 @keyframes checkin-fadein {
-  from { opacity: 0; transform: scale(0.98); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ── Admin & HR Force Check-Out Strip ── */
+.checkin-admin-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+  border: 1.5px solid #a7f3d0;
+  border-radius: 16px;
+  padding: 16px 20px;
+  margin-bottom: 22px;
+  box-shadow: 0 4px 14px -3px rgba(5, 150, 105, 0.12);
+  flex-wrap: wrap;
+}
+
+.checkin-admin-strip-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 280px;
+}
+
+.checkin-admin-strip-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #059669;
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(5, 150, 105, 0.25);
+}
+
+.checkin-admin-strip-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #064e3b;
+  flex-wrap: wrap;
+}
+
+.checkin-admin-role-badge {
+  display: inline-flex;
+  align-items: center;
+  background: #d1fae5;
+  color: #047857;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid #6ee7b7;
+}
+
+.checkin-admin-strip-subtitle {
+  font-size: 12.5px;
+  color: #047857;
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+.checkin-admin-strip-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.checkin-admin-refresh-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid #a7f3d0;
+  background: #ffffff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: #065f46;
+  transition: all 0.15s ease;
+}
+
+.checkin-admin-refresh-btn:hover {
+  background: #f0fdf4;
+  border-color: #34d399;
+}
+
+.checkin-admin-strip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.25);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.checkin-admin-strip-btn:hover {
+  background: linear-gradient(135deg, #047857 0%, #064e3b 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(5, 150, 105, 0.32);
+}
+
+.checkin-admin-count-pill {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* ── CheckIn Success Banner ── */
+.checkin-success-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+  padding: 12px 18px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(5, 150, 105, 0.08);
+}
+
+/* ── CheckIn Table Row Check-out Button ── */
+.checkin-row-checkout-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: #ecfdf5;
+  border: 1px solid #6ee7b7;
+  color: #047857;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  width: max-content;
+}
+
+.checkin-row-checkout-btn:hover {
+  background: #059669;
+  color: #ffffff;
 }

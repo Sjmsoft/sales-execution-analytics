@@ -18,6 +18,7 @@ import {
 } from "../../services/userManagementService";
 import { getRegions, type RegionItem } from "../../services/regionService";
 import { ResetPasswordDialog } from "./ResetPasswordDialog";
+import { compressImageToDataUrl } from "../../utils/imageCompression";
 
 type EditUserDialogProps = {
   user: UserAccount;
@@ -92,17 +93,27 @@ export function EditUserDialog({
   const eligibleManagers = getEligibleManagers(roleKey, primaryRegion, allUsers, user.id);
   const selectedRoleDef = SYSTEM_ROLES.find((r) => r.key === roleKey);
 
-  // Handle Photo upload simulation
-  function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  // Handle Photo upload simulation with client compression
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") {
-          setAvatarUrl(reader.result);
-        }
-      };
-      reader.readAsDataURL(file);
+      try {
+        const { dataUrl } = await compressImageToDataUrl(file, {
+          maxWidth: 400,
+          maxHeight: 400,
+          quality: 0.8,
+        });
+        setAvatarUrl(dataUrl);
+      } catch (err) {
+        console.warn("Avatar compression notice, fallback to reader:", err);
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === "string") {
+            setAvatarUrl(reader.result);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
     }
   }
 

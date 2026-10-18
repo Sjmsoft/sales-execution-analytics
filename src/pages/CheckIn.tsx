@@ -14,6 +14,7 @@ import {
   Eye,
   History,
   LocateFixed,
+  LogOut,
   MapPin,
   RefreshCw,
   Search,
@@ -27,13 +28,16 @@ import { getOutlets, type Outlet } from "../services/referenceService";
 import {
   createVisit,
   getActiveVisit,
+  getAllActiveVisits,
   checkOutVisit,
   uploadVisitSignOutPhoto,
   getStaffCheckInHistory,
+  isUserAdminOrHR,
   type VisitRecord,
   type VisitType,
 } from "../services/visitsService";
 import type { ActiveVisit } from "../services/visitsService";
+import { SignOutDialog } from "./visits/SignOutDialog";
 import {
   getUserScope,
   filterOutletsByScope,
@@ -55,6 +59,7 @@ import {
   getVisitOutcomes,
   type VisitOutcomeItem,
 } from "../services/visitOutcomeService";
+import { compressImageWithStats, formatBytes } from "../utils/imageCompression";
 import "./CheckIn.css";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -414,7 +419,44 @@ export default function CheckIn() {
   const [checkoutOutcome, setCheckoutOutcome] = useState("");
   const [checkoutNotes, setCheckoutNotes] = useState("");
   const [checkoutPhoto, setCheckoutPhoto] = useState<File | null>(null);
+  const [isCompressingPhoto, setIsCompressingPhoto] = useState(false);
+  const [photoCompressionStats, setPhotoCompressionStats] = useState<{
+    original: string;
+    compressed: string;
+    savings: string;
+  } | null>(null);
   const photoPreview = useFilePreview(checkoutPhoto);
+
+  async function handlePhotoCapture(file: File | null) {
+    if (!file) {
+      setCheckoutPhoto(null);
+      setPhotoCompressionStats(null);
+      return;
+    }
+
+    setIsCompressingPhoto(true);
+    setPhotoCompressionStats(null);
+    try {
+      const result = await compressImageWithStats(file, {
+        maxWidth: 1600,
+        maxHeight: 1600,
+        quality: 0.8,
+      });
+      setCheckoutPhoto(result.file);
+      if (result.savingsPercent > 0) {
+        setPhotoCompressionStats({
+          original: formatBytes(result.originalSize),
+          compressed: formatBytes(result.compressedSize),
+          savings: `${result.savingsPercent}% saved`,
+        });
+      }
+    } catch (err) {
+      console.warn("Photo compression fallback to original:", err);
+      setCheckoutPhoto(file);
+    } finally {
+      setIsCompressingPhoto(false);
+    }
+  }
 
   // Dynamic configured visit outcomes
   const [availableOutcomes, setAvailableOutcomes] = useState<VisitOutcomeItem[]>([]);
@@ -443,6 +485,57 @@ export default function CheckIn() {
   const [previewPhotoRecord, setPreviewPhotoRecord] = useState<VisitRecord | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
   const historyPageSize = 6;
+
+  // Admin & HR Force Check-Out Capabilities
+  const canAdminCheckOut = useMemo(
+    () => isUserAdminOrHR(role, staff?.assigned_role),
+    [role, staff?.assigned_role]
+  );
+  const [allActiveVisits, setAllActiveVisits] = useState<ActiveVisit[]>([]);
+  const [loadingActiveVisits, setLoadingActiveVisits] = useState(false);
+  const [showAdminActiveModal, setShowAdminActiveModal] = useState(false);
+  const [adminSelectedVisit, setAdminSelectedVisit] = useState<ActiveVisit | null>(null);
+  const [adminSuccessNotice, setAdminSuccessNotice] = useState<string | null>(null);
+  const [adminModalSearch, setAdminModalSearch] = useState("");
+  const [adminModalTab, setAdminModalTab] = useState<"all" | "attendance" | "outlet">("all");
+
+  const loadAllActiveVisits = useCallback(async () => {
+    if (!canAdminCheckOut) return;
+    setLoadingActiveVisits(true);
+    try {
+      const activeList = await getAllActiveVisits();
+      setAllActiveVisits(activeList);
+    } catch (err) {
+      console.warn("Notice loading active visits for admin:", err);
+    } finally {
+      setLoadingActiveVisits(false);
+    }
+  }, [canAdminCheckOut]);
+
+  useEffect(() => {
+    if (canAdminCheckOut) {
+      void loadAllActiveVisits();
+      const interval = setInterval(() => {
+        void loadAllActiveVisits();
+      }, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [canAdminCheckOut, loadAllActiveVisits]);
+
+  const filteredActiveStaff = useMemo(() => {
+    return allActiveVisits.filter((item) => {
+      if (adminModalTab !== "all" && item.type !== adminModalTab) return false;
+      if (adminModalSearch.trim()) {
+        const q = adminModalSearch.toLowerCase();
+        return (
+          (item.staff || "").toLowerCase().includes(q) ||
+          (item.outlet || "").toLowerCase().includes(q) ||
+          (item.notes || "").toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [allActiveVisits, adminModalTab, adminModalSearch]);
 
   // Load available visit outcomes
   useEffect(() => {
@@ -862,6 +955,7 @@ export default function CheckIn() {
       setPageStatus("checked-out");
       setCheckInState(null);
       setCheckoutPhoto(null);
+      setPhotoCompressionStats(null);
       setCheckoutNotes("");
       setGpsStatus("idle");
       setVerifiedGpsData(null);
@@ -982,6 +1076,77 @@ export default function CheckIn() {
           )}
         </div>
       </div>
+
+      {/* ── Admin & HR Check-Out Control Strip ── */}
+      {canAdminCheckOut && (
+        <div className="checkin-admin-strip">
+          <div className="checkin-admin-strip-left">
+            <div className="checkin-admin-strip-icon">
+              <ShieldCheck size={22} />
+            </div>
+            <div>
+              <div className="checkin-admin-strip-title">
+                <span>Admin &amp; HR Check-Out Control</span>
+                <span className="checkin-admin-role-badge">
+                  {roleKey === "hr" ? "HR Management" : "System Administrator"}
+                </span>
+              </div>
+              <div className="checkin-admin-strip-subtitle">
+                {allActiveVisits.length > 0 ? (
+                  <>
+                    <strong>{allActiveVisits.length} staff member{allActiveVisits.length > 1 ? "s are" : " is"} currently checked in</strong> ({allActiveVisits.filter((v) => v.type === "attendance").length} shift{allActiveVisits.filter((v) => v.type === "attendance").length === 1 ? "" : "s"}, {allActiveVisits.filter((v) => v.type === "outlet").length} store visit{allActiveVisits.filter((v) => v.type === "outlet").length === 1 ? "" : "s"}). You can check out any user unable to self check-out.
+                  </>
+                ) : (
+                  "All field representatives and duty stations are currently signed off. No open check-ins."
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="checkin-admin-strip-actions">
+            <button
+              type="button"
+              className="checkin-admin-refresh-btn"
+              onClick={loadAllActiveVisits}
+              disabled={loadingActiveVisits}
+              title="Refresh active check-ins list"
+            >
+              <RefreshCw size={14} className={loadingActiveVisits ? "animate-spin" : ""} />
+            </button>
+            <button
+              type="button"
+              className="checkin-admin-strip-btn"
+              onClick={() => {
+                void loadAllActiveVisits();
+                setShowAdminActiveModal(true);
+              }}
+              title="View all active staff sessions and check out users"
+            >
+              <LogOut size={16} />
+              <span>Check-Out Active Staff</span>
+              <span className="checkin-admin-count-pill">{allActiveVisits.length}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Admin Check-Out Success Toast Banner ── */}
+      {adminSuccessNotice && (
+        <div className="checkin-success-banner" role="status">
+          <div className="checkin-alert-left">
+            <CheckCircle2 size={18} color="#059669" />
+            <span>{adminSuccessNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAdminSuccessNotice(null)}
+            className="checkin-alert-dismiss"
+            aria-label="Dismiss message"
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
 
       {/* ── Action Error Alert Banner ── */}
       {actionError && (
@@ -1129,27 +1294,46 @@ export default function CheckIn() {
               <div className="checkin-photo-capture-box">
                 <label className="checkin-photo-btn">
                   <Camera size={16} />
-                  <span>{checkoutPhoto ? "Change Evidence Photo" : "Capture Photo (Camera)"}</span>
+                  <span>
+                    {isCompressingPhoto
+                      ? "Compressing Photo..."
+                      : checkoutPhoto
+                      ? "Change Evidence Photo"
+                      : "Capture Photo (Camera)"}
+                  </span>
                   <input
                     type="file"
                     accept="image/*"
                     capture="environment"
                     style={{ display: "none" }}
+                    disabled={isCompressingPhoto}
                     onChange={(e) => {
-                      if (e.target.files?.[0]) setCheckoutPhoto(e.target.files[0]);
+                      if (e.target.files?.[0]) handlePhotoCapture(e.target.files[0]);
                     }}
                   />
                 </label>
-                {photoPreview && (
+                {isCompressingPhoto && (
+                  <div className="checkin-photo-compressing-indicator">
+                    <span className="checkin-compressing-spinner" />
+                    <span>Compressing & optimizing for fast upload…</span>
+                  </div>
+                )}
+                {!isCompressingPhoto && photoPreview && (
                   <div className="checkin-photo-preview-wrap">
                     <img src={photoPreview} alt="Checkout Preview" className="checkin-photo-preview-thumb" />
                     <div className="checkin-photo-preview-info">
                       <span style={{ fontSize: 13, color: "#059669", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
-                        <Check size={14} /> Photo Captured
+                        <Check size={14} /> Photo Captured & Compressed
                       </span>
-                      <span style={{ fontSize: 11, color: "#64748b" }}>
-                        Ready for sign-off verification
-                      </span>
+                      {photoCompressionStats ? (
+                        <span className="checkin-photo-compression-pill">
+                          ⚡ {photoCompressionStats.original} → {photoCompressionStats.compressed} ({photoCompressionStats.savings})
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 11, color: "#64748b" }}>
+                          Ready for sign-off verification
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1159,8 +1343,8 @@ export default function CheckIn() {
             <button
               type="button"
               onClick={handleSubmitCheckOut}
-              disabled={pageStatus === "verifying-out" || !checkoutPhoto}
-              className={`checkin-checkout-submit-btn ${checkoutPhoto && pageStatus !== "verifying-out" ? "ready" : "disabled"}`}
+              disabled={pageStatus === "verifying-out" || !checkoutPhoto || isCompressingPhoto}
+              className={`checkin-checkout-submit-btn ${checkoutPhoto && !isCompressingPhoto && pageStatus !== "verifying-out" ? "ready" : "disabled"}`}
             >
               {pageStatus === "verifying-out" ? (
                 <>
@@ -1728,9 +1912,27 @@ export default function CheckIn() {
                     </td>
 
                     <td>
-                      <span className={`checkin-status-badge ${item.status === "Active" ? "active" : "completed"}`}>
-                        {item.status === "Active" ? "● Active Now" : item.outcome || "Completed"}
-                      </span>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <span className={`checkin-status-badge ${item.status === "Active" ? "active" : "completed"}`}>
+                          {item.status === "Active" ? "● Active Now" : item.outcome || "Completed"}
+                        </span>
+                        {item.status === "Active" && canAdminCheckOut && (
+                          <button
+                            type="button"
+                            className="checkin-row-checkout-btn"
+                            onClick={() => {
+                              setAdminSelectedVisit({
+                                ...item,
+                                checkInAt: item.date + "T" + (item.time.split(" - ")[0] || "08:00:00"),
+                              });
+                            }}
+                            title={`Admin/HR: Force check out ${item.staff}`}
+                          >
+                            <LogOut size={11} />
+                            <span>Check Out</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
 
                     <td>
@@ -1746,6 +1948,8 @@ export default function CheckIn() {
                           <Eye size={12} />
                           <span>View Photo</span>
                         </button>
+                      ) : item.photo ? (
+                        <span style={{ fontSize: 11.5, color: "#059669", fontWeight: 600 }}>Proof On File</span>
                       ) : (
                         <span style={{ fontSize: 11.5, color: "#94a3b8" }}>No photo</span>
                       )}
@@ -1812,6 +2016,230 @@ export default function CheckIn() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Active Staff Sessions Management Modal (Admin & HR) ── */}
+      {showAdminActiveModal && (
+        <div className="checkin-modal-backdrop" onClick={() => setShowAdminActiveModal(false)}>
+          <div
+            className="checkin-modal-card checkin-admin-modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 740, width: "94vw", maxHeight: "88vh" }}
+          >
+            <div className="checkin-modal-top" style={{ background: "linear-gradient(135deg, #064e3b 0%, #065f46 100%)", color: "#ffffff", padding: "16px 20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: "rgba(255,255,255,0.15)", display: "grid", placeItems: "center", color: "#a7f3d0" }}>
+                  <ShieldCheck size={20} />
+                </div>
+                <div>
+                  <strong style={{ fontSize: 16, color: "#ffffff", display: "block" }}>
+                    Active Staff Check-Ins (Admin &amp; HR Override)
+                  </strong>
+                  <span style={{ fontSize: 12, color: "#d1fae5" }}>
+                    Check out any user unable to complete their session due to device, network, or GPS issues.
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAdminActiveModal(false)}
+                className="checkin-modal-close"
+                aria-label="Close modal"
+                style={{ color: "#ffffff" }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ padding: "16px 20px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+              {/* Modal Filters Toolbar */}
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", gap: 6, background: "#f1f5f9", padding: 4, borderRadius: 10 }}>
+                  <button
+                    type="button"
+                    onClick={() => setAdminModalTab("all")}
+                    className={`checkin-history-tab-btn ${adminModalTab === "all" ? "active" : ""}`}
+                    style={{ fontSize: 12, padding: "5px 12px" }}
+                  >
+                    All Active ({allActiveVisits.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminModalTab("attendance")}
+                    className={`checkin-history-tab-btn ${adminModalTab === "attendance" ? "active" : ""}`}
+                    style={{ fontSize: 12, padding: "5px 12px" }}
+                  >
+                    Shifts ({allActiveVisits.filter((v) => v.type === "attendance").length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminModalTab("outlet")}
+                    className={`checkin-history-tab-btn ${adminModalTab === "outlet" ? "active" : ""}`}
+                    style={{ fontSize: 12, padding: "5px 12px" }}
+                  >
+                    Store Visits ({allActiveVisits.filter((v) => v.type === "outlet").length})
+                  </button>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 220, justifyContent: "flex-end" }}>
+                  <div style={{ position: "relative", width: "100%", maxWidth: 260 }}>
+                    <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#94a3b8" }} />
+                    <input
+                      type="text"
+                      placeholder="Search staff, outlet, notes..."
+                      value={adminModalSearch}
+                      onChange={(e) => setAdminModalSearch(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "7px 10px 7px 30px",
+                        borderRadius: 8,
+                        border: "1px solid #cbd5e1",
+                        fontSize: 12.5,
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={loadAllActiveVisits}
+                    disabled={loadingActiveVisits}
+                    title="Refresh list"
+                    style={{
+                      padding: "7px 10px",
+                      borderRadius: 8,
+                      border: "1px solid #cbd5e1",
+                      background: "#ffffff",
+                      cursor: "pointer",
+                      display: "grid",
+                      placeItems: "center",
+                    }}
+                  >
+                    <RefreshCw size={14} className={loadingActiveVisits ? "animate-spin" : ""} color="#475569" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Active Cards Grid */}
+              <div style={{ maxHeight: "calc(80vh - 190px)", overflowY: "auto", display: "grid", gap: 10, paddingRight: 4 }}>
+                {loadingActiveVisits && allActiveVisits.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "40px", color: "#64748b", fontSize: 13 }}>
+                    <RefreshCw size={20} className="animate-spin" style={{ display: "inline-block", marginRight: 8, verticalAlign: "middle" }} />
+                    Loading active check-in sessions...
+                  </div>
+                ) : filteredActiveStaff.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "40px 20px", background: "#f8fafc", borderRadius: 12, border: "1px dashed #cbd5e1" }}>
+                    <CheckCircle2 size={32} color="#059669" style={{ margin: "0 auto 8px" }} />
+                    <strong style={{ fontSize: 14, color: "#0f172a", display: "block" }}>No open check-ins found</strong>
+                    <span style={{ fontSize: 12.5, color: "#64748b" }}>
+                      {adminModalSearch || adminModalTab !== "all"
+                        ? "No active sessions match your current search/category filter."
+                        : "All representatives are currently checked out. Great job!"}
+                    </span>
+                  </div>
+                ) : (
+                  filteredActiveStaff.map((item) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "12px 16px",
+                        background: "#ffffff",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: 12,
+                        gap: 14,
+                        transition: "all 0.15s ease",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
+                        <div
+                          style={{
+                            width: 38,
+                            height: 38,
+                            borderRadius: "50%",
+                            background: item.type === "attendance" ? "#ecfdf5" : "#e0f2fe",
+                            color: item.type === "attendance" ? "#065f46" : "#0369a1",
+                            display: "grid",
+                            placeItems: "center",
+                            fontSize: 13,
+                            fontWeight: 800,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {item.staff.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <strong style={{ fontSize: 13.5, color: "#0f172a" }}>{item.staff}</strong>
+                            <span className={`checkin-type-badge ${item.type === "attendance" ? "attendance" : "outlet"}`} style={{ fontSize: 10, padding: "2px 7px" }}>
+                              {item.type === "attendance" ? <CalendarCheck size={10} /> : <Store size={10} />}
+                              {item.type === "attendance" ? "Shift Attendance" : "Store Visit"}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12, color: "#475569", marginTop: 2, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <span style={{ fontWeight: 600 }}>{item.outlet}</span>
+                            {item.outletRegion && <span style={{ color: "#94a3b8" }}>• {item.outletRegion}</span>}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#059669", marginTop: 3, display: "flex", alignItems: "center", gap: 5, fontWeight: 600 }}>
+                            <Clock size={11} /> Checked in {friendlyTime(item.checkInAt)} • Duration: {item.duration}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setAdminSelectedVisit(item)}
+                        style={{
+                          padding: "8px 14px",
+                          borderRadius: 8,
+                          border: "none",
+                          background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                          color: "#ffffff",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          cursor: "pointer",
+                          boxShadow: "0 2px 6px rgba(5, 150, 105, 0.2)",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        <LogOut size={13} />
+                        <span>Check Out</span>
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Admin / HR Override Sign-Out Dialog Modal ── */}
+      {adminSelectedVisit && (
+        <SignOutDialog
+          activeVisit={adminSelectedVisit}
+          forceCheckout={true}
+          adminStaffName={staff?.name}
+          adminRole={role?.name || (roleKey === "hr" ? "HR" : "Administrator")}
+          onDone={(updated) => {
+            setAllActiveVisits((prev) => prev.filter((v) => v.id !== updated.id));
+            if (checkInState && checkInState.visitId === updated.id) {
+              setPageStatus("checked-out");
+              setCheckInState(null);
+            }
+            void loadHistory();
+            setAdminSelectedVisit(null);
+            setAdminSuccessNotice(
+              `Successfully checked out ${adminSelectedVisit.staff} from ${adminSelectedVisit.outlet}.`
+            );
+            setTimeout(() => setAdminSuccessNotice(null), 6000);
+          }}
+          onClose={() => setAdminSelectedVisit(null)}
+        />
       )}
     </div>
   );

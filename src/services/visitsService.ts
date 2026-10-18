@@ -1,5 +1,6 @@
 import { supabase } from "../lib/supabase";
 import { isValidUuid, generateUuid, toIntegerOutletType } from "./referenceService";
+import { compressImage, compressImageToDataUrl } from "../utils/imageCompression";
 
 export type VisitRecord = {
   id: string;
@@ -90,6 +91,77 @@ function mapVisit(row: VisitRow): VisitRecord {
   };
 }
 
+/**
+ * Resolves a visit photo reference (storage path, direct URL, or data URL) into a displayable URL.
+ */
+export async function resolveVisitPhotoUrl(photoRef?: string | null): Promise<string | null> {
+  if (!photoRef) return null;
+  const raw = photoRef.trim();
+  if (!raw) return null;
+
+  // 1. Full web URL or base64 Data URL or Blob URL
+  if (
+    raw.startsWith("http://") ||
+    raw.startsWith("https://") ||
+    raw.startsWith("data:") ||
+    raw.startsWith("blob:")
+  ) {
+    return raw;
+  }
+
+  // 2. Check local fallback cache (used when offline or if storage upload warned)
+  try {
+    const cached = localStorage.getItem(`visit_photo_${raw}`);
+    if (cached) return cached;
+  } catch {}
+
+  // 3. If it starts with "photo_", it was an old offline/warning fallback string.
+  // Check if anything in localStorage matches this visit's photo
+  if (raw.startsWith("photo_")) {
+    try {
+      const keys = Object.keys(localStorage);
+      for (const k of keys) {
+        if (k.startsWith("visit_photo_") && k.includes(raw)) {
+          const val = localStorage.getItem(k);
+          if (val) return val;
+        }
+      }
+    } catch {}
+    // If no image data exists for this dummy string, return null
+    return null;
+  }
+
+  // 4. Try public URL from visit-photos bucket
+  try {
+    const { data: pubData } = supabase.storage.from("visit-photos").getPublicUrl(raw);
+    if (pubData?.publicUrl) {
+      // Also attempt signed URL if bucket is private
+      try {
+        const { data: signedPhoto, error: signErr } = await supabase.storage
+          .from("visit-photos")
+          .createSignedUrl(raw, 60 * 60 * 24);
+        if (!signErr && signedPhoto?.signedUrl) {
+          return signedPhoto.signedUrl;
+        }
+      } catch {}
+
+      return pubData.publicUrl;
+    }
+  } catch {}
+
+  // 5. Try signed URL directly
+  try {
+    const { data: signedPhoto, error: signErr } = await supabase.storage
+      .from("visit-photos")
+      .createSignedUrl(raw, 60 * 60 * 24);
+    if (!signErr && signedPhoto?.signedUrl) {
+      return signedPhoto.signedUrl;
+    }
+  } catch {}
+
+  return null;
+}
+
 export async function getVisits(startDate?: string, endDate?: string) {
   const runQuery = async (columns: string) => {
     let query = (supabase.from("visits") as any)
@@ -111,12 +183,12 @@ export async function getVisits(startDate?: string, endDate?: string) {
   return Promise.all(((data ?? []) as unknown as VisitRow[]).map(async (row) => {
     const visit = mapVisit(row);
     if (!row.sign_out_photo_url) return visit;
-    try {
-      const { data: signedPhoto } = await supabase.storage.from("visit-photos").createSignedUrl(row.sign_out_photo_url, 60 * 60);
-      return { ...visit, photoUrl: signedPhoto?.signedUrl ?? null };
-    } catch {
-      return visit;
-    }
+    const photoUrl = await resolveVisitPhotoUrl(row.sign_out_photo_url);
+    return {
+      ...visit,
+      photo: Boolean(photoUrl || row.sign_out_photo_url),
+      photoUrl,
+    };
   }));
 }
 
@@ -146,12 +218,12 @@ export async function getStaffAttendanceHistory(
   return Promise.all(((data ?? []) as unknown as VisitRow[]).map(async (row) => {
     const visit = mapVisit(row);
     if (!row.sign_out_photo_url) return visit;
-    try {
-      const { data: signedPhoto } = await supabase.storage.from("visit-photos").createSignedUrl(row.sign_out_photo_url, 60 * 60);
-      return { ...visit, photoUrl: signedPhoto?.signedUrl ?? null };
-    } catch {
-      return visit;
-    }
+    const photoUrl = await resolveVisitPhotoUrl(row.sign_out_photo_url);
+    return {
+      ...visit,
+      photo: Boolean(photoUrl || row.sign_out_photo_url),
+      photoUrl,
+    };
   }));
 }
 
@@ -179,13 +251,59 @@ export async function getStaffCheckInHistory(
   return Promise.all(((data ?? []) as unknown as VisitRow[]).map(async (row) => {
     const visit = mapVisit(row);
     if (!row.sign_out_photo_url) return visit;
-    try {
-      const { data: signedPhoto } = await supabase.storage.from("visit-photos").createSignedUrl(row.sign_out_photo_url, 60 * 60);
-      return { ...visit, photoUrl: signedPhoto?.signedUrl ?? null };
-    } catch {
-      return visit;
-    }
+    const photoUrl = await resolveVisitPhotoUrl(row.sign_out_photo_url);
+    return {
+      ...visit,
+      photo: Boolean(photoUrl || row.sign_out_photo_url),
+      photoUrl,
+    };
   }));
+}
+
+export function isUserAdminOrHR(
+  role?: { key?: string; name?: string; hierarchy_level?: number } | null,
+  assignedRole?: string
+): boolean {
+  const roleKey = (role?.key || assignedRole || "").toLowerCase();
+  const roleName = (role?.name || "").toLowerCase();
+  const isAdmin =
+    roleKey === "administrator" ||
+    roleKey === "admin" ||
+    roleKey.includes("admin") ||
+    role?.hierarchy_level === 1;
+  const isHR =
+    roleKey === "hr" ||
+    roleKey.includes("human_resource") ||
+    roleName.includes("human resource") ||
+    roleName.includes("hr");
+  return Boolean(isAdmin || isHR);
+}
+
+export async function getAllActiveVisits(visitType?: VisitType): Promise<ActiveVisit[]> {
+  try {
+    let query = (supabase.from("visits") as any)
+      .select(VISIT_COLUMNS)
+      .is("check_out_at", null)
+      .order("check_in_at", { ascending: false });
+
+    if (visitType) {
+      query = query.eq("visit_type", visitType);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error("Failed to load active visits:", error);
+      return [];
+    }
+
+    return ((data ?? []) as unknown as VisitRow[]).map((row) => {
+      const mapped = mapVisit(row);
+      return { ...mapped, checkInAt: row.check_in_at };
+    });
+  } catch (err) {
+    console.error("Error fetching all active visits:", err);
+    return [];
+  }
 }
 
 export async function getActiveVisit(
@@ -429,31 +547,91 @@ export async function createVisit(input: {
 }
 
 export async function uploadVisitSignOutPhoto(visitId: string, file: File): Promise<string> {
+  // 1. Compress image for mobile web
+  const compressed = await compressImage(file, {
+    maxWidth: 1600,
+    maxHeight: 1600,
+    quality: 0.8,
+  });
+
+  // 2. Prepare compact base64 data URL as persistent fallback
+  let fallbackDataUrl = "";
   try {
-    const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
-    const path = `${visitId}/${crypto.randomUUID()}.${extension}`;
+    const { dataUrl } = await compressImageToDataUrl(file, {
+      maxWidth: 800,
+      maxHeight: 800,
+      quality: 0.75,
+    });
+    fallbackDataUrl = dataUrl;
+  } catch {}
+
+  const extension = compressed.name.split(".").pop()?.toLowerCase() || "jpg";
+  const path = `${visitId}/${crypto.randomUUID()}.${extension}`;
+
+  try {
     const { error } = await supabase.storage
       .from("visit-photos")
-      .upload(path, file, { contentType: file.type, upsert: true });
+      .upload(path, compressed, { contentType: compressed.type || "image/jpeg", upsert: true });
 
-    if (!error) return path;
-    console.warn("Storage upload warning, using local photo ref:", error);
+    if (!error) {
+      const { data: pubData } = supabase.storage.from("visit-photos").getPublicUrl(path);
+      const publicUrl = pubData?.publicUrl || path;
+
+      try {
+        if (fallbackDataUrl) {
+          localStorage.setItem(`visit_photo_${path}`, fallbackDataUrl);
+          localStorage.setItem(`visit_photo_${publicUrl}`, fallbackDataUrl);
+          localStorage.setItem(`visit_photo_${visitId}`, fallbackDataUrl);
+        }
+      } catch {}
+
+      return publicUrl;
+    }
+    console.warn("Storage upload warning, using local photo fallback:", error);
   } catch (err) {
-    console.warn("Storage upload notice, using local photo ref:", err);
+    console.warn("Storage upload notice, using local photo fallback:", err);
   }
+
+  // If storage upload failed (network, offline, RLS, etc.), return the compressed Data URL directly
+  // so the photo is NEVER lost and is immediately viewable!
+  if (fallbackDataUrl) {
+    try {
+      localStorage.setItem(`visit_photo_${visitId}`, fallbackDataUrl);
+      localStorage.setItem(`visit_photo_${path}`, fallbackDataUrl);
+    } catch {}
+    return fallbackDataUrl;
+  }
+
   return `photo_${Date.now()}_${file.name}`;
 }
 
 export async function checkOutVisit(
   visitId: string,
-  input: { outcome: string; notes: string; photoPath?: string; staffId?: string }
+  input: {
+    outcome: string;
+    notes: string;
+    photoPath?: string;
+    staffId?: string;
+    adminStaffName?: string;
+    adminRole?: string;
+    checkOutAt?: string;
+  }
 ) {
-  const checkOutIso = new Date().toISOString();
+  const checkOutIso = input.checkOutAt || new Date().toISOString();
+
+  let formattedNotes = input.notes ? input.notes.trim() : "";
+  if (input.adminStaffName) {
+    const adminTag = `[Admin Check-Out by ${input.adminStaffName}${input.adminRole ? ` (${input.adminRole})` : ""}]`;
+    if (!formattedNotes.includes("Admin Check-Out by")) {
+      formattedNotes = formattedNotes ? `${formattedNotes} • ${adminTag}` : adminTag;
+    }
+  }
+
   const updatePayload: Record<string, any> = {
     check_out_at: checkOutIso,
     status: "Completed",
-    outcome: input.outcome,
-    notes: input.notes || null,
+    outcome: input.outcome || "Successful",
+    notes: formattedNotes || null,
     ...(input.photoPath ? { sign_out_photo_url: input.photoPath } : {}),
   };
 
@@ -479,7 +657,12 @@ export async function checkOutVisit(
 
     if (fullRow) {
       const mapped = mapVisit(fullRow as unknown as VisitRow);
-      return { ...mapped, outcome: input.outcome, status: "Completed" as const };
+      return {
+        ...mapped,
+        outcome: input.outcome || mapped.outcome,
+        status: "Completed" as const,
+        notes: formattedNotes || mapped.notes,
+      };
     }
   } catch (err) {
     console.warn("Supabase checkout fetch notice:", err);
@@ -490,16 +673,16 @@ export async function checkOutVisit(
     id: visitId,
     outlet: "Outlet",
     staff: "Staff",
-    date: new Date().toISOString().slice(0, 10),
-    time: new Date().toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit" }),
+    date: checkOutIso.slice(0, 10),
+    time: new Date(checkOutIso).toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit" }),
     duration: "1 minute",
     status: "Completed" as const,
-    outcome: input.outcome,
+    outcome: input.outcome || "Successful",
     gps: true,
     photo: Boolean(input.photoPath),
     photoUrl: null,
     type: "outlet" as const,
-    notes: input.notes || null,
+    notes: formattedNotes || null,
   };
 }
 

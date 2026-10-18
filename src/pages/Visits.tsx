@@ -24,7 +24,9 @@ import { getVisitOutcomes } from "../services/visitOutcomeService";
 import {
   deleteVisit,
   getVisits,
+  isUserAdminOrHR,
   type VisitRecord,
+  type ActiveVisit,
 } from "../services/visitsService";
 import {
   getUserScope,
@@ -35,6 +37,7 @@ import { FilterSelect, VisitDatePicker } from "./visits/VisitFilters";
 import { VisitsDashboard, type VisitsTab } from "./visits/VisitsDashboard";
 import { LeaderboardView } from "./visits/LeaderboardView";
 import { VisitsTable, type SortDirection, type SortField } from "./visits/VisitsTable";
+import { SignOutDialog } from "./visits/SignOutDialog";
 import { VisitsPageSkeleton } from "../components/ui/Skeleton";
 import { useMinimumLoading } from "../hooks/useMinimumLoading";
 import {
@@ -123,6 +126,13 @@ export default function Visits() {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [visitError, setVisitError] = useState("");
+  const [checkoutSuccessMessage, setCheckoutSuccessMessage] = useState("");
+
+  const canAdminCheckOut = useMemo(
+    () => isUserAdminOrHR(role, staff?.assigned_role),
+    [role, staff?.assigned_role]
+  );
+  const [adminCheckoutVisit, setAdminCheckoutVisit] = useState<ActiveVisit | null>(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -519,6 +529,39 @@ export default function Visits() {
       </div>
 
       {/* ── Feedback Banners ─────────────────────────────────────── */}
+      {checkoutSuccessMessage && (
+        <div
+          role="status"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            background: "#ecfdf5",
+            border: "1px solid #a7f3d0",
+            color: "#065f46",
+            padding: "11px 16px",
+            borderRadius: 10,
+            marginBottom: 16,
+            fontSize: 13.5,
+            fontWeight: 600,
+            boxShadow: "0 2px 6px rgba(5, 150, 105, 0.08)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Check size={18} color="#059669" />
+            <span>{checkoutSuccessMessage}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCheckoutSuccessMessage("")}
+            style={{ border: 0, background: "transparent", color: "#059669", cursor: "pointer", display: "grid", placeItems: "center" }}
+            aria-label="Dismiss message"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {visitError && (
         <div className="visits-error-banner" role="alert">
           <AlertCircle size={16} />
@@ -541,7 +584,12 @@ export default function Visits() {
           <small className="kpi-subtext">Scoped to current filters</small>
         </div>
 
-        <div className="visits-kpi-card kpi-card-active">
+        <div
+          className={`visits-kpi-card kpi-card-active ${filters.status === "Active" ? "active-filter-highlight" : ""}`}
+          onClick={() => setFilter("status", filters.status === "Active" ? ALL.status : "Active")}
+          style={{ cursor: "pointer" }}
+          title={filters.status === "Active" ? "Click to clear Active filter" : "Click to view all Active check-ins"}
+        >
           <div className="kpi-card-header">
             <span className="kpi-label">Active Right Now</span>
             <div className="kpi-icon-cube icon-active">
@@ -550,7 +598,13 @@ export default function Visits() {
           </div>
           <strong className="kpi-value">{metrics.pendingOrPartial}</strong>
           <small className="kpi-subtext">
-            {metrics.pendingOrPartial > 0 ? "Checkout pending" : "No open check-in"}
+            {filters.status === "Active"
+              ? "Filtering: Active check-ins"
+              : metrics.pendingOrPartial > 0
+              ? canAdminCheckOut
+                ? "Click to view & check out"
+                : "Checkout pending"
+              : "No open check-in"}
           </small>
         </div>
 
@@ -799,12 +853,39 @@ export default function Visits() {
             onSort={toggleSort}
             isMobile={isMobile}
             onDeleteVisit={handleDeleteVisit}
+            onAdminCheckOut={(visit) => {
+              setAdminCheckoutVisit({
+                ...visit,
+                checkInAt: visit.date + "T" + (visit.time.split(" - ")[0] || "08:00:00"),
+              });
+            }}
+            canAdminCheckOut={canAdminCheckOut}
             isAttendanceTab={isAttendanceTab}
             onResetFilters={resetFilters}
             hasActiveFilters={hasActiveFilters}
             loading={loading}
           />
         </section>
+      )}
+
+      {/* ── Admin / HR Override Sign-Out Dialog ─────────────────────── */}
+      {adminCheckoutVisit && (
+        <SignOutDialog
+          activeVisit={adminCheckoutVisit}
+          forceCheckout={true}
+          adminStaffName={staff?.name}
+          adminRole={role?.name || (roleKey === "hr" ? "HR" : "Administrator")}
+          onDone={(updated) => {
+            setVisits((current) => current.map((v) => (v.id === updated.id ? updated : v)));
+            setAdminCheckoutVisit(null);
+            setCheckoutSuccessMessage(
+              `Successfully checked out ${adminCheckoutVisit.staff} from ${adminCheckoutVisit.outlet}.`
+            );
+            setTimeout(() => setCheckoutSuccessMessage(""), 6000);
+            reload();
+          }}
+          onClose={() => setAdminCheckoutVisit(null)}
+        />
       )}
     </div>
   );

@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Eye,
   FileText,
+  LogOut,
   MapPin,
   RotateCcw,
   Store,
@@ -37,6 +38,8 @@ type VisitsTableProps = {
   onSort: (field: SortField) => void;
   isMobile?: boolean;
   onDeleteVisit?: (visit: VisitRecord) => void;
+  onAdminCheckOut?: (visit: VisitRecord) => void;
+  canAdminCheckOut?: boolean;
   isAttendanceTab?: boolean;
   onResetFilters?: () => void;
   hasActiveFilters?: boolean;
@@ -58,6 +61,8 @@ export function VisitsTable({
   onSort,
   isMobile = false,
   onDeleteVisit,
+  onAdminCheckOut,
+  canAdminCheckOut = false,
   isAttendanceTab = false,
   onResetFilters,
   hasActiveFilters = false,
@@ -262,10 +267,23 @@ export function VisitsTable({
                           {visit.gps ? "GPS Captured" : "GPS Pending"}
                         </span>
                         {visit.photo && (
-                          <span className="verification-chip photo-valid">
+                          <button
+                            type="button"
+                            className={`verification-chip photo-valid ${visit.photoUrl ? "clickable" : ""}`}
+                            onClick={() => {
+                              if (visit.photoUrl) {
+                                setPreviewPhoto({
+                                  url: visit.photoUrl,
+                                  title: `${visit.outlet} photo proof (${visit.staff})`,
+                                });
+                              }
+                            }}
+                            title={visit.photoUrl ? "Click to view photo proof" : "Photo evidence on file"}
+                            style={{ cursor: visit.photoUrl ? "pointer" : "default", border: "none" }}
+                          >
                             <Camera size={11} />
                             Photo Proof
-                          </span>
+                          </button>
                         )}
                       </div>
                     </td>
@@ -288,8 +306,25 @@ export function VisitsTable({
                               <Eye size={12} />
                             </span>
                           </button>
+                        ) : visit.photo ? (
+                          <span className="no-photo-text" style={{ color: "#059669", fontWeight: 600 }}>
+                            Proof On File
+                          </span>
                         ) : (
                           <span className="no-photo-text">No photo</span>
+                        )}
+
+                        {visit.status === "Active" && canAdminCheckOut && onAdminCheckOut && (
+                          <button
+                            type="button"
+                            className="visit-row-checkout-btn"
+                            onClick={() => onAdminCheckOut(visit)}
+                            title={`Admin / HR Check-Out: Force sign-out for ${visit.staff}`}
+                            aria-label={`Check out ${visit.staff}`}
+                          >
+                            <LogOut size={13} />
+                            <span>Check Out</span>
+                          </button>
                         )}
 
                         {onDeleteVisit && (
@@ -432,6 +467,17 @@ export function VisitsTable({
                       >
                         <Eye size={13} />
                         <span>Photo</span>
+                      </button>
+                    )}
+                    {visit.status === "Active" && canAdminCheckOut && onAdminCheckOut && (
+                      <button
+                        type="button"
+                        className="mobile-card-checkout-btn"
+                        onClick={() => onAdminCheckOut(visit)}
+                        title={`Admin / HR Check-Out: Force sign-out for ${visit.staff}`}
+                      >
+                        <LogOut size={13} />
+                        <span>Check Out</span>
                       </button>
                     )}
                     {onDeleteVisit && (

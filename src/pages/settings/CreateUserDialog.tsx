@@ -16,6 +16,7 @@ import {
   type UserAccount,
 } from "../../services/userManagementService";
 import { getRegions, type RegionItem } from "../../services/regionService";
+import { compressImageToDataUrl } from "../../utils/imageCompression";
 
 type CreateUserDialogProps = {
   allUsers: UserAccount[];
@@ -69,16 +70,26 @@ export function CreateUserDialog({
     }
   }
 
-  function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") {
-          setAvatarUrl(reader.result);
-        }
-      };
-      reader.readAsDataURL(file);
+      try {
+        const { dataUrl } = await compressImageToDataUrl(file, {
+          maxWidth: 400,
+          maxHeight: 400,
+          quality: 0.8,
+        });
+        setAvatarUrl(dataUrl);
+      } catch (err) {
+        console.warn("Avatar compression notice, fallback to reader:", err);
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === "string") {
+            setAvatarUrl(reader.result);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
     }
   }
 
