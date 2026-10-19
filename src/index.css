@@ -5982,7 +5982,7 @@ tbody tr:hover {
 .modal-backdrop-pro {
   position: fixed;
   inset: 0;
-  z-index: 350;
+  z-index: 1200;
   display: grid;
   place-items: center;
   padding: 20px;
@@ -6980,124 +6980,656 @@ div.desktop-only {
 
   /* Mobile Add/Edit Outlet Modal */
   .modal-backdrop-pro {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 1200 !important; /* Above mobile bottom navigation dock (z-index: 1000) */
     padding: 0 !important;
-    background: rgba(0, 0, 0, 0.6) !important;
+    background: rgba(3, 20, 15, 0.72) !important;
+    backdrop-filter: blur(4px) !important;
+    -webkit-backdrop-filter: blur(4px) !important;
+    display: block !important;
   }
 
   .outlet-modal-container {
     position: fixed !important;
     inset: 0 !important;
     width: 100vw !important;
-    height: 100vh !important;
+    height: 100% !important;
+    height: 100dvh !important;
     max-width: 100vw !important;
-    max-height: 100vh !important;
+    max-height: 100% !important;
+    max-height: 100dvh !important;
     border-radius: 0 !important;
     border: 0 !important;
     margin: 0 !important;
     box-shadow: none !important;
-    background: #f8faf8 !important;
+    background: #f6f8f7 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
   }
 
   .outlet-modal-header {
-    padding: 12px 14px;
-    min-height: 56px;
-    background: white;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    z-index: 5;
+    padding: 10px 14px !important;
+    min-height: 48px !important;
+    background: #ffffff !important;
+    border-bottom: 1px solid #e2ede8 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+    z-index: 10 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+    flex-shrink: 0 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .modal-header-left {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    min-width: 0 !important;
+    flex: 1 !important;
   }
 
   .modal-header-icon-badge {
-    width: 36px;
-    height: 36px;
+    width: 28px !important;
+    height: 28px !important;
+    border-radius: 7px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .modal-header-icon-badge svg {
+    width: 15px !important;
+    height: 15px !important;
+  }
+
+  .modal-header-titles {
+    min-width: 0 !important;
+    gap: 0 !important;
   }
 
   .modal-header-titles h3 {
-    font-size: 15.5px;
+    font-size: 14.5px !important;
+    font-weight: 700 !important;
+    color: #123d34 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    margin: 0 !important;
   }
 
   .modal-header-subtitle {
-    display: none;
+    display: none !important;
+  }
+
+  .modal-header-right {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    flex-shrink: 0 !important;
   }
 
   .trade-type-badge-pro {
-    display: none;
+    display: inline-flex !important;
+    padding: 2px 5px !important;
+    font-size: 9px !important;
+    letter-spacing: 0.3px !important;
+    border-radius: 4px !important;
+  }
+
+  .modal-gps-pill {
+    display: inline-flex !important;
+    padding: 2px 6px !important;
+    font-size: 10px !important;
+    gap: 3px !important;
+    border-radius: 4px !important;
+    font-weight: 600 !important;
+  }
+
+  .modal-close-btn {
+    display: grid !important;
+    place-items: center !important;
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 6px !important;
+    color: #4b5853 !important;
+    background: transparent !important;
+  }
+
+  .outlet-modal-form {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
   }
 
   .outlet-modal-scroll-area {
-    padding: 12px 12px 100px !important;
-    -webkit-overflow-scrolling: touch;
+    flex: 1 !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding: 10px 14px 16px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
   }
 
   .outlet-modal-grid {
-    grid-template-columns: 1fr !important;
-    gap: 12px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important; /* CRITICAL: force all children to stretch to the exact same full width */
+    justify-content: flex-start !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    gap: 9px !important;
   }
 
-  .form-card-section {
-    padding: 14px;
-    border-radius: 12px;
+  .modal-form-main-column,
+  .modal-form-side-column {
+    display: contents !important;
   }
 
+  /* Logical Mobile Card Ordering:
+     1. Store Identity
+     2. Territory & Assignment
+     3. GPS Calibration Hub (Prominently next to territory!)
+     4. Contact & Landmarks
+     5. Field Attendance Policy
+     6. Audit Summary
+  */
+  .modal-form-main-column > .form-card-section:nth-child(1) {
+    order: 1 !important;
+  }
+
+  .modal-form-main-column > .form-card-section:nth-child(2) {
+    order: 2 !important;
+  }
+
+  .gps-calibration-card-pro {
+    order: 3 !important;
+  }
+
+  .modal-form-main-column > .form-card-section:nth-child(3) {
+    order: 4 !important;
+  }
+
+  .policy-info-card-pro {
+    order: 5 !important;
+  }
+
+  .audit-info-card-pro {
+    order: 6 !important;
+  }
+
+  /* Uniform, Flush Container Alignment for All Cards */
+  .form-card-section,
+  .gps-calibration-card-pro {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 11px 13px !important;
+    border-radius: 10px !important;
+    gap: 8px !important;
+    border: 1px solid #dce6e1 !important;
+    box-shadow: 0 1px 3px rgba(10, 40, 30, 0.03) !important;
+    background: #ffffff !important;
+  }
+
+  .section-card-header {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 8px !important;
+    padding-bottom: 7px !important;
+    margin-bottom: 8px !important;
+    border-bottom: 1px solid #f0f4f2 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .gps-hub-header {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding-bottom: 7px !important;
+    margin-bottom: 8px !important;
+    border-bottom: 1px solid #f0f4f2 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .section-card-header > div,
+  .gps-hub-title-group {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    min-width: 0 !important;
+  }
+
+  .section-card-icon,
+  .gps-hub-icon {
+    width: 15px !important;
+    height: 15px !important;
+    color: #075544 !important;
+    flex-shrink: 0 !important;
+  }
+
+  .section-card-header h4,
+  .gps-hub-title-group h4 {
+    font-size: 12.5px !important;
+    font-weight: 700 !important;
+    color: #17201d !important;
+    margin: 0 !important;
+  }
+
+  .section-card-header span,
+  .gps-hub-title-group span {
+    display: none !important; /* Hide verbose subtitle text on mobile */
+  }
+
+  .gps-accuracy-chip {
+    padding: 1px 5px !important;
+    font-size: 9px !important;
+    border-radius: 4px !important;
+    font-weight: 700 !important;
+  }
+
+  .form-fields-stack {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* 2-column rows on mobile for complementary fields */
   .form-fields-row-2 {
-    grid-template-columns: 1fr !important;
-    gap: 10px;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .form-input-group {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 3px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .form-input-group label {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    color: #3d4c45 !important;
+    margin-bottom: 1px !important;
   }
 
   .form-input-group input,
   .form-input-group select,
   .form-input-group textarea {
-    height: 42px;
-    font-size: 14.5px;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    height: 36px !important;
+    padding: 6px 10px !important;
+    font-size: 13px !important;
+    border-radius: 7px !important;
+    border: 1px solid #d2ded8 !important;
+    background: #fafcfb !important;
+  }
+
+  .form-input-group select {
+    background-position: calc(100% - 11px) 15px, calc(100% - 7px) 15px !important;
+    padding-right: 22px !important;
   }
 
   .form-input-group textarea {
-    height: auto;
-    min-height: 64px;
+    height: auto !important;
+    min-height: 48px !important;
+    max-height: 76px !important;
+    font-size: 12.5px !important;
+    line-height: 1.35 !important;
+    padding: 6px 10px !important;
   }
 
-  .gps-calibration-card-pro {
-    padding: 14px;
-    border-radius: 12px;
+  .input-with-icon {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    position: relative !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+
+  .input-with-icon .field-inner-icon {
+    position: absolute !important;
+    left: 9px !important;
+    width: 14px !important;
+    height: 14px !important;
+    color: #6e7d76 !important;
+    pointer-events: none !important;
+  }
+
+  .input-with-icon input {
+    padding-left: 29px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* GPS Calibration Hub Content Alignment */
+  .gps-calibrated-banner {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 7px 10px !important;
+    gap: 5px !important;
+    border-radius: 7px !important;
+  }
+
+  .banner-status-line {
+    font-size: 11px !important;
+    gap: 4px !important;
+  }
+
+  .banner-status-line svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
+
+  .coords-display-pills {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+  }
+
+  .coord-pill {
+    padding: 4px 6px !important;
+    font-size: 10px !important;
+    border-radius: 5px !important;
+  }
+
+  .coord-meta-sub {
+    font-size: 9.5px !important;
+  }
+
+  .gps-pending-banner {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 7px 10px !important;
+    gap: 8px !important;
+    border-radius: 7px !important;
+    display: flex !important;
+    align-items: center !important;
+    background: #fffbeb !important;
+    border: 1px solid #fed7aa !important;
+  }
+
+  .gps-pending-banner svg {
+    width: 15px !important;
+    height: 15px !important;
+    flex-shrink: 0 !important;
+    color: #d97706 !important;
+  }
+
+  .gps-pending-banner > div {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 4px !important;
+    min-width: 0 !important;
+  }
+
+  .gps-pending-banner strong {
+    font-size: 11px !important;
+    color: #92400e !important;
+    display: inline !important;
+    white-space: nowrap !important;
+  }
+
+  .gps-pending-banner p {
+    font-size: 10.5px !important;
+    color: #b45309 !important;
+    margin: 0 !important;
+    display: inline !important;
+  }
+
+  .gps-hub-actions {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
   }
 
   .gps-primary-capture-btn {
-    height: 44px;
-    font-size: 13.5px;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    height: 36px !important;
+    padding: 0 12px !important;
+    font-size: 12.5px !important;
+    font-weight: 600 !important;
+    gap: 6px !important;
+    border-radius: 7px !important;
+  }
+
+  .gps-reset-btn {
+    font-size: 10.5px !important;
+    padding: 2px !important;
+  }
+
+  .gps-fallback-actions {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .gps-fallback-btn,
+  .gps-fallback-btn-outline {
+    padding: 4px 8px !important;
+    font-size: 10.5px !important;
+    height: 30px !important;
+  }
+
+  .manual-coords-details {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding-top: 5px !important;
+    font-size: 10.5px !important;
+  }
+
+  .colocated-outlets-banner {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 6px 9px !important;
+    gap: 6px !important;
+    font-size: 10.5px !important;
+  }
+
+  .duplicate-outlet-inline-alert {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 5px 8px !important;
+    font-size: 10.5px !important;
+    margin-top: 3px !important;
+  }
+
+  /* Compact Policy & Audit Summaries Flush Alignment */
+  .policy-info-card-pro {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 7px 12px !important;
+    border-radius: 8px !important;
+    gap: 4px !important;
+    background: #f4f8f5 !important;
+    border: 1px solid #dce6e1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .policy-card-title {
+    display: flex !important;
+    align-items: center !important;
+    gap: 5px !important;
+  }
+
+  .policy-card-title svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
+
+  .policy-card-title h5 {
+    font-size: 11px !important;
+  }
+
+  .policy-metrics-grid {
+    display: flex !important;
+    align-items: center !important;
+    gap: 20px !important;
+    padding: 1px 0 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .policy-stat-item {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: baseline !important;
+    gap: 4px !important;
+  }
+
+  .policy-stat-num {
+    font-size: 11.5px !important;
+    font-weight: 700 !important;
+    color: #075544 !important;
+  }
+
+  .policy-stat-lbl {
+    font-size: 9.5px !important;
+    color: #68746f !important;
+  }
+
+  .policy-card-hint {
+    display: none !important; /* Hide long paragraph on mobile */
+  }
+
+  .audit-info-card-pro {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 6px 12px !important;
+    border-radius: 8px !important;
+    background: #ffffff !important;
+    border: 1px solid #dce6e1 !important;
+    gap: 6px !important;
+  }
+
+  .audit-label {
+    font-size: 9px !important;
+    color: #7b8882 !important;
+    text-transform: uppercase !important;
+    font-weight: 700 !important;
+  }
+
+  .audit-val {
+    font-size: 10.5px !important;
+    font-weight: 600 !important;
+    color: #17201d !important;
+  }
+
+  .audit-date {
+    font-size: 9.5px !important;
+    color: #7b8882 !important;
+  }
+
+  /* Form Error Banner & Sticky Modal Footer */
+  .modal-error-banner {
+    margin: 4px 14px !important;
+    padding: 6px 10px !important;
+    font-size: 11.5px !important;
+    border-radius: 6px !important;
+    flex-shrink: 0 !important;
   }
 
   .outlet-modal-footer {
-    position: fixed !important;
+    position: sticky !important;
     bottom: 0 !important;
     left: 0 !important;
     right: 0 !important;
-    padding: 10px 14px max(14px, env(safe-area-inset-bottom)) !important;
-    background: rgba(255, 255, 255, 0.96) !important;
+    flex-shrink: 0 !important;
+    padding: 9px 14px max(9px, env(safe-area-inset-bottom, 9px)) !important;
+    background: rgba(255, 255, 255, 0.98) !important;
     backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
     border-top: 1px solid #e2ece7 !important;
-    z-index: 20 !important;
-    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08) !important;
+    z-index: 10 !important;
+    box-shadow: 0 -3px 12px rgba(0, 0, 0, 0.05) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
   }
 
   .modal-footer-left {
-    display: none;
+    display: flex !important;
+  }
+
+  .modal-delete-btn {
+    height: 35px !important;
+    padding: 0 9px !important;
+    font-size: 11.5px !important;
+    gap: 4px !important;
+    border-radius: 7px !important;
+  }
+
+  .modal-delete-btn svg {
+    width: 13px !important;
+    height: 13px !important;
   }
 
   .modal-footer-right {
-    flex: 1;
-    display: flex;
-    gap: 8px;
+    flex: 1 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 7px !important;
   }
 
   .modal-cancel-btn {
-    flex: 1;
-    height: 44px;
-    font-size: 14px;
+    flex: 1 !important;
+    max-width: 90px !important;
+    height: 35px !important;
+    padding: 0 10px !important;
+    font-size: 12px !important;
+    border-radius: 7px !important;
   }
 
   .modal-submit-btn {
-    flex: 1.5;
-    height: 44px;
-    font-size: 14px;
+    flex: 1.6 !important;
+    height: 35px !important;
+    padding: 0 12px !important;
+    font-size: 12.5px !important;
+    border-radius: 7px !important;
+    gap: 5px !important;
+  }
+
+  .modal-submit-btn svg {
+    width: 14px !important;
+    height: 14px !important;
   }
 }
 
