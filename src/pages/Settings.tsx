@@ -40,7 +40,7 @@ import {
   ChevronRight,
   ChevronDown,
 } from "lucide-react";
-import { useAppearance } from "../hooks/useAppearance";
+import { useAppearance, THEME_COLOR_OPTIONS } from "../hooks/useAppearance";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { UserManagementSection } from "./settings/UserManagementSection";
@@ -657,6 +657,8 @@ export default function Settings() {
   const {
     colorScheme,
     setColorScheme,
+    themeColor,
+    setThemeColor,
     compactMode,
     setCompactMode,
     sidebarCollapsed,
@@ -1452,6 +1454,132 @@ export default function Settings() {
                 </div>
               </div>
 
+              {/* Theme Accent Color Block */}
+              <div className="appearance-block">
+                <div className="appearance-block-title">
+                  <Palette size={16} /> Theme Color & Brand Accent
+                </div>
+                <p className="appearance-block-desc">
+                  Choose your primary workspace theme color. Harmonizes buttons, charts, navigation indicators, badges, and interactive components across the platform.
+                </p>
+
+                {/* Theme Color Cards Grid */}
+                <div className="theme-color-grid">
+                  {THEME_COLOR_OPTIONS.map((opt) => {
+                    const isActive = themeColor === opt.id;
+                    return (
+                      <div
+                        key={opt.id}
+                        className={`theme-color-card${isActive ? " theme-color-card--active" : ""}`}
+                        style={{
+                          "--card-accent": opt.accentHex,
+                          "--card-ring": `${opt.accentHex}40`,
+                        } as React.CSSProperties}
+                        onClick={() => setThemeColor(opt.id)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setThemeColor(opt.id);
+                          }
+                        }}
+                      >
+                        <div className="theme-color-card-top">
+                          <div className="theme-color-swatch-box">
+                            <span
+                              className="theme-color-swatch-circle"
+                              style={{ background: opt.primaryHex }}
+                            >
+                              {isActive && <Check size={13} strokeWidth={3} />}
+                            </span>
+                            <span
+                              className="theme-color-swatch-bar"
+                              style={{ background: opt.gradient }}
+                            />
+                          </div>
+                          {isActive ? (
+                            <span
+                              className="theme-color-badge"
+                              style={{
+                                background: `${opt.accentHex}20`,
+                                color: opt.accentHex,
+                              }}
+                            >
+                              <Check size={11} /> Active
+                            </span>
+                          ) : opt.badgeLabel ? (
+                            <span
+                              className="theme-color-badge"
+                              style={{
+                                background: "rgba(100, 116, 139, 0.12)",
+                                color: "var(--text-muted)",
+                              }}
+                            >
+                              {opt.badgeLabel}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="theme-color-card-content">
+                          <span className="theme-color-card-title">
+                            {opt.name}
+                          </span>
+                          <p className="theme-color-card-tagline">
+                            {opt.tagline}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Quick Swatches Bar */}
+                <div className="theme-color-quick-bar">
+                  <span className="theme-color-quick-label">Quick Swatches:</span>
+                  {THEME_COLOR_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`theme-color-quick-dot${themeColor === opt.id ? " theme-color-quick-dot--active" : ""}`}
+                      style={{ background: opt.gradient }}
+                      onClick={() => setThemeColor(opt.id)}
+                      title={`${opt.name} (${opt.id})`}
+                      aria-label={`Select ${opt.name} theme color`}
+                    >
+                      {themeColor === opt.id && <Check size={14} strokeWidth={3} />}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Live Interactive Preview Showcase */}
+                <div className="theme-preview-showcase">
+                  <div className="theme-preview-showcase-header">
+                    <span className="theme-preview-showcase-title">
+                      <Sparkles size={14} /> Live Component Preview
+                    </span>
+                    <span style={{ fontSize: "11.5px", color: "var(--text-muted)", fontWeight: 600 }}>
+                      Active: <strong>{THEME_COLOR_OPTIONS.find((t) => t.id === themeColor)?.name}</strong>
+                    </span>
+                  </div>
+
+                  <div className="theme-preview-elements">
+                    <button type="button" className="theme-preview-btn">
+                      <CheckCircle2 size={14} /> Primary Button
+                    </button>
+                    <span className="theme-preview-pill">
+                      <Sparkles size={12} /> Active Status Pill
+                    </span>
+                    <span className="theme-preview-badge">
+                      Target 100%
+                    </span>
+                    <span className="theme-preview-tab">
+                      Active Tab Highlight
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               {/* Information Density / Compact Mode Block */}
               <div className="appearance-block">
                 <div className="appearance-block-title">
@@ -1583,7 +1711,9 @@ export default function Settings() {
                   <span>Reset to System Defaults</span>
                 </button>
                 <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-                  Active profile: <strong>{resolvedTheme === "dark" ? "Dark Mode" : "Light Mode"}</strong> &bull; {compactMode ? "Compact" : "Standard"} Density
+                  Active profile: <strong>{resolvedTheme === "dark" ? "Dark Mode" : "Light Mode"}</strong> &bull;{" "}
+                  <strong>{THEME_COLOR_OPTIONS.find((t) => t.id === themeColor)?.name ?? "Emerald Forest"}</strong> &bull;{" "}
+                  {compactMode ? "Compact" : "Standard"} Density
                 </div>
               </div>
             </div>

@@ -28,6 +28,8 @@
           if (localStorage.getItem("penedge_compact_mode") === "true") {
             document.documentElement.classList.add("compact-mode");
           }
+          var themeColor = localStorage.getItem("penedge_theme_color") || "emerald";
+          document.documentElement.setAttribute("data-theme-color", themeColor);
         } catch (e) {}
       })();
     </script>
