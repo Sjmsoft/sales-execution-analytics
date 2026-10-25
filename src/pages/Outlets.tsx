@@ -133,6 +133,16 @@ export default function Outlets() {
   const { staff, role } = useAuth();
   const userScope = useMemo(() => getUserScope(staff, role), [staff, role]);
 
+  // Admin role check (for edit/delete privileges)
+  const isAdmin = useMemo(() => {
+    const key = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
+    return (
+      key === "administrator" ||
+      key === "admin" ||
+      role?.hierarchy_level === 1
+    );
+  }, [role, staff]);
+
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [search, setSearch] = useState("");
   const [quickCategory, setQuickCategory] = useState<QuickCategory>("all");
@@ -353,6 +363,9 @@ export default function Outlets() {
   }
 
   function openEditDialog(outlet: Outlet) {
+    if (!isAdmin) {
+      return;
+    }
     void getRegions().then(setConfiguredRegions).catch(console.error);
     void getOutletTypes().then(setConfiguredOutletTypes).catch(console.error);
     setEditingOutletId(outlet.id);
@@ -690,6 +703,11 @@ export default function Outlets() {
       return;
     }
 
+    if (editingOutletId && !isAdmin) {
+      setError("Only administrators can edit outlets.");
+      return;
+    }
+
     try {
       setSaving(true);
       setError("");
@@ -718,7 +736,35 @@ export default function Outlets() {
     }
   }
 
+  async function handleDeleteOutletDirect(outlet: Outlet) {
+    if (!isAdmin) {
+      alert("Only administrators can delete outlets.");
+      return;
+    }
+    if (
+      !window.confirm(`Delete outlet "${outlet.name}"? This cannot be undone.`)
+    ) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+      await deleteOutlet(outlet.id);
+      setOutlets((current) => current.filter((o) => o.id !== outlet.id));
+    } catch (err: unknown) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Unable to delete outlet.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleDeleteOutlet() {
+    if (!isAdmin) {
+      alert("Only administrators can delete outlets.");
+      return;
+    }
     if (
       !editingOutletId ||
       !window.confirm(`Delete ${form.name || "this outlet"}? This cannot be undone.`)
@@ -1141,7 +1187,7 @@ export default function Outlets() {
         /* ── GOOGLE MAPS OUTLETS VIEW ── */
         <OutletsMapView
           outlets={filteredOutlets}
-          onEditOutlet={openEditDialog}
+          onEditOutlet={isAdmin ? openEditDialog : undefined}
           staffMap={staffMap}
         />
       ) : effectiveViewMode === "grid" ? (
@@ -1180,15 +1226,33 @@ export default function Outlets() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    className="card-edit-action-btn"
-                    onClick={() => openEditDialog(outlet)}
-                    aria-label={`Edit ${outlet.name}`}
-                    title="Edit outlet"
-                  >
-                    <Pencil size={14} />
-                  </button>
+                  {isAdmin && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <button
+                        type="button"
+                        className="card-edit-action-btn"
+                        onClick={() => openEditDialog(outlet)}
+                        aria-label={`Edit ${outlet.name}`}
+                        title="Edit outlet (Admin only)"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="card-edit-action-btn"
+                        style={{
+                          color: "#dc2626",
+                          borderColor: "#fecaca",
+                          background: "#fef2f2",
+                        }}
+                        onClick={() => void handleDeleteOutletDirect(outlet)}
+                        aria-label={`Delete ${outlet.name}`}
+                        title="Delete outlet (Admin only)"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="card-meta-list">
@@ -1245,13 +1309,15 @@ export default function Outlets() {
                     </span>
                   )}
 
-                  <button
-                    type="button"
-                    className="card-quick-edit-link"
-                    onClick={() => openEditDialog(outlet)}
-                  >
-                    Edit details →
-                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="card-quick-edit-link"
+                      onClick={() => openEditDialog(outlet)}
+                    >
+                      Edit details →
+                    </button>
+                  )}
                 </div>
               </article>
             );
@@ -1271,9 +1337,11 @@ export default function Outlets() {
                   <th scope="col">Assigned Rep</th>
                   <th scope="col">GPS Status</th>
                   <th scope="col">Status</th>
-                  <th scope="col" className="text-right">
-                    Actions
-                  </th>
+                  {isAdmin && (
+                    <th scope="col" className="text-right" style={{ width: 140 }}>
+                      Actions
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -1347,18 +1415,44 @@ export default function Outlets() {
                         )}
                       </td>
 
-                      <td className="text-right">
-                        <button
-                          type="button"
-                          className="table-action-btn"
-                          onClick={() => openEditDialog(outlet)}
-                          aria-label={`Edit ${outlet.name}`}
-                          title="Edit outlet"
-                        >
-                          <Pencil size={13} />
-                          <span>Edit</span>
-                        </button>
-                      </td>
+                      {isAdmin && (
+                        <td className="text-right">
+                          <div
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                              justifyContent: "flex-end",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              className="table-action-btn"
+                              onClick={() => openEditDialog(outlet)}
+                              aria-label={`Edit ${outlet.name}`}
+                              title="Edit outlet (Admin only)"
+                            >
+                              <Pencil size={13} />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="table-action-btn"
+                              style={{
+                                color: "#dc2626",
+                                borderColor: "#fecaca",
+                                background: "#fef2f2",
+                              }}
+                              onClick={() => void handleDeleteOutletDirect(outlet)}
+                              aria-label={`Delete ${outlet.name}`}
+                              title="Delete outlet (Admin only)"
+                            >
+                              <Trash2 size={13} />
+                              <span>Delete</span>
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -1379,14 +1473,18 @@ export default function Outlets() {
                 <div
                   className="mobile-outlet-item"
                   key={outlet.id}
-                  onClick={() => openEditDialog(outlet)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      openEditDialog(outlet);
-                    }
-                  }}
+                  onClick={isAdmin ? () => openEditDialog(outlet) : undefined}
+                  role={isAdmin ? "button" : undefined}
+                  tabIndex={isAdmin ? 0 : undefined}
+                  onKeyDown={
+                    isAdmin
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            openEditDialog(outlet);
+                          }
+                        }
+                      : undefined
+                  }
                 >
                   <div
                     className={`mobile-avatar ${isOutletOffTrade(outlet.outlet_type) ? "off-trade" : "on-trade"}`}
@@ -1448,15 +1546,33 @@ export default function Outlets() {
                         <Phone size={14} />
                       </a>
                     )}
-                    <button
-                      type="button"
-                      className="mobile-edit-icon-btn"
-                      onClick={() => openEditDialog(outlet)}
-                      aria-label={`Edit ${outlet.name}`}
-                      title="Edit outlet"
-                    >
-                      <Pencil size={14} />
-                    </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        className="mobile-edit-icon-btn"
+                        onClick={() => openEditDialog(outlet)}
+                        aria-label={`Edit ${outlet.name}`}
+                        title="Edit outlet (Admin only)"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        className="mobile-edit-icon-btn"
+                        style={{
+                          color: "#dc2626",
+                          borderColor: "#fecaca",
+                          background: "#fef2f2",
+                        }}
+                        onClick={() => void handleDeleteOutletDirect(outlet)}
+                        aria-label={`Delete ${outlet.name}`}
+                        title="Delete outlet (Admin only)"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -2082,7 +2198,7 @@ export default function Outlets() {
               {/* Modal Sticky Footer Actions */}
               <div className="outlet-modal-footer">
                 <div className="modal-footer-left">
-                  {editingOutletId && (
+                  {isAdmin && editingOutletId && (
                     <button
                       type="button"
                       className="modal-delete-btn"

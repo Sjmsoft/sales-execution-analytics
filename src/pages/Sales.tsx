@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
-import { getSales, type Sale } from "../services/salesService";
+import { getSales, updateSale, deleteSale, type Sale } from "../services/salesService";
 import { getOutlets } from "../services/referenceService";
 import {
   getUserScope,
@@ -32,6 +32,7 @@ import {
   Flame,
   MapPin,
   Package,
+  Pencil,
   PieChart,
   Plus,
   Printer,
@@ -41,6 +42,7 @@ import {
   ShoppingCart,
   Sparkles,
   Store,
+  Trash2,
   TrendingUp,
   Trophy,
   User,
@@ -158,6 +160,128 @@ export default function Sales() {
   const [newSaleSuccess, setNewSaleSuccess] = useState("");
   const [selectedSaleDetail, setSelectedSaleDetail] = useState<Sale | null>(null);
   const [copiedRef, setCopiedRef] = useState<string | null>(null);
+
+  // Admin role check (for edit/delete privileges)
+  const isAdmin = useMemo(() => {
+    const key = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
+    return (
+      key === "administrator" ||
+      key === "admin" ||
+      role?.hierarchy_level === 1
+    );
+  }, [role, staff]);
+
+  // Edit Sale modal state (Admin only)
+  const [editingSale, setEditingSale] = useState<Sale | null>(null);
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    saleDate: "",
+    outlet: "",
+    drinkType: "",
+    quantity: 1,
+    unitType: 1,
+    totalAmount: 0,
+    amountPaid: 0,
+    notes: "",
+  });
+
+  const handleOpenEditSale = (sale: Sale) => {
+    if (!isAdmin) {
+      alert("Only administrators can edit sales.");
+      return;
+    }
+    setEditingSale(sale);
+    setEditFormData({
+      saleDate: sale.sale_date || new Date().toISOString().split("T")[0],
+      outlet: sale.outlet || "",
+      drinkType: sale.drink_type || "",
+      quantity: Number(sale.quantity || 1),
+      unitType: sale.unit_type === 2 ? 2 : 1,
+      totalAmount: Number(sale.total_amount || 0),
+      amountPaid: Number(sale.amount_paid || 0),
+      notes: sale.notes || "",
+    });
+  };
+
+  const handleSaveEditSale = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin || !editingSale) return;
+    setIsSubmittingEdit(true);
+    try {
+      const balance = Math.max(0, editFormData.totalAmount - editFormData.amountPaid);
+      const paymentStatus =
+        editFormData.amountPaid >= editFormData.totalAmount && editFormData.totalAmount > 0
+          ? 2
+          : editFormData.amountPaid > 0
+          ? 1
+          : 0;
+
+      await updateSale(editingSale.id, {
+        sale_date: editFormData.saleDate,
+        outlet: editFormData.outlet,
+        drink_type: editFormData.drinkType,
+        quantity: editFormData.quantity,
+        unit_type: editFormData.unitType,
+        total_amount: editFormData.totalAmount,
+        amount_paid: editFormData.amountPaid,
+        balance,
+        payment_status: paymentStatus,
+        notes: editFormData.notes,
+      });
+
+      setSales((prev) =>
+        prev.map((s) =>
+          s.id === editingSale.id
+            ? {
+                ...s,
+                sale_date: editFormData.saleDate,
+                outlet: editFormData.outlet,
+                drink_type: editFormData.drinkType,
+                quantity: editFormData.quantity,
+                unit_type: editFormData.unitType,
+                total_amount: editFormData.totalAmount,
+                amount_paid: editFormData.amountPaid,
+                balance,
+                payment_status: paymentStatus,
+                notes: editFormData.notes,
+              }
+            : s
+        )
+      );
+
+      setEditingSale(null);
+    } catch (err) {
+      console.error("Failed to update sale:", err);
+      alert("Failed to update sale.");
+    } finally {
+      setIsSubmittingEdit(false);
+    }
+  };
+
+  const handleDeleteSale = async (sale: Sale) => {
+    if (!isAdmin) {
+      alert("Only administrators can delete sales.");
+      return;
+    }
+    const ref = sale.reference || sale.transaction_id || sale.id;
+    if (
+      !window.confirm(
+        `Are you sure you want to delete this sale transaction (Ref: ${ref})? This action cannot be undone.`
+      )
+    ) {
+      return;
+    }
+    try {
+      await deleteSale(sale.id);
+      setSales((prev) => prev.filter((s) => s.id !== sale.id));
+      if (selectedSaleDetail?.id === sale.id) {
+        setSelectedSaleDetail(null);
+      }
+    } catch (err) {
+      console.error("Failed to delete sale:", err);
+      alert("Failed to delete sale.");
+    }
+  };
 
   // Load reference data
   useEffect(() => {
@@ -1640,7 +1764,9 @@ export default function Sales() {
                     <th style={{ textAlign: "right" }}>Total Amount</th>
                     <th style={{ textAlign: "right" }}>Settlement</th>
                     <th>Payment Status</th>
-                    <th style={{ textAlign: "center" }}>Action</th>
+                    <th style={{ textAlign: "center", width: isAdmin ? 175 : 90 }}>
+                      {isAdmin ? "Actions" : "Receipt"}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1742,17 +1868,73 @@ export default function Sales() {
                           </span>
                         </td>
 
-                        {/* Action */}
+                        {/* Action Buttons */}
                         <td style={{ textAlign: "center" }}>
-                          <button
-                            type="button"
-                            className="table-view-btn"
-                            onClick={() => setSelectedSaleDetail(sale)}
-                            title="View detailed receipt slip"
+                          <div
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 5,
+                              justifyContent: "center",
+                            }}
                           >
-                            <FileText size={13} />
-                            <span>Receipt</span>
-                          </button>
+                            <button
+                              type="button"
+                              className="table-view-btn"
+                              onClick={() => setSelectedSaleDetail(sale)}
+                              title="View detailed receipt slip"
+                            >
+                              <FileText size={13} />
+                              <span>Receipt</span>
+                            </button>
+
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditSale(sale)}
+                                style={{
+                                  background: "#eff6ff",
+                                  border: "1px solid #bfdbfe",
+                                  color: "#1d4ed8",
+                                  cursor: "pointer",
+                                  padding: "4px 8px",
+                                  borderRadius: 6,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 3,
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                }}
+                                title="Edit sale (Admin only)"
+                              >
+                                <Pencil size={11} />
+                                <span>Edit</span>
+                              </button>
+                            )}
+
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteSale(sale)}
+                                style={{
+                                  background: "#fef2f2",
+                                  border: "1px solid #fecaca",
+                                  color: "#dc2626",
+                                  cursor: "pointer",
+                                  padding: "4px 6px",
+                                  borderRadius: 6,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 3,
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                }}
+                                title="Delete sale (Admin only)"
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1943,6 +2125,46 @@ export default function Sales() {
                 <span>Print Invoice</span>
               </button>
 
+              {isAdmin && (
+                <button
+                  type="button"
+                  className="receipt-btn"
+                  style={{
+                    background: "#eff6ff",
+                    border: "1px solid #bfdbfe",
+                    color: "#1d4ed8",
+                  }}
+                  onClick={() => {
+                    const toEdit = selectedSaleDetail;
+                    setSelectedSaleDetail(null);
+                    handleOpenEditSale(toEdit);
+                  }}
+                  title="Edit sale transaction"
+                >
+                  <Pencil size={14} />
+                  <span>Edit</span>
+                </button>
+              )}
+
+              {isAdmin && (
+                <button
+                  type="button"
+                  className="receipt-btn"
+                  style={{
+                    background: "#fef2f2",
+                    border: "1px solid #fecaca",
+                    color: "#dc2626",
+                  }}
+                  onClick={() => {
+                    void handleDeleteSale(selectedSaleDetail);
+                  }}
+                  title="Delete sale transaction"
+                >
+                  <Trash2 size={14} />
+                  <span>Delete</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 className="receipt-btn receipt-done-btn"
@@ -1951,6 +2173,247 @@ export default function Sales() {
                 Done
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 6.5. EDIT SALE MODAL (ADMIN ONLY) ── */}
+      {isAdmin && editingSale && (
+        <div
+          className="tgt-modal-overlay"
+          onClick={() => setEditingSale(null)}
+          role="presentation"
+        >
+          <div
+            className="tgt-modal-card"
+            style={{ maxWidth: 540 }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="tgt-modal-header">
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#111827" }}>
+                  Edit Sale Transaction
+                </h3>
+                <p style={{ margin: "3px 0 0", fontSize: 12, color: "#6b7280" }}>
+                  Ref: {editingSale.reference || editingSale.transaction_id || editingSale.id}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingSale(null)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#6b7280",
+                  padding: 4,
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditSale}>
+              <div className="tgt-modal-body" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {/* 1. Retail Outlet */}
+                <div className="tgt-field-group">
+                  <span className="tgt-field-label">Retail Outlet</span>
+                  <input
+                    type="text"
+                    className="targets-select-filter"
+                    value={editFormData.outlet}
+                    onChange={(e) =>
+                      setEditFormData((prev) => ({ ...prev, outlet: e.target.value }))
+                    }
+                    placeholder="Enter outlet or store name"
+                    required
+                  />
+                </div>
+
+                {/* 2. Beverage Item */}
+                <div className="tgt-field-group">
+                  <span className="tgt-field-label">Beverage Product Name</span>
+                  <input
+                    type="text"
+                    className="targets-select-filter"
+                    value={editFormData.drinkType}
+                    onChange={(e) =>
+                      setEditFormData((prev) => ({ ...prev, drinkType: e.target.value }))
+                    }
+                    placeholder="e.g. Energy Drink 500ml"
+                    required
+                  />
+                </div>
+
+                {/* 3. Quantity & Unit Type */}
+                <div className="tgt-dates-row">
+                  <div className="tgt-field-group">
+                    <span className="tgt-field-label">Quantity</span>
+                    <input
+                      type="number"
+                      min={1}
+                      className="targets-select-filter"
+                      value={editFormData.quantity}
+                      onChange={(e) =>
+                        setEditFormData((prev) => ({
+                          ...prev,
+                          quantity: Math.max(1, parseInt(e.target.value) || 1),
+                        }))
+                      }
+                      required
+                    />
+                  </div>
+                  <div className="tgt-field-group">
+                    <span className="tgt-field-label">Unit Type</span>
+                    <select
+                      className="targets-select-filter"
+                      value={editFormData.unitType}
+                      onChange={(e) =>
+                        setEditFormData((prev) => ({
+                          ...prev,
+                          unitType: parseInt(e.target.value) || 1,
+                        }))
+                      }
+                    >
+                      <option value={1}>Bottles</option>
+                      <option value={2}>Cases</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* 4. Total Amount & Amount Paid */}
+                <div className="tgt-dates-row">
+                  <div className="tgt-field-group">
+                    <span className="tgt-field-label">Total Amount (₦)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      className="targets-select-filter"
+                      value={editFormData.totalAmount}
+                      onChange={(e) =>
+                        setEditFormData((prev) => ({
+                          ...prev,
+                          totalAmount: Math.max(0, parseFloat(e.target.value) || 0),
+                        }))
+                      }
+                      required
+                    />
+                  </div>
+                  <div className="tgt-field-group">
+                    <span className="tgt-field-label">Amount Paid (₦)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      className="targets-select-filter"
+                      value={editFormData.amountPaid}
+                      onChange={(e) =>
+                        setEditFormData((prev) => ({
+                          ...prev,
+                          amountPaid: Math.max(0, parseFloat(e.target.value) || 0),
+                        }))
+                      }
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* 5. Sale Date */}
+                <div className="tgt-field-group">
+                  <span className="tgt-field-label">Sale Date</span>
+                  <input
+                    type="date"
+                    className="targets-select-filter"
+                    value={editFormData.saleDate}
+                    onChange={(e) =>
+                      setEditFormData((prev) => ({ ...prev, saleDate: e.target.value }))
+                    }
+                    required
+                  />
+                </div>
+
+                {/* Settlement Summary Pill */}
+                <div
+                  style={{
+                    background: "#f0fdf4",
+                    border: "1px solid #bbf7d0",
+                    padding: "10px 14px",
+                    borderRadius: 8,
+                    fontSize: 12,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      color: "#166534",
+                    }}
+                  >
+                    <span>Remaining Balance:</span>
+                    <strong>
+                      ₦
+                      {Math.max(
+                        0,
+                        editFormData.totalAmount - editFormData.amountPaid
+                      ).toLocaleString()}
+                    </strong>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      color: "#166534",
+                      marginTop: 4,
+                    }}
+                  >
+                    <span>Calculated Settlement:</span>
+                    <strong style={{ textTransform: "uppercase" }}>
+                      {editFormData.amountPaid >= editFormData.totalAmount &&
+                      editFormData.totalAmount > 0
+                        ? "Paid (Complete)"
+                        : editFormData.amountPaid > 0
+                        ? "Partially Paid"
+                        : "Credit (Unpaid)"}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* 6. Notes */}
+                <div className="tgt-field-group">
+                  <span className="tgt-field-label">Notes (Optional)</span>
+                  <input
+                    type="text"
+                    className="targets-select-filter"
+                    value={editFormData.notes}
+                    onChange={(e) =>
+                      setEditFormData((prev) => ({ ...prev, notes: e.target.value }))
+                    }
+                    placeholder="Transaction remarks or invoice notes"
+                  />
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="tgt-modal-footer">
+                <button
+                  type="button"
+                  className="btn-secondary-target"
+                  onClick={() => setEditingSale(null)}
+                  style={{ padding: "9px 14px" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="tgt-submit-btn"
+                  style={{ width: "auto", minWidth: 140 }}
+                  disabled={isSubmittingEdit}
+                >
+                  {isSubmittingEdit ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -491,3 +491,133 @@ export async function createSale(input: {
 
   return result?.[0];
 }
+
+export async function updateSale(
+  id: string,
+  updates: Partial<Sale>
+): Promise<Sale> {
+  const localSales = getLocalSales();
+  const existingSale = localSales.find((s) => s.id === id);
+
+  const updatedSale: Sale = {
+    ...(existingSale || ({} as Sale)),
+    ...updates,
+    id,
+  };
+
+  // Recompute balance if total_amount or amount_paid changed
+  if (updates.total_amount !== undefined || updates.amount_paid !== undefined) {
+    const total =
+      updates.total_amount !== undefined
+        ? Number(updates.total_amount)
+        : Number(updatedSale.total_amount || 0);
+    const paid =
+      updates.amount_paid !== undefined
+        ? Number(updates.amount_paid)
+        : Number(updatedSale.amount_paid || 0);
+    updatedSale.total_amount = total;
+    updatedSale.amount_paid = paid;
+    updatedSale.balance = Math.max(0, total - paid);
+    if (paid >= total && total > 0) {
+      updatedSale.payment_status = 2; // Paid
+    } else if (paid > 0) {
+      updatedSale.payment_status = 1; // Partial
+    } else {
+      updatedSale.payment_status = 0; // Unpaid
+    }
+  }
+
+  // Update local storage
+  if (existingSale) {
+    saveLocalSales(localSales.map((s) => (s.id === id ? updatedSale : s)));
+  } else {
+    saveLocalSales([updatedSale, ...localSales]);
+  }
+
+  // If this is a remote Supabase record
+  if (!id.startsWith("local-")) {
+    const paymentStatusStr =
+      updatedSale.payment_status === 2
+        ? "Paid"
+        : updatedSale.payment_status === 1
+        ? "Partial"
+        : "Credit";
+    const unitTypeStr = updatedSale.unit_type === 2 ? "Cases" : "Bottles";
+
+    const payload: Record<string, any> = {};
+
+    if (updates.sale_date !== undefined) {
+      payload.sale_date = updates.sale_date;
+      payload["Sale Date"] = updates.sale_date;
+    }
+    if (updates.outlet !== undefined) {
+      payload.outlet = updates.outlet;
+      payload["Outlet"] = updates.outlet;
+    }
+    if (updates.drink_type !== undefined) {
+      payload.drink_type = updates.drink_type;
+      payload["Drink Type"] = updates.drink_type;
+    }
+    if (updates.staff !== undefined) {
+      payload.staff = updates.staff;
+      payload["Staff Name"] = updates.staff;
+    }
+    if (updates.quantity !== undefined) {
+      payload.quantity = updates.quantity;
+      payload["Quantity"] = updates.quantity;
+    }
+    if (updates.unit_type !== undefined) {
+      payload.unit_type = unitTypeStr;
+      payload["Unit Type"] = unitTypeStr;
+    }
+    if (updates.total_amount !== undefined) {
+      payload.total_amount = updatedSale.total_amount;
+      payload["Total Amount"] = String(updatedSale.total_amount);
+    }
+    if (updates.amount_paid !== undefined) {
+      payload.amount_paid = updatedSale.amount_paid;
+      payload["Amount Paid"] = String(updatedSale.amount_paid);
+    }
+    if (updatedSale.balance !== undefined) {
+      payload.balance = updatedSale.balance;
+      payload["Balance"] = String(updatedSale.balance);
+    }
+    if (updatedSale.payment_status !== undefined) {
+      payload.payment_status = paymentStatusStr;
+      payload["Payment Status"] = paymentStatusStr;
+    }
+    if (updates.notes !== undefined) {
+      payload.notes = updates.notes;
+      payload["Notes"] = updates.notes;
+    }
+
+    try {
+      const { error } = await supabase.from("sales").update(payload).eq("id", id);
+      if (error) {
+        console.warn("Supabase sales update notice:", error);
+      }
+    } catch (err) {
+      console.warn("Notice: remote sales update failed:", err);
+    }
+  }
+
+  return updatedSale;
+}
+
+export async function deleteSale(id: string): Promise<void> {
+  // Remove from local storage
+  const localSales = getLocalSales();
+  saveLocalSales(localSales.filter((s) => s.id !== id));
+
+  // If remote Supabase record, delete from Supabase
+  if (!id.startsWith("local-")) {
+    try {
+      const { error } = await supabase.from("sales").delete().eq("id", id);
+      if (error) {
+        console.warn("Supabase sales delete notice:", error);
+      }
+    } catch (err) {
+      console.warn("Notice: remote sales delete failed:", err);
+    }
+  }
+}

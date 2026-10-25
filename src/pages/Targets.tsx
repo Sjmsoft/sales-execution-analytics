@@ -7,6 +7,7 @@ import {
   Download,
   Flame,
   Layers,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -29,11 +30,13 @@ import {
   fetchStaffForTargets,
   fetchTargets,
   getBAMetrics,
+  updateTarget,
   getPushNotificationLogs,
   savePushNotificationLog,
   type DrinkTargetItem,
   type PushNotificationRecord,
   type TargetRecord,
+  type TargetStatus,
   type TargetType,
   type TargetUnit,
 } from "../services/targetsService";
@@ -59,6 +62,16 @@ export default function Targets() {
       role?.can_assign_targets === true
     );
   }, [role]);
+
+  // Admin role check (for edit/delete privileges)
+  const isAdmin = useMemo(() => {
+    const key = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
+    return (
+      key === "administrator" ||
+      key === "admin" ||
+      role?.hierarchy_level === 1
+    );
+  }, [role, staff]);
 
   // Is current staff a Brand Ambassador?
   const isBrandAmbassador = useMemo(() => {
@@ -131,6 +144,71 @@ export default function Targets() {
   const [recordSaleDate, setRecordSaleDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [recordUnitPrice, setRecordUnitPrice] = useState(70000);
   const [isSubmittingSale, setIsSubmittingSale] = useState(false);
+
+  // Edit Target Modal state (Admin only)
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editStaffId, setEditStaffId] = useState("");
+  const [editQuantity, setEditQuantity] = useState(20);
+  const [editUnit, setEditUnit] = useState<TargetUnit>("Cases");
+  const [editTargetType, setEditTargetType] = useState<TargetType>("Weekly Cases");
+  const [editStartDate, setEditStartDate] = useState("");
+  const [editEndDate, setEditEndDate] = useState("");
+  const [editStatus, setEditStatus] = useState<TargetStatus>("Active");
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+
+  const handleOpenEditModal = (tgt: TargetRecord) => {
+    if (!isAdmin) return;
+    setEditingTargetId(tgt.id);
+    setEditTitle(tgt.title);
+    setEditStaffId(tgt.salesRep.id);
+    setEditQuantity(tgt.targetQuantity);
+    setEditUnit(tgt.unit);
+    setEditTargetType(tgt.targetType);
+    setEditStartDate(tgt.startDate);
+    setEditEndDate(tgt.endDate);
+    setEditStatus(tgt.status);
+    setEditModalOpen(true);
+  };
+
+  const handleEditTargetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin || !editingTargetId) return;
+
+    const matchedStaff = staffList.find((s) => s.id === editStaffId);
+
+    setIsSubmittingEdit(true);
+    try {
+      await updateTarget(editingTargetId, {
+        title: editTitle,
+        productName: editTitle,
+        targetQuantity: editQuantity,
+        unit: editUnit,
+        targetType: editTargetType,
+        startDate: editStartDate,
+        endDate: editEndDate,
+        status: editStatus,
+        salesRep: matchedStaff
+          ? {
+              id: matchedStaff.id,
+              name: matchedStaff.name,
+              region: matchedStaff.region,
+              role: matchedStaff.role,
+            }
+          : undefined,
+      });
+
+      await loadTargetsData(true);
+      setEditModalOpen(false);
+      setNotificationToast(`Target "${editTitle}" updated successfully.`);
+      setTimeout(() => setNotificationToast(null), 5000);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to update target.");
+    } finally {
+      setIsSubmittingEdit(false);
+    }
+  };
 
   // Load targets and individual sales
   const loadTargetsData = useCallback(async (manual = false) => {
@@ -232,6 +310,13 @@ export default function Targets() {
         const lastMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
         return t.startDate.slice(0, 7) === lastMonth || t.endDate.slice(0, 7) === lastMonth;
       }
+      if (dateFilter === "Q4 2026") {
+        const isQ4 = (d: string) => {
+          const ym = d.slice(0, 7);
+          return ym >= "2026-10" && ym <= "2026-12";
+        };
+        return isQ4(t.startDate) || isQ4(t.endDate);
+      }
 
       return true;
     });
@@ -329,17 +414,21 @@ export default function Targets() {
     }
   };
 
-  // Delete target handler
+  // Delete target handler (Admin only)
   const handleDeleteTarget = async (id: string, title: string) => {
+    if (!isAdmin) {
+      alert("Only system administrators can delete sales targets.");
+      return;
+    }
     if (!window.confirm(`Are you sure you want to delete target "${title}"?`)) return;
     try {
-      const updated = await deleteTarget(id);
-      const scoped = filterTargetsByScope(updated, userScope);
-      setTargets(scoped);
+      await deleteTarget(id);
+      await loadTargetsData(true);
       setNotificationToast(`Target "${title}" removed.`);
       setTimeout(() => setNotificationToast(null), 4000);
     } catch (err) {
       console.error("Error deleting target:", err);
+      alert(err instanceof Error ? err.message : "Failed to delete target.");
     }
   };
 
@@ -495,7 +584,7 @@ export default function Targets() {
 
     setIsSubmittingCreate(true);
     try {
-      const updated = await createMultiDrinkTargets({
+      await createMultiDrinkTargets({
         staffMembers: chosenStaff,
         drinks: validDrinks,
         startDate: createStartDate,
@@ -505,9 +594,8 @@ export default function Targets() {
         creatorId: staff?.id,
       });
 
-      const computed = calculateTargetsProgress(updated, salesList, availableDrinks);
-      const scoped = filterTargetsByScope(computed, userScope);
-      setTargets(scoped);
+      // Reload live data directly from Supabase
+      await loadTargetsData(true);
       // Clear filters so new targets immediately appear
       handleClearFilters();
       setCreateModalOpen(false);
@@ -931,7 +1019,9 @@ export default function Targets() {
                   <th>Progress vs Target</th>
                   <th>Status</th>
                   <th>Created</th>
-                  {canCreateAndPush && <th style={{ width: 110, textAlign: "center" }}>Actions</th>}
+                  {(canCreateAndPush || isAdmin) && (
+                    <th style={{ width: 140, textAlign: "center" }}>Actions</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -1076,44 +1166,77 @@ export default function Targets() {
                       </td>
 
                       {/* Actions */}
-                      {canCreateAndPush && (
+                      {(canCreateAndPush || isAdmin) && (
                         <td style={{ textAlign: "center" }}>
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenRecordSaleModal(tgt)}
-                              style={{
-                                background: "#ecfdf5",
-                                border: "1px solid #a7f3d0",
-                                color: "#065f46",
-                                cursor: "pointer",
-                                padding: "4px 8px",
-                                borderRadius: 6,
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 3,
-                                fontSize: 11,
-                                fontWeight: 600,
-                              }}
-                              title="Record individual sale against this target"
-                            >
-                              <Plus size={11} /> Sale
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteTarget(tgt.id, tgt.title)}
-                              style={{
-                                background: "transparent",
-                                border: "none",
-                                color: "#ef4444",
-                                cursor: "pointer",
-                                padding: 4,
-                                borderRadius: 4,
-                              }}
-                              title="Delete target"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                            {canCreateAndPush && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenRecordSaleModal(tgt)}
+                                style={{
+                                  background: "#ecfdf5",
+                                  border: "1px solid #a7f3d0",
+                                  color: "#065f46",
+                                  cursor: "pointer",
+                                  padding: "4px 8px",
+                                  borderRadius: 6,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 3,
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                }}
+                                title="Record individual sale against this target"
+                              >
+                                <Plus size={11} /> Sale
+                              </button>
+                            )}
+
+                            {/* Edit Target - Admin Only */}
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditModal(tgt)}
+                                style={{
+                                  background: "#eff6ff",
+                                  border: "1px solid #bfdbfe",
+                                  color: "#1d4ed8",
+                                  cursor: "pointer",
+                                  padding: "4px 8px",
+                                  borderRadius: 6,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 3,
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                }}
+                                title="Edit target (Admin only)"
+                              >
+                                <Pencil size={11} /> Edit
+                              </button>
+                            )}
+
+                            {/* Delete Target - Admin Only */}
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteTarget(tgt.id, tgt.title)}
+                                style={{
+                                  background: "#fef2f2",
+                                  border: "1px solid #fecaca",
+                                  color: "#dc2626",
+                                  cursor: "pointer",
+                                  padding: "4px 6px",
+                                  borderRadius: 6,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                }}
+                                title="Delete target (Admin only)"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}
@@ -1872,6 +1995,165 @@ export default function Targets() {
                   disabled={isSubmittingSale}
                 >
                   {isSubmittingSale ? "Recording sale..." : "Save & Update Progress"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT TARGET MODAL (Admin Only) ── */}
+      {isAdmin && editModalOpen && (
+        <div className="tgt-modal-backdrop" role="dialog" aria-modal="true">
+          <div className="tgt-modal-dialog">
+            <div className="tgt-modal-header">
+              <div className="tgt-modal-header-text">
+                <div style={{ textAlign: "center", marginBottom: 4, color: "#1d4ed8" }}>
+                  <Pencil size={18} />
+                </div>
+                <h3>Edit Sales Target</h3>
+                <p>Modify quota parameters, assigned personnel, cadence, and timeline.</p>
+              </div>
+              <button
+                type="button"
+                className="tgt-modal-close"
+                onClick={() => setEditModalOpen(false)}
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditTargetSubmit}>
+              <div className="tgt-modal-body">
+                {/* 1. Target Title / Product */}
+                <div className="tgt-field-group">
+                  <span className="tgt-field-label">Target Name / Product</span>
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="targets-select-filter"
+                    required
+                  />
+                </div>
+
+                {/* 2. Assigned Staff Member */}
+                <div className="tgt-field-group">
+                  <span className="tgt-field-label">Assigned Representative</span>
+                  <select
+                    className="targets-select-filter"
+                    value={editStaffId}
+                    onChange={(e) => setEditStaffId(e.target.value)}
+                    required
+                  >
+                    <option value="">Select sales representative</option>
+                    {staffList.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.role} · {s.region})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 3. Target Quantity & Unit */}
+                <div className="tgt-dates-row">
+                  <div className="tgt-field-group">
+                    <span className="tgt-field-label">Target Quantity</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={editQuantity}
+                      onChange={(e) => setEditQuantity(parseInt(e.target.value) || 0)}
+                      className="targets-select-filter"
+                      required
+                    />
+                  </div>
+                  <div className="tgt-field-group">
+                    <span className="tgt-field-label">Unit</span>
+                    <select
+                      className="targets-select-filter"
+                      value={editUnit}
+                      onChange={(e) => setEditUnit(e.target.value as TargetUnit)}
+                    >
+                      <option value="Cases">Cases</option>
+                      <option value="Bottles">Bottles</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* 4. Target Cadence & Status */}
+                <div className="tgt-dates-row">
+                  <div className="tgt-field-group">
+                    <span className="tgt-field-label">Target Cadence</span>
+                    <select
+                      className="targets-select-filter"
+                      value={editTargetType}
+                      onChange={(e) => setEditTargetType(e.target.value as TargetType)}
+                    >
+                      <option value="Weekly Cases">Weekly Cases (Standard)</option>
+                      <option value="Daily Bottles">Daily Bottles</option>
+                      <option value="Monthly Revenue">Monthly Revenue</option>
+                      <option value="Visit Targets">Visit Requirements</option>
+                    </select>
+                  </div>
+                  <div className="tgt-field-group">
+                    <span className="tgt-field-label">Status</span>
+                    <select
+                      className="targets-select-filter"
+                      value={editStatus}
+                      onChange={(e) => setEditStatus(e.target.value as TargetStatus)}
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Completed">Completed</option>
+                      <option value="Behind Pace">Behind Pace</option>
+                      <option value="Pending">Pending</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* 5. Date Window */}
+                <div className="tgt-dates-row">
+                  <div className="tgt-field-group">
+                    <span className="tgt-field-label">Start Date</span>
+                    <input
+                      type="date"
+                      value={editStartDate}
+                      onChange={(e) => setEditStartDate(e.target.value)}
+                      className="targets-select-filter"
+                      required
+                    />
+                  </div>
+                  <div className="tgt-field-group">
+                    <span className="tgt-field-label">End Date</span>
+                    <input
+                      type="date"
+                      value={editEndDate}
+                      onChange={(e) => setEditEndDate(e.target.value)}
+                      className="targets-select-filter"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="tgt-modal-footer">
+                <button
+                  type="button"
+                  className="btn-secondary-target"
+                  onClick={() => setEditModalOpen(false)}
+                  style={{ padding: "9px 14px" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="tgt-submit-btn"
+                  style={{ width: "auto", minWidth: 140 }}
+                  disabled={isSubmittingEdit}
+                >
+                  {isSubmittingEdit ? "Updating..." : "Save Changes"}
                 </button>
               </div>
             </form>

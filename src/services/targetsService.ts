@@ -113,6 +113,20 @@ export async function savePushNotificationLog(record: PushNotificationRecord) {
 
 // ── Target Data Access ──────────────────────────────────────────────────
 
+function mapTargetTypeToNumber(targetType: TargetType): number {
+  switch (targetType) {
+    case "Daily Bottles":
+      return 2;
+    case "Monthly Revenue":
+      return 3;
+    case "Visit Targets":
+      return 4;
+    case "Weekly Cases":
+    default:
+      return 1;
+  }
+}
+
 export async function fetchTargets(): Promise<TargetRecord[]> {
   const localList = getLocalTargets();
 
@@ -126,10 +140,28 @@ export async function fetchTargets(): Promise<TargetRecord[]> {
 
     const { data, error } = await supabase
       .from("targets")
-      .select("id, title, target_quantity, start_date, end_date, status, target_type, created_at, created_by, staff")
+      .select(`
+        id,
+        title,
+        product_name,
+        unit,
+        is_bundle,
+        bundle_count,
+        bundled_drinks,
+        target_quantity,
+        start_date,
+        end_date,
+        status,
+        target_type,
+        created_at,
+        created_by,
+        staff
+      `)
       .order("created_at", { ascending: false });
 
-    if (!error && data && data.length > 0) {
+    if (error) {
+      console.warn("fetchTargets remote query warning:", error);
+    } else if (data) {
       const remoteList: TargetRecord[] = data.map((row: any) => {
         const staffInfo =
           (row.staff && staffMap.get(row.staff)) ||
@@ -155,11 +187,30 @@ export async function fetchTargets(): Promise<TargetRecord[]> {
         else if (row.target_type === 3 || row.target_type === "Monthly Revenue") typeStr = "Monthly Revenue";
         else if (row.target_type === 4 || row.target_type === "Visit Targets") typeStr = "Visit Targets";
 
+        let bundledDrinksList: string[] | undefined = undefined;
+        if (Array.isArray(row.bundled_drinks)) {
+          bundledDrinksList = row.bundled_drinks;
+        } else if (typeof row.bundled_drinks === "string") {
+          try {
+            bundledDrinksList = JSON.parse(row.bundled_drinks);
+          } catch {
+            bundledDrinksList = [row.bundled_drinks];
+          }
+        }
+
+        const isBundle = Boolean(row.is_bundle ?? (row.title ? row.title.includes("bundled") : false));
+        const bundleCount = row.bundle_count || (bundledDrinksList ? bundledDrinksList.length : undefined);
+        const unit: TargetUnit = row.unit === "Bottles" ? "Bottles" : "Cases";
+        const title = row.title || row.product_name || "Sales Target";
+        const productName = row.product_name || row.title || "Product Target";
+
         return {
           id: row.id,
-          title: row.title || "Sales Target",
-          productName: row.title || "Product Target",
-          isBundle: row.title ? row.title.includes("bundled") : false,
+          title,
+          productName,
+          isBundle,
+          bundleCount,
+          bundledDrinks: bundledDrinksList,
           salesRep: {
             id: row.staff || "rep-1",
             name: repName,
@@ -167,26 +218,24 @@ export async function fetchTargets(): Promise<TargetRecord[]> {
             role: repRole,
           },
           targetQuantity: Number(row.target_quantity ?? 0),
-          unit: "Cases",
+          unit,
           targetType: typeStr,
-          startDate: row.start_date || new Date().toISOString().slice(0, 10),
-          endDate: row.end_date || new Date().toISOString().slice(0, 10),
+          startDate: row.start_date ? row.start_date.slice(0, 10) : new Date().toISOString().slice(0, 10),
+          endDate: row.end_date ? row.end_date.slice(0, 10) : new Date().toISOString().slice(0, 10),
           achievedQuantity: 0,
           progressPercent: 0,
           status: statusStr,
           createdAt: row.created_at ? row.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
-          createdBy: row.created_by || "Administrator",
+          createdBy: row.created_by ? (staffMap.get(row.created_by)?.name || "Administrator") : "Administrator",
         };
       });
 
-      // Merge remote items with local items (local items take precedence for custom bundles, avoid duplicates by id)
-      const remoteIds = new Set(remoteList.map((r) => r.id));
-      const combined = [...localList.filter((l) => !remoteIds.has(l.id)), ...remoteList];
-      saveLocalTargets(combined);
-      return combined;
+      // Save remote list to local cache
+      saveLocalTargets(remoteList);
+      return remoteList;
     }
   } catch (err) {
-    console.warn("fetchTargets remote query warning:", err);
+    console.warn("fetchTargets unexpected error:", err);
   }
 
   // Fallback to local storage
@@ -232,7 +281,7 @@ export async function createMultiDrinkTargets(
       productName: title,
       isBundle: isMultipleDrinks,
       bundleCount: isMultipleDrinks ? input.drinks.length : undefined,
-      bundledDrinks: isMultipleDrinks ? bundleNames : undefined,
+      bundledDrinks: isMultipleDrinks ? bundleNames : [input.drinks[0]?.drinkName || "Target"],
       salesRep: {
         id: staff.id,
         name: staff.name,
@@ -254,32 +303,127 @@ export async function createMultiDrinkTargets(
     newRecords.push(record);
   }
 
-  // Prepend new targets to local storage immediately
-  const existing = getLocalTargets();
-  const updated = [...newRecords, ...existing];
-  saveLocalTargets(updated);
+  // Prepare database rows for Supabase
+  const insertPayloads = newRecords.map((record) => {
+    const staffUuid = isValidUuid(record.salesRep.id) ? record.salesRep.id : null;
+    const creatorUuid = isValidUuid(input.creatorId) ? input.creatorId : null;
 
-  // Background sync each newly created target to Supabase
-  for (const record of newRecords) {
-    try {
-      const staffUuid = isValidUuid(record.salesRep.id) ? record.salesRep.id : null;
-      const creatorUuid = isValidUuid(input.creatorId) ? input.creatorId : null;
+    return {
+      id: record.id,
+      title: record.title,
+      product_name: record.productName,
+      unit: record.unit,
+      is_bundle: record.isBundle,
+      bundle_count: record.bundleCount || 1,
+      bundled_drinks: record.bundledDrinks || [record.productName],
+      target_quantity: Number(record.targetQuantity) || 0,
+      start_date: record.startDate ? `${record.startDate}T00:00:00Z` : new Date().toISOString(),
+      end_date: record.endDate ? `${record.endDate}T23:59:59Z` : new Date().toISOString(),
+      status: 1, // integer 1 for active
+      target_type: mapTargetTypeToNumber(input.targetType),
+      staff: staffUuid,
+      created_by: creatorUuid,
+      created_at: new Date().toISOString(),
+    };
+  });
 
-      await supabase.from("targets").insert({
-        id: record.id,
-        title: record.title,
-        target_quantity: Number(record.targetQuantity) || 0,
-        start_date: record.startDate,
-        end_date: record.endDate,
-        status: 1, // integer 1 for active
-        target_type: 1, // integer 1 for volume / weekly cases
-        staff: staffUuid,
-        created_by: creatorUuid,
-      });
-    } catch (syncErr) {
-      console.warn("Notice: Remote Supabase targets sync notification:", syncErr);
+  // Direct persistence to Supabase
+  if (insertPayloads.length > 0) {
+    const { error } = await supabase.from("targets").insert(insertPayloads);
+    if (error) {
+      console.error("Failed to store targets in Supabase:", error);
+      throw new Error(`Failed to store targets in Supabase: ${error.message}`);
     }
   }
+
+  // Prepend new targets to local storage cache
+  const existing = getLocalTargets();
+  const updated = [...newRecords, ...existing.filter((e) => !newRecords.some((n) => n.id === e.id))];
+  saveLocalTargets(updated);
+
+  return updated;
+}
+
+// ── Update Target ───────────────────────────────────────────────────────
+
+function mapStatusToNumber(status: TargetStatus): number {
+  switch (status) {
+    case "Completed":
+      return 2;
+    case "Behind Pace":
+      return 3;
+    case "Pending":
+      return 0;
+    case "Active":
+    default:
+      return 1;
+  }
+}
+
+export type UpdateTargetInput = {
+  title?: string;
+  productName?: string;
+  targetQuantity?: number;
+  unit?: TargetUnit;
+  targetType?: TargetType;
+  startDate?: string;
+  endDate?: string;
+  status?: TargetStatus;
+  salesRep?: {
+    id: string;
+    name: string;
+    region: string;
+    role: string;
+  };
+};
+
+export async function updateTarget(
+  targetId: string,
+  input: UpdateTargetInput
+): Promise<TargetRecord[]> {
+  const payload: Record<string, unknown> = {};
+
+  if (input.title !== undefined) payload.title = input.title;
+  if (input.productName !== undefined) payload.product_name = input.productName;
+  if (input.targetQuantity !== undefined) payload.target_quantity = Number(input.targetQuantity) || 0;
+  if (input.unit !== undefined) payload.unit = input.unit;
+  if (input.startDate !== undefined) payload.start_date = `${input.startDate}T00:00:00Z`;
+  if (input.endDate !== undefined) payload.end_date = `${input.endDate}T23:59:59Z`;
+  if (input.status !== undefined) payload.status = mapStatusToNumber(input.status);
+  if (input.targetType !== undefined) payload.target_type = mapTargetTypeToNumber(input.targetType);
+  if (input.salesRep?.id && isValidUuid(input.salesRep.id)) {
+    payload.staff = input.salesRep.id;
+  }
+
+  if (isValidUuid(targetId) && Object.keys(payload).length > 0) {
+    const { error } = await supabase.from("targets").update(payload).eq("id", targetId);
+    if (error) {
+      console.error("Failed to update target in Supabase:", error);
+      throw new Error(`Failed to update target in database: ${error.message}`);
+    }
+  }
+
+  // Update in local cache
+  const existing = getLocalTargets();
+  const updated = existing.map((t) => {
+    if (t.id === targetId) {
+      return {
+        ...t,
+        ...input,
+        title: input.title || input.productName || t.title,
+        productName: input.productName || input.title || t.productName,
+        targetQuantity: input.targetQuantity !== undefined ? Number(input.targetQuantity) : t.targetQuantity,
+        unit: input.unit || t.unit,
+        targetType: input.targetType || t.targetType,
+        startDate: input.startDate || t.startDate,
+        endDate: input.endDate || t.endDate,
+        status: input.status || t.status,
+        salesRep: input.salesRep || t.salesRep,
+      };
+    }
+    return t;
+  });
+  saveLocalTargets(updated);
 
   return updated;
 }
@@ -287,17 +431,17 @@ export async function createMultiDrinkTargets(
 // ── Delete Target ───────────────────────────────────────────────────────
 
 export async function deleteTarget(targetId: string): Promise<TargetRecord[]> {
+  if (isValidUuid(targetId)) {
+    const { error } = await supabase.from("targets").delete().eq("id", targetId);
+    if (error) {
+      console.error("Failed to delete target from Supabase:", error);
+      throw new Error(`Failed to delete target from Supabase: ${error.message}`);
+    }
+  }
+
   const current = getLocalTargets();
   const updated = current.filter((t) => t.id !== targetId);
   saveLocalTargets(updated);
-
-  try {
-    if (isValidUuid(targetId)) {
-      await supabase.from("targets").delete().eq("id", targetId);
-    }
-  } catch (err) {
-    console.warn("Notice: Remote target delete notice:", err);
-  }
 
   return updated;
 }
