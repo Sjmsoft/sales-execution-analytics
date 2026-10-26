@@ -45,13 +45,17 @@
 
 .checkin-hero-left {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 18px;
+  flex: 1;
+  min-width: 0;
 }
 
 .checkin-hero-icon-box {
   width: 52px;
   height: 52px;
+  min-width: 52px;
+  min-height: 52px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.15);
   backdrop-filter: blur(10px);
@@ -61,17 +65,31 @@
   justify-content: center;
   color: #a7f3d0;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
-.checkin-hero-title-wrap h1 {
-  margin: 0 0 6px 0;
+.checkin-hero-title-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.checkin-hero-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 6px;
+}
+
+.checkin-hero-title-wrap h1,
+.checkin-hero-heading {
+  margin: 0;
   font-size: 26px;
   font-weight: 800;
   letter-spacing: -0.5px;
   color: #ffffff;
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  line-height: 1.25;
 }
 
 .checkin-hero-subtitle {
@@ -79,6 +97,7 @@
   font-size: 13.5px;
   color: #d1fae5;
   font-weight: 500;
+  line-height: 1.45;
 }
 
 .checkin-hero-badge {
@@ -94,6 +113,8 @@
   color: #ecfdf5;
   letter-spacing: 0.3px;
   text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .checkin-clock-card {

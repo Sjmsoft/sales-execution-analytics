@@ -1027,12 +1027,14 @@ export default function CheckIn() {
               <CalendarCheck size={28} />
             </div>
             <div className="checkin-hero-title-wrap">
-              <h1>
-                {isBA ? "Daily Attendance Check-In" : "Field Check-In & Attendance"}
+              <div className="checkin-hero-title-row">
+                <h1 className="checkin-hero-heading">
+                  {isBA ? "Daily Attendance Check-In" : "Field Check-In & Attendance"}
+                </h1>
                 <span className="checkin-hero-badge">
                   <ShieldCheck size={12} /> Geofence Guard Live
                 </span>
-              </h1>
+              </div>
               <p className="checkin-hero-subtitle">
                 {isBA
                   ? "Daily work-shift attendance and duty station check-in with verified GPS perimeter authentication."
