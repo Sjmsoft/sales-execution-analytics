@@ -164,34 +164,182 @@ export async function resolveVisitPhotoUrl(photoRef?: string | null): Promise<st
   return null;
 }
 
-export async function getVisits(startDate?: string, endDate?: string) {
-  const runQuery = async (columns: string) => {
-    let query = (supabase.from("visits") as any)
-      .select(columns)
-      .order("check_in_at", { ascending: false });
+export const STORAGE_KEY_VISITS = "penedge_configured_visits_v1";
+export const STORAGE_KEY_PENDING_VISITS = "penedge_pending_visits_v1";
+export const STORAGE_KEY_PENDING_CHECKOUTS = "penedge_pending_checkouts_v1";
 
-    if (startDate) query = query.gte("check_in_at", `${startDate}T00:00:00`);
-    if (endDate) {
-      const exclusiveEnd = new Date(`${endDate}T00:00:00`);
-      exclusiveEnd.setDate(exclusiveEnd.getDate() + 1);
-      query = query.lt("check_in_at", exclusiveEnd.toISOString());
+export function getLocalVisits(): VisitRecord[] {
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY_VISITS) : null;
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalVisits(visits: VisitRecord[]): void {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(STORAGE_KEY_VISITS, JSON.stringify(visits));
     }
-    return query;
-  };
+  } catch (e) {
+    console.warn("saveLocalVisits notice:", e);
+  }
+}
 
-  let { data, error } = await runQuery(VISIT_COLUMNS);
+export function getPendingVisits(): any[] {
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY_PENDING_VISITS) : null;
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
 
-  if (error) throw error;
-  return Promise.all(((data ?? []) as unknown as VisitRow[]).map(async (row) => {
-    const visit = mapVisit(row);
-    if (!row.sign_out_photo_url) return visit;
-    const photoUrl = await resolveVisitPhotoUrl(row.sign_out_photo_url);
-    return {
-      ...visit,
-      photo: Boolean(photoUrl || row.sign_out_photo_url),
-      photoUrl,
-    };
-  }));
+export function savePendingVisits(items: any[]): void {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(STORAGE_KEY_PENDING_VISITS, JSON.stringify(items));
+    }
+  } catch (e) {
+    console.warn("savePendingVisits notice:", e);
+  }
+}
+
+export function getPendingCheckouts(): any[] {
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY_PENDING_CHECKOUTS) : null;
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function savePendingCheckouts(items: any[]): void {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(STORAGE_KEY_PENDING_CHECKOUTS, JSON.stringify(items));
+    }
+  } catch (e) {
+    console.warn("savePendingCheckouts notice:", e);
+  }
+}
+
+let isSyncingVisits = false;
+export async function syncPendingVisits(): Promise<void> {
+  if (isSyncingVisits || (typeof navigator !== "undefined" && !navigator.onLine)) return;
+  isSyncingVisits = true;
+  try {
+    // 1. Sync pending created visits
+    const pendingVisits = getPendingVisits();
+    if (pendingVisits.length > 0) {
+      const remaining: any[] = [];
+      for (const item of pendingVisits) {
+        try {
+          const { error } = await (supabase.from("visits") as any)
+            .insert(item.payload)
+            .select("id")
+            .single();
+          if (error && !String(error.message || "").includes("duplicate key")) {
+            remaining.push(item);
+          }
+        } catch {
+          remaining.push(item);
+        }
+      }
+      savePendingVisits(remaining);
+    }
+
+    // 2. Sync pending checkouts
+    const pendingCheckouts = getPendingCheckouts();
+    if (pendingCheckouts.length > 0) {
+      const remainingCheckouts: any[] = [];
+      for (const item of pendingCheckouts) {
+        try {
+          const { error } = await (supabase.from("visits") as any)
+            .update(item.payload)
+            .eq("id", item.visitId);
+          if (error) {
+            remainingCheckouts.push(item);
+          }
+        } catch {
+          remainingCheckouts.push(item);
+        }
+      }
+      savePendingCheckouts(remainingCheckouts);
+    }
+  } finally {
+    isSyncingVisits = false;
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => {
+    void syncPendingVisits();
+  });
+}
+
+export async function getVisits(startDate?: string, endDate?: string) {
+  const localVisits = getLocalVisits();
+
+  if (typeof navigator === "undefined" || navigator.onLine) {
+    try {
+      void syncPendingVisits();
+
+      const runQuery = async (columns: string) => {
+        let query = (supabase.from("visits") as any)
+          .select(columns)
+          .order("check_in_at", { ascending: false });
+
+        if (startDate) query = query.gte("check_in_at", `${startDate}T00:00:00`);
+        if (endDate) {
+          const exclusiveEnd = new Date(`${endDate}T00:00:00`);
+          exclusiveEnd.setDate(exclusiveEnd.getDate() + 1);
+          query = query.lt("check_in_at", exclusiveEnd.toISOString());
+        }
+        return query;
+      };
+
+      const { data, error } = await runQuery(VISIT_COLUMNS);
+
+      if (!error && data) {
+        const mappedRemote = await Promise.all(((data ?? []) as unknown as VisitRow[]).map(async (row) => {
+          const visit = mapVisit(row);
+          if (!row.sign_out_photo_url) return visit;
+          const photoUrl = await resolveVisitPhotoUrl(row.sign_out_photo_url);
+          return {
+            ...visit,
+            photo: Boolean(photoUrl || row.sign_out_photo_url),
+            photoUrl,
+          };
+        }));
+
+        // Preserve any pending offline visits not yet in Supabase
+        const pending = getPendingVisits();
+        const pendingIds = new Set(pending.map((p) => p.id));
+        const pendingLocal = localVisits.filter((v) => pendingIds.has(v.id));
+
+        const mergedMap = new Map<string, VisitRecord>();
+        mappedRemote.forEach((v) => mergedMap.set(v.id, v));
+        pendingLocal.forEach((v) => {
+          if (!mergedMap.has(v.id)) mergedMap.set(v.id, v);
+        });
+
+        const merged = Array.from(mergedMap.values());
+        saveLocalVisits(merged);
+        return merged;
+      }
+    } catch (err) {
+      console.warn("getVisits remote query notice (falling back to local cache):", err);
+    }
+  }
+
+  // Fallback to local visits if offline or if remote fails
+  return localVisits.filter((v) => {
+    if (startDate && v.date && v.date < startDate) return false;
+    if (endDate && v.date && v.date > endDate) return false;
+    return true;
+  });
 }
 
 /**
@@ -202,32 +350,40 @@ export async function getStaffAttendanceHistory(
   staffId: string,
   limit = 100
 ): Promise<VisitRecord[]> {
-  const runQuery = async (columns: string) => {
-    return (supabase.from("visits") as any)
-      .select(columns)
-      .eq("staff_id", staffId)
-      .eq("visit_type", "attendance")
-      .order("check_in_at", { ascending: false })
-      .limit(limit);
-  };
+  if (typeof navigator === "undefined" || navigator.onLine) {
+    try {
+      const runQuery = async (columns: string) => {
+        return (supabase.from("visits") as any)
+          .select(columns)
+          .eq("staff_id", staffId)
+          .eq("visit_type", "attendance")
+          .order("check_in_at", { ascending: false })
+          .limit(limit);
+      };
 
-  const { data, error } = await runQuery(VISIT_COLUMNS);
-  if (error) {
-    console.error("Failed to load staff attendance history:", error);
-    return [];
+      const { data, error } = await runQuery(VISIT_COLUMNS);
+      if (!error && data) {
+        return Promise.all(((data ?? []) as unknown as VisitRow[]).map(async (row) => {
+          const visit = mapVisit(row);
+          if (!row.sign_out_photo_url) return visit;
+          const photoUrl = await resolveVisitPhotoUrl(row.sign_out_photo_url);
+          return {
+            ...visit,
+            photo: Boolean(photoUrl || row.sign_out_photo_url),
+            photoUrl,
+            signOutPhotoRef: row.sign_out_photo_url ?? null,
+          };
+        }));
+      }
+    } catch (err) {
+      console.warn("Failed to load staff attendance history remotely, falling back to local:", err);
+    }
   }
 
-  return Promise.all(((data ?? []) as unknown as VisitRow[]).map(async (row) => {
-    const visit = mapVisit(row);
-    if (!row.sign_out_photo_url) return visit;
-    const photoUrl = await resolveVisitPhotoUrl(row.sign_out_photo_url);
-    return {
-      ...visit,
-      photo: Boolean(photoUrl || row.sign_out_photo_url),
-      photoUrl,
-      signOutPhotoRef: row.sign_out_photo_url ?? null,
-    };
-  }));
+  // Fallback to local cached visits
+  return getLocalVisits()
+    .filter((v) => v.staffId === staffId && v.type === "attendance")
+    .slice(0, limit);
 }
 
 /**
@@ -237,31 +393,39 @@ export async function getStaffCheckInHistory(
   staffId: string,
   limit = 100
 ): Promise<VisitRecord[]> {
-  const runQuery = async (columns: string) => {
-    return (supabase.from("visits") as any)
-      .select(columns)
-      .eq("staff_id", staffId)
-      .order("check_in_at", { ascending: false })
-      .limit(limit);
-  };
+  if (typeof navigator === "undefined" || navigator.onLine) {
+    try {
+      const runQuery = async (columns: string) => {
+        return (supabase.from("visits") as any)
+          .select(columns)
+          .eq("staff_id", staffId)
+          .order("check_in_at", { ascending: false })
+          .limit(limit);
+      };
 
-  const { data, error } = await runQuery(VISIT_COLUMNS);
-  if (error) {
-    console.error("Failed to load staff check-in history:", error);
-    return [];
+      const { data, error } = await runQuery(VISIT_COLUMNS);
+      if (!error && data) {
+        return Promise.all(((data ?? []) as unknown as VisitRow[]).map(async (row) => {
+          const visit = mapVisit(row);
+          if (!row.sign_out_photo_url) return visit;
+          const photoUrl = await resolveVisitPhotoUrl(row.sign_out_photo_url);
+          return {
+            ...visit,
+            photo: Boolean(photoUrl || row.sign_out_photo_url),
+            photoUrl,
+            signOutPhotoRef: row.sign_out_photo_url ?? null,
+          };
+        }));
+      }
+    } catch (err) {
+      console.warn("Failed to load staff check-in history remotely, falling back to local:", err);
+    }
   }
 
-  return Promise.all(((data ?? []) as unknown as VisitRow[]).map(async (row) => {
-    const visit = mapVisit(row);
-    if (!row.sign_out_photo_url) return visit;
-    const photoUrl = await resolveVisitPhotoUrl(row.sign_out_photo_url);
-    return {
-      ...visit,
-      photo: Boolean(photoUrl || row.sign_out_photo_url),
-      photoUrl,
-      signOutPhotoRef: row.sign_out_photo_url ?? null,
-    };
-  }));
+  // Fallback to local cached visits
+  return getLocalVisits()
+    .filter((v) => v.staffId === staffId)
+    .slice(0, limit);
 }
 
 export function isUserAdminOrHR(
@@ -319,28 +483,52 @@ export async function getActiveVisit(
   staffId: string,
   visitType?: VisitType
 ): Promise<ActiveVisit | null> {
-  const runQuery = async (columns: string) => {
-    let query = (supabase.from("visits") as any)
-      .select(columns)
-      .eq("staff_id", staffId)
-      .is("check_out_at", null);
+  if (typeof navigator === "undefined" || navigator.onLine) {
+    try {
+      const runQuery = async (columns: string) => {
+        let query = (supabase.from("visits") as any)
+          .select(columns)
+          .eq("staff_id", staffId)
+          .is("check_out_at", null);
 
-    if (visitType) {
-      query = query.eq("visit_type", visitType);
+        if (visitType) {
+          query = query.eq("visit_type", visitType);
+        }
+
+        return query
+          .order("check_in_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+      };
+
+      const { data, error } = await runQuery(VISIT_COLUMNS);
+
+      if (!error && data) {
+        const row = data as unknown as VisitRow;
+        return { ...mapVisit(row), checkInAt: row.check_in_at };
+      }
+    } catch (err) {
+      console.warn("getActiveVisit remote query notice (falling back to local):", err);
     }
+  }
 
-    return query
-      .order("check_in_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-  };
+  // Fallback to local active visit
+  const local = getLocalVisits();
+  const matched = local.find(
+    (v) =>
+      v.staffId === staffId &&
+      v.status === "Active" &&
+      (!visitType || v.type === visitType)
+  );
 
-  let { data, error } = await runQuery(VISIT_COLUMNS);
+  if (matched) {
+    return {
+      ...matched,
+      checkInAt: `${matched.date}T${matched.time ? matched.time.slice(0, 5) : "12:00"}:00`,
+    };
+  }
 
-  if (error) throw error;
-  if (!data) return null;
-  const row = data as unknown as VisitRow;
-  return { ...mapVisit(row), checkInAt: row.check_in_at };
+  return null;
 }
 
 const LOCAL_OUTLETS_KEY = "penedge_configured_outlets_v1";
@@ -458,29 +646,45 @@ export async function createVisit(input: {
   visitType: VisitType;
   notes?: string | null;
 }) {
-  // Ensure the outlet actually exists in Supabase before inserting the visit.
-  // Outlets created while offline (or when the Supabase insert failed) live only in
-  // localStorage with a locally generated — but syntactically valid — UUID, which
-  // previously slipped through and triggered "visits_outlet_id_fkey" violations.
-  const resolvedOutletId = await resolveRemoteOutletId(input.outletId);
-
-  // Auto-complete any prior active visit of the same type for this staff member
-  // (e.g. previous outlet visit is marked completed so reps can visit multiple outlets seamlessly)
-  try {
-    await (supabase.from("visits") as any)
-      .update({
-        check_out_at: new Date().toISOString(),
-        status: "Completed",
-        outcome: "Successful",
-      })
-      .eq("staff_id", input.staffId)
-      .eq("visit_type", input.visitType)
-      .is("check_out_at", null);
-  } catch (closeErr) {
-    console.warn("Notice: Auto-closing prior active visit of same type:", closeErr);
+  let resolvedOutletId = input.outletId;
+  if (typeof navigator === "undefined" || navigator.onLine) {
+    try {
+      resolvedOutletId = await resolveRemoteOutletId(input.outletId);
+    } catch (resErr) {
+      console.warn("Outlet remote resolution notice:", resErr);
+    }
   }
 
+  // Auto-complete any prior active visit of the same type for this staff member
+  if (typeof navigator === "undefined" || navigator.onLine) {
+    try {
+      await (supabase.from("visits") as any)
+        .update({
+          check_out_at: new Date().toISOString(),
+          status: "Completed",
+          outcome: "Successful",
+        })
+        .eq("staff_id", input.staffId)
+        .eq("visit_type", input.visitType)
+        .is("check_out_at", null);
+    } catch (closeErr) {
+      console.warn("Notice: Auto-closing prior active visit notice:", closeErr);
+    }
+  }
+
+  // Auto-close in local visits cache
+  const localVisits = getLocalVisits();
+  const updatedLocal = localVisits.map((v) => {
+    if (v.staffId === input.staffId && v.type === input.visitType && v.status === "Active") {
+      return { ...v, status: "Completed" as const, duration: "Completed" };
+    }
+    return v;
+  });
+
+  const generatedId = generateUuid();
+  const nowIso = new Date().toISOString();
   const insertPayload = {
+    id: generatedId,
     outlet_id: resolvedOutletId,
     staff_id: input.staffId,
     gps_latitude: input.latitude,
@@ -491,68 +695,92 @@ export async function createVisit(input: {
     outcome: "Pending",
     visit_type: input.visitType,
     notes: input.notes ?? null,
+    check_in_at: nowIso,
   };
 
-  let { data: created, error } = await (supabase.from("visits") as any)
-    .insert(insertPayload)
-    .select("id")
-    .single();
+  const outletObj = readLocalOutlets().find((o) => o.id === input.outletId);
+  const outletName = outletObj?.name || (input.visitType === "attendance" ? "Depot Check-in" : "Field Outlet");
 
-  // If the database has a legacy unique index (visits_one_active_visit_per_staff_idx),
-  // auto-close any existing unclosed visits and retry immediately so the user is never blocked.
-  if (error && String(error.message || "").includes("visits_one_active_visit_per_staff_idx")) {
-    console.warn("Detected legacy unique index constraint; auto-resolving lingering active visits...");
+  const localVisitRecord: VisitRecord = {
+    id: generatedId,
+    outletId: resolvedOutletId,
+    staffId: input.staffId,
+    outlet: outletName,
+    staff: "Staff",
+    date: nowIso.slice(0, 10),
+    time: new Date(nowIso).toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit" }),
+    duration: "Active",
+    status: "Active",
+    outcome: "Pending",
+    gps: true,
+    photo: false,
+    photoUrl: null,
+    type: input.visitType,
+    notes: input.notes ?? null,
+  };
+
+  let wasSavedRemotely = false;
+
+  if (typeof navigator === "undefined" || navigator.onLine) {
     try {
-      await (supabase.from("visits") as any)
-        .update({
-          check_out_at: new Date().toISOString(),
-          status: "Completed",
-          outcome: "Successful",
-        })
-        .eq("staff_id", input.staffId)
-        .is("check_out_at", null);
-
-      const retry = await (supabase.from("visits") as any)
+      let { data: created, error } = await (supabase.from("visits") as any)
         .insert(insertPayload)
         .select("id")
         .single();
 
-      created = retry.data;
-      error = retry.error;
-    } catch (retryErr) {
-      console.warn("Retry after auto-closing legacy visits error:", retryErr);
+      if (error && String(error.message || "").includes("visits_one_active_visit_per_staff_idx")) {
+        console.warn("Detected legacy unique index constraint; auto-resolving lingering active visits...");
+        try {
+          await (supabase.from("visits") as any)
+            .update({
+              check_out_at: new Date().toISOString(),
+              status: "Completed",
+              outcome: "Successful",
+            })
+            .eq("staff_id", input.staffId)
+            .is("check_out_at", null);
+
+          const retry = await (supabase.from("visits") as any)
+            .insert(insertPayload)
+            .select("id")
+            .single();
+
+          created = retry.data;
+          error = retry.error;
+        } catch (retryErr) {
+          console.warn("Retry after auto-closing legacy visits error:", retryErr);
+        }
+      }
+
+      if (!error && created) {
+        wasSavedRemotely = true;
+        try {
+          const { data: fullRow } = await (supabase.from("visits") as any)
+            .select(VISIT_COLUMNS)
+            .eq("id", created.id)
+            .single();
+
+          if (fullRow) {
+            const mapped = mapVisit(fullRow as unknown as VisitRow);
+            saveLocalVisits([mapped, ...updatedLocal.filter((v) => v.id !== mapped.id)]);
+            return mapped;
+          }
+        } catch {}
+      } else if (error) {
+        console.warn("Supabase createVisit notice (queuing for offline sync):", error);
+      }
+    } catch (netErr) {
+      console.warn("createVisit network notice (queuing for offline sync):", netErr);
     }
   }
 
-  if (error) {
-    console.warn("Supabase createVisit notice:", error);
-    throw error;
+  // If not confirmed remotely, queue for offline sync
+  if (!wasSavedRemotely) {
+    savePendingVisits([...getPendingVisits(), { id: generatedId, payload: insertPayload }]);
   }
 
-  const { data: fullRow, error: fetchError } = await (supabase.from("visits") as any)
-    .select(VISIT_COLUMNS)
-    .eq("id", created.id)
-    .single();
-
-  if (fetchError || !fullRow) {
-    return {
-      id: created.id,
-      outletId: input.outletId,
-      outlet: "Outlet",
-      staff: "Staff",
-      date: new Date().toISOString().slice(0, 10),
-      time: new Date().toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit" }),
-      duration: "Active",
-      status: "Active" as const,
-      outcome: "Pending",
-      gps: true,
-      photo: false,
-      photoUrl: null,
-      type: input.visitType,
-    };
-  }
-
-  return mapVisit(fullRow as unknown as VisitRow);
+  saveLocalVisits([localVisitRecord, ...updatedLocal.filter((v) => v.id !== generatedId)]);
+  return localVisitRecord;
 }
 
 export async function uploadVisitSignOutPhoto(visitId: string, file: File): Promise<string> {
@@ -644,41 +872,76 @@ export async function checkOutVisit(
     ...(input.photoPath ? { sign_out_photo_url: input.photoPath } : {}),
   };
 
-  // 1. Perform update on Supabase specifically by visit ID
-  try {
-    const { error: updateError } = await (supabase.from("visits") as any)
-      .update(updatePayload)
-      .eq("id", visitId);
-
-    if (updateError) {
-      console.warn("Supabase checkout update by ID notice:", updateError);
-    }
-  } catch (e) {
-    console.warn("Supabase checkout update by ID exception:", e);
-  }
-
-  // 2. Fetch full relational record for UI update
-  try {
-    const { data: fullRow } = await (supabase.from("visits") as any)
-      .select(VISIT_COLUMNS)
-      .eq("id", visitId)
-      .maybeSingle();
-
-    if (fullRow) {
-      const mapped = mapVisit(fullRow as unknown as VisitRow);
-      return {
-        ...mapped,
-        outcome: input.outcome || mapped.outcome,
+  // 1. Update local visits cache immediately so user sees completed status
+  const localVisits = getLocalVisits();
+  let updatedVisitRecord: VisitRecord | null = null;
+  const updatedLocal = localVisits.map((v) => {
+    if (v.id === visitId) {
+      const updated: VisitRecord = {
+        ...v,
         status: "Completed" as const,
-        notes: formattedNotes || mapped.notes,
+        outcome: input.outcome || "Successful",
+        duration: "1 minute",
+        notes: formattedNotes || v.notes,
+        photo: Boolean(input.photoPath || v.photo),
       };
+      updatedVisitRecord = updated;
+      return updated;
     }
-  } catch (err) {
-    console.warn("Supabase checkout fetch notice:", err);
+    return v;
+  });
+  saveLocalVisits(updatedLocal);
+
+  let wasUpdatedRemotely = false;
+
+  // 2. Perform update on Supabase specifically by visit ID if online
+  if (typeof navigator === "undefined" || navigator.onLine) {
+    try {
+      const { error: updateError } = await (supabase.from("visits") as any)
+        .update(updatePayload)
+        .eq("id", visitId);
+
+      if (!updateError) {
+        wasUpdatedRemotely = true;
+      } else {
+        console.warn("Supabase checkout update notice (queuing for offline sync):", updateError);
+      }
+    } catch (e) {
+      console.warn("Supabase checkout update exception (queuing for offline sync):", e);
+    }
   }
 
-  // 4. Fallback record so checkout is 100% successful
-  return {
+  // 3. Queue checkout for offline sync if remote update did not succeed
+  if (!wasUpdatedRemotely) {
+    savePendingCheckouts([...getPendingCheckouts(), { visitId, payload: updatePayload }]);
+  }
+
+  // 4. Fetch full relational record if online
+  if (wasUpdatedRemotely) {
+    try {
+      const { data: fullRow } = await (supabase.from("visits") as any)
+        .select(VISIT_COLUMNS)
+        .eq("id", visitId)
+        .maybeSingle();
+
+      if (fullRow) {
+        const mapped = mapVisit(fullRow as unknown as VisitRow);
+        const finalRecord = {
+          ...mapped,
+          outcome: input.outcome || mapped.outcome,
+          status: "Completed" as const,
+          notes: formattedNotes || mapped.notes,
+        };
+        saveLocalVisits(updatedLocal.map((v) => (v.id === visitId ? finalRecord : v)));
+        return finalRecord;
+      }
+    } catch (err) {
+      console.warn("Supabase checkout fetch notice:", err);
+    }
+  }
+
+  // 5. Fallback record so checkout is 100% successful even offline
+  return updatedVisitRecord || {
     id: visitId,
     outlet: "Outlet",
     staff: "Staff",

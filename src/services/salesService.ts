@@ -30,7 +30,7 @@ export const STORAGE_KEY_SALES = "penedge_configured_sales_v1";
 
 export function getLocalSales(): Sale[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_SALES);
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY_SALES) : null;
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed;
@@ -43,10 +43,60 @@ export function getLocalSales(): Sale[] {
 
 export function saveLocalSales(sales: Sale[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY_SALES, JSON.stringify(sales));
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(STORAGE_KEY_SALES, JSON.stringify(sales));
+    }
   } catch (e) {
     console.error("Local sales save error:", e);
   }
+}
+
+export const STORAGE_KEY_PENDING_SALES = "penedge_pending_sales_v1";
+
+export function getPendingSales(): any[] {
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY_PENDING_SALES) : null;
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function savePendingSales(items: any[]): void {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(STORAGE_KEY_PENDING_SALES, JSON.stringify(items));
+    }
+  } catch (e) {
+    console.warn("savePendingSales notice:", e);
+  }
+}
+
+let isSyncingSales = false;
+export async function syncPendingSales(): Promise<void> {
+  if (isSyncingSales || (typeof navigator !== "undefined" && !navigator.onLine)) return;
+  isSyncingSales = true;
+  try {
+    const pending = getPendingSales();
+    if (pending.length === 0) return;
+
+    const { error } = await supabase.from("sales").insert(pending).select();
+    if (!error) {
+      savePendingSales([]);
+    } else {
+      console.warn("syncPendingSales batch notice:", error);
+    }
+  } catch (err) {
+    console.warn("syncPendingSales exception:", err);
+  } finally {
+    isSyncingSales = false;
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => {
+    void syncPendingSales();
+  });
 }
 
 // Helpers for normalizing data types from the Supabase sales table
@@ -261,8 +311,28 @@ export async function getSales(
         return true;
       });
 
+      // Preserve any pending offline sales not yet in Supabase
+      const pendingTxns = new Set(getPendingSales().map((p) => p.transaction_id || p["Transaction ID"]));
+      const pendingLocalSales = localSales.filter((s) => s.transaction_id && pendingTxns.has(s.transaction_id));
+
+      const mergedMap = new Map<string, Sale>();
+      remoteSales.forEach((s) => mergedMap.set(s.id, s));
+      pendingLocalSales.forEach((s) => {
+        if (!mergedMap.has(s.id)) mergedMap.set(s.id, s);
+      });
+
+      const merged = Array.from(mergedMap.values());
+      merged.sort((a, b) => {
+        const da = a.sale_date || a.created_at || "";
+        const db = b.sale_date || b.created_at || "";
+        return db.localeCompare(da);
+      });
+
       // Cache locally
-      saveLocalSales(remoteSales);
+      saveLocalSales(merged);
+
+      // Trigger background sync for pending sales
+      void syncPendingSales();
       return filtered;
     }
   } catch (err) {
@@ -438,21 +508,30 @@ export async function createMultipleSales(input: CreateMultipleSalesInput) {
   const existingLocal = getLocalSales();
   saveLocalSales([...localItems, ...existingLocal]);
 
-  // Attempt Supabase insert
-  try {
-    const { data: createdSales, error: salesError } = await supabase
-      .from("sales")
-      .insert(salePayloads)
-      .select();
+  // Attempt Supabase insert if online
+  let wasInsertedRemotely = false;
+  if (typeof navigator === "undefined" || navigator.onLine) {
+    try {
+      const { data: createdSales, error: salesError } = await supabase
+        .from("sales")
+        .insert(salePayloads)
+        .select();
 
-    if (!salesError && createdSales && createdSales.length > 0) {
-      return createdSales;
+      if (!salesError && createdSales && createdSales.length > 0) {
+        wasInsertedRemotely = true;
+        return createdSales;
+      }
+      if (salesError) {
+        console.warn("Supabase sales insert notice (queuing for offline sync):", salesError);
+      }
+    } catch (err) {
+      console.warn("Notice: remote sales insert notice (queuing for offline sync):", err);
     }
-    if (salesError) {
-      console.warn("Supabase sales insert notice:", salesError);
-    }
-  } catch (err) {
-    console.warn("Notice: remote sales insert notice:", err);
+  }
+
+  // If not confirmed remotely, queue in pending sales for offline sync
+  if (!wasInsertedRemotely) {
+    savePendingSales([...getPendingSales(), ...salePayloads]);
   }
 
   return localItems;

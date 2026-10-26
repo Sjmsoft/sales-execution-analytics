@@ -2,9 +2,12 @@
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
+  max-width: 100vw;
   overflow-x: hidden;
+  position: relative;
   font-family:
     Inter,
     system-ui,
@@ -16,16 +19,14 @@ body {
   color: #17201d;
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
+#root,
 .app-shell {
   min-height: 100vh;
   display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
 }
 
 .sidebar {
@@ -13469,6 +13470,10 @@ div.desktop-only {
   display: flex;
   flex-direction: column;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .visual-panel-header {
@@ -13573,20 +13578,37 @@ div.desktop-only {
   flex-direction: column;
   gap: 14px;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .exec-chart-bars-wrap {
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
+  justify-content: flex-start;
   height: 200px;
-  padding: 20px 8px 8px;
+  padding: 20px 4px 8px;
   border-bottom: 1px solid #e2e8f0;
   gap: 10px;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+@media (min-width: 860px) {
+  .exec-chart-bars-wrap {
+    justify-content: space-between;
+  }
 }
 
 .chart-bar-col {
-  flex: 1;
+  flex: 1 0 auto;
+  min-width: 34px;
+  max-width: 48px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -13672,30 +13694,35 @@ div.desktop-only {
   flex-wrap: wrap;
   gap: 12px;
   padding-top: 8px;
+  width: 100%;
 }
 
 .chart-foot-stat {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .chart-foot-stat span {
   font-size: 11px;
   color: #64748b;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .chart-foot-stat strong {
   font-size: 13.5px;
   color: #0f172a;
   font-weight: 700;
+  word-break: break-word;
 }
 
 .product-breakdown-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  width: 100%;
 }
 
 .product-rank-row {
@@ -13708,6 +13735,8 @@ div.desktop-only {
   background: #f8fafc;
   cursor: pointer;
   transition: all 0.2s ease;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .product-rank-row:hover {
@@ -13740,24 +13769,33 @@ div.desktop-only {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 
 .product-rank-title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
 }
 
 .product-name {
   font-size: 13.5px;
   font-weight: 700;
   color: #0f172a;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .product-amount {
   font-size: 13px;
   font-weight: 800;
   color: #075544;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .product-progress-track {
@@ -13781,6 +13819,78 @@ div.desktop-only {
   justify-content: space-between;
   font-size: 11.5px;
   color: #64748b;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+@media (max-width: 768px) {
+  .exec-visual-panel {
+    padding: 16px 14px;
+    border-radius: 16px;
+  }
+
+  .visual-panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .visual-panel-header > div:first-child {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .panel-title-with-pill {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .panel-title-with-pill h3 {
+    font-size: 15px;
+  }
+
+  .visual-panel-controls {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .chart-footer-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px 14px;
+    padding-top: 12px;
+  }
+
+  .chart-foot-stat:nth-child(3) {
+    grid-column: span 2;
+  }
+
+  .chart-foot-stat strong {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  .chart-footer-metrics {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .chart-foot-stat:nth-child(3) {
+    grid-column: span 1;
+  }
+
+  .chart-metric-toggle {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .toggle-btn {
+    flex: 1;
+    justify-content: center;
+  }
 }
 
 .empty-chart-fallback {
@@ -13816,6 +13926,17 @@ div.desktop-only {
   display: flex;
   flex-direction: column;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+@media (max-width: 768px) {
+  .dual-card {
+    padding: 16px 14px;
+    border-radius: 16px;
+  }
 }
 
 .dual-card-header {
@@ -13823,16 +13944,20 @@ div.desktop-only {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .dual-card-title-wrap {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .dual-card-icon {
   color: #075544;
+  flex-shrink: 0;
 }
 
 .dual-card-header h4 {
@@ -13852,6 +13977,13 @@ div.desktop-only {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+  width: 100%;
+}
+
+@media (max-width: 580px) {
+  .territory-grid-cards {
+    grid-template-columns: 1fr;
+  }
 }
 
 .territory-card-item {
@@ -14086,6 +14218,10 @@ div.desktop-only {
   flex-direction: column;
   gap: 16px;
   margin-top: 8px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .activity-feed-header {
@@ -14110,6 +14246,7 @@ div.desktop-only {
   color: #059669;
   display: grid;
   place-items: center;
+  flex-shrink: 0;
 }
 
 .activity-feed-header h3 {
@@ -14141,6 +14278,47 @@ div.desktop-only {
   padding: 6px 12px;
   border-radius: 10px;
   min-width: 240px;
+}
+
+@media (max-width: 768px) {
+  .executive-activity-feed-section {
+    padding: 16px 14px;
+    border-radius: 16px;
+  }
+
+  .activity-feed-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .activity-feed-controls {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .activity-search-box {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .activity-tab-group {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    justify-content: flex-start;
+  }
+
+  .activity-tab-btn {
+    flex: 1 0 auto;
+    justify-content: center;
+    white-space: nowrap;
+    padding: 6px 10px;
+    font-size: 11.5px;
+  }
 }
 
 .activity-search-box input {
