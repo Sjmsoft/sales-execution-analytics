@@ -2281,3 +2281,178 @@
   color: #059669;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
+
+/* ============================================================================
+   CheckIn Mobile Layout Responsive Adjustments
+   ============================================================================ */
+@media (max-width: 768px) {
+  .checkin-root-container {
+    padding: 14px 12px 36px;
+  }
+
+  .checkin-hero-banner {
+    padding: 18px 16px;
+    border-radius: 16px;
+    margin-bottom: 16px;
+  }
+
+  .checkin-hero-content {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+
+  .checkin-hero-left {
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .checkin-hero-icon-box {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 12px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .checkin-hero-icon-box svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .checkin-hero-title-row {
+    gap: 6px 10px;
+    margin-bottom: 6px;
+  }
+
+  .checkin-hero-title-wrap h1,
+  .checkin-hero-heading {
+    font-size: 20px;
+    line-height: 1.25;
+  }
+
+  .checkin-hero-badge {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
+
+  .checkin-hero-subtitle {
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+
+  .checkin-clock-card {
+    padding: 10px 14px;
+    border-radius: 12px;
+    width: 100%;
+    box-sizing: border-box;
+    justify-content: flex-start;
+  }
+
+  .checkin-clock-time {
+    font-size: 18px;
+  }
+
+  .checkin-clock-date {
+    font-size: 11px;
+  }
+
+  .checkin-identity-bar {
+    padding: 14px 14px;
+    border-radius: 14px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .checkin-stat-chips {
+    width: 100%;
+  }
+
+  .checkin-stat-chip {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .checkin-meta-row {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+  }
+
+  .checkin-form-card,
+  .checkin-history-section {
+    padding: 18px 16px;
+    border-radius: 16px;
+    margin-bottom: 18px;
+  }
+
+  .checkin-admin-strip {
+    padding: 14px;
+    border-radius: 14px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .checkin-admin-strip-left {
+    min-width: 0;
+    gap: 12px;
+  }
+
+  .checkin-admin-strip-actions {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+  }
+
+  .checkin-admin-strip-btn {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .checkin-radar-box {
+    padding: 14px 14px;
+  }
+
+  .checkin-verify-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .checkin-root-container {
+    padding: 12px 8px 30px;
+  }
+
+  .checkin-hero-banner {
+    padding: 16px 14px;
+    border-radius: 14px;
+  }
+
+  .checkin-hero-icon-box {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    border-radius: 10px;
+  }
+
+  .checkin-hero-title-wrap h1,
+  .checkin-hero-heading {
+    font-size: 18px;
+  }
+
+  .checkin-hero-subtitle {
+    font-size: 12px;
+  }
+
+  .checkin-hero-badge {
+    font-size: 9.5px;
+    padding: 2px 7px;
+  }
+}
