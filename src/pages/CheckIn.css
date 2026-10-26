@@ -1843,6 +1843,7 @@
   .checkin-summary-kpis {
     grid-template-columns: 1fr;
   }
+
   .checkin-summary-grid {
     grid-template-columns: 1fr;
   }
