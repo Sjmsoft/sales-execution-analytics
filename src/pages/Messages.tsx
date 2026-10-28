@@ -206,8 +206,14 @@ export default function Messages() {
 
   const directPartner = useMemo(() => {
     if (!activeConversation || activeConversation.type !== "direct") return null;
-    const partnerId = activeConversation.participantIds.find((id) => id !== currentUserId);
-    return users.find((u) => u.id === partnerId) || null;
+    const partnerId = activeConversation.participantIds.find(
+      (id) => id !== currentUserId && id !== "current-user",
+    );
+    return (
+      users.find((u) => u.id === partnerId) ||
+      users.find((u) => u.name.toLowerCase() === activeConversation.title.toLowerCase()) ||
+      null
+    );
   }, [activeConversation, users, currentUserId]);
 
   // Filtered conversations
@@ -223,10 +229,13 @@ export default function Messages() {
         const matchesMsg = (c.lastMessage?.content || "").toLowerCase().includes(q);
         if (!matchesTitle && !matchesDesc && !matchesMsg) return false;
       }
-      if (roleFilter !== "all" && c.type === "direct") {
-        const pId = c.participantIds.find((id) => id !== currentUserId);
-        const pUser = users.find((u) => u.id === pId);
-        if (pUser && pUser.roleKey !== roleFilter) return false;
+      if (roleFilter !== "all") {
+        if (c.type !== "direct") return false;
+        const pId = c.participantIds.find((id) => id !== currentUserId && id !== "current-user");
+        const pUser =
+          users.find((u) => u.id === pId) ||
+          users.find((u) => u.name.toLowerCase() === c.title.toLowerCase());
+        if (!pUser || pUser.roleKey !== roleFilter) return false;
       }
       return true;
     });
@@ -247,10 +256,11 @@ export default function Messages() {
   async function handleSendMessage(overrideText?: string, attachments?: MessageAttachment[], msgType: ChatMessage["type"] = "text") {
     const textToSend = (overrideText ?? inputText).trim();
     if (!textToSend && (!attachments || attachments.length === 0)) return;
-    if (!selectedConvId) return;
+    const targetConvId = selectedConvId || activeConversation?.id;
+    if (!targetConvId) return;
 
     await sendMessage({
-      conversationId: selectedConvId,
+      conversationId: targetConvId,
       senderId: currentUserId,
       senderName: staff?.name || "Staff Member",
       senderRole: formatRoleName(currentUserRole),
@@ -493,23 +503,50 @@ export default function Messages() {
     }
   }
 
-  // Handle calls (Teams / WhatsApp initiate)
-  function handleStartCall(callType: "audio" | "video") {
-    if (!directPartner) return;
-    initiateCall(
-      {
-        id: currentUserId,
-        name: staff?.name || "Staff Member",
-        role: formatRoleName(currentUserRole),
-      },
-      {
-        id: directPartner.id,
-        name: directPartner.name,
-        role: directPartner.roleName,
-      },
-      callType,
-      selectedConvId,
-    );
+  // Handle calls (Teams / WhatsApp initiate — supports 1-on-1 direct & channel/bulletin huddles)
+  function handleStartCall(callType: "audio" | "video", targetOverride?: ChatUser, convIdOverride?: string) {
+    try {
+      const targetConvId = convIdOverride || selectedConvId || activeConversation?.id;
+      const receiver = targetOverride
+        ? {
+            id: targetOverride.id,
+            name: targetOverride.name,
+            role: targetOverride.roleName,
+          }
+        : directPartner
+        ? {
+            id: directPartner.id,
+            name: directPartner.name,
+            role: directPartner.roleName,
+          }
+        : activeConversation
+        ? {
+            id: activeConversation.id,
+            name: activeConversation.title.replace(/^[^\w\s]+/u, "").trim() || activeConversation.title,
+            role:
+              activeConversation.type === "announcement"
+                ? "All-Hands Fleet Huddle"
+                : activeConversation.type === "channel"
+                ? "Territory Hub Huddle"
+                : activeConversation.description || "Field Staff",
+          }
+        : null;
+
+      if (!receiver) return;
+
+      initiateCall(
+        {
+          id: currentUserId,
+          name: staff?.name || "Staff Member",
+          role: formatRoleName(currentUserRole),
+        },
+        receiver,
+        callType,
+        targetConvId,
+      );
+    } catch (err: any) {
+      alert(err?.message || "Unable to start call. Please check Communications & Calling settings.");
+    }
   }
 
   // Handle creating executive broadcast
@@ -580,10 +617,11 @@ export default function Messages() {
                     color: "#ffffff",
                     borderColor: "#334155",
                     fontWeight: 600,
+                    whiteSpace: "nowrap",
                   }}
                 >
-                  <Settings size={14} />
-                  <span>Admin Settings</span>
+                  <Settings size={13} />
+                  <span>Settings</span>
                 </button>
               )}
               {isManagement && moduleSettings.broadcastRolesAllowed.includes(currentUserRole) && (
@@ -592,8 +630,9 @@ export default function Messages() {
                   className="msg-hdr-btn broadcast"
                   onClick={() => setBroadcastModalOpen(true)}
                   title="Push Executive Broadcast / Directive to Field Staff"
+                  style={{ whiteSpace: "nowrap" }}
                 >
-                  <Radio size={15} />
+                  <Radio size={14} />
                   <span>Broadcast</span>
                 </button>
               )}
@@ -601,9 +640,16 @@ export default function Messages() {
                 type="button"
                 className="msg-hdr-btn"
                 onClick={() => setNewChatModalOpen(true)}
-                title="Start Direct Message with Staff"
+                title="Start Direct Message or Call with Staff"
+                style={{
+                  background: "#059669",
+                  color: "#ffffff",
+                  borderColor: "#047857",
+                  whiteSpace: "nowrap",
+                }}
               >
-                <Plus size={16} />
+                <Plus size={15} />
+                <span>New</span>
               </button>
             </div>
           </div>
@@ -838,32 +884,40 @@ export default function Messages() {
 
               {/* Header Communication Actions */}
               <div className="chat-header-actions">
-                {activeConversation.type === "direct" && directPartner && (
-                  <>
-                    {moduleSettings.allowVoiceCalls && (
-                      <button
-                        type="button"
-                        className="chat-action-btn call"
-                        onClick={() => handleStartCall("audio")}
-                        title="Audio Call (Teams / WhatsApp WebRTC)"
-                      >
-                        <Phone size={16} />
-                        <span className="btn-label">Voice Call</span>
-                      </button>
-                    )}
+                {moduleSettings.allowVoiceCalls && (
+                  <button
+                    type="button"
+                    className="chat-action-btn call"
+                    onClick={() => handleStartCall("audio")}
+                    title={
+                      activeConversation.type === "direct"
+                        ? "Audio Call (Teams / WhatsApp WebRTC)"
+                        : "Start Channel Audio Huddle"
+                    }
+                  >
+                    <Phone size={16} />
+                    <span className="btn-label">
+                      {activeConversation.type === "direct" ? "Voice Call" : "Voice Huddle"}
+                    </span>
+                  </button>
+                )}
 
-                    {moduleSettings.allowVideoCalls && (
-                      <button
-                        type="button"
-                        className="chat-action-btn video"
-                        onClick={() => handleStartCall("video")}
-                        title="Video Call (Teams / WhatsApp WebRTC)"
-                      >
-                        <Video size={16} />
-                        <span className="btn-label">Video Call</span>
-                      </button>
-                    )}
-                  </>
+                {moduleSettings.allowVideoCalls && (
+                  <button
+                    type="button"
+                    className="chat-action-btn video"
+                    onClick={() => handleStartCall("video")}
+                    title={
+                      activeConversation.type === "direct"
+                        ? "Video Call (Teams / WhatsApp WebRTC)"
+                        : "Start Channel Video Huddle"
+                    }
+                  >
+                    <Video size={16} />
+                    <span className="btn-label">
+                      {activeConversation.type === "direct" ? "Video Call" : "Video Huddle"}
+                    </span>
+                  </button>
                 )}
 
                 <button
@@ -1369,24 +1423,28 @@ export default function Messages() {
             </div>
 
             {/* Quick Actions (Audio / Video Call) */}
-            {activeConversation.type === "direct" && directPartner && (
+            {(moduleSettings.allowVoiceCalls || moduleSettings.allowVideoCalls) && (
               <div className="info-quick-actions">
-                <button
-                  type="button"
-                  className="quick-call-btn"
-                  onClick={() => handleStartCall("audio")}
-                >
-                  <Phone size={15} />
-                  <span>Audio Call</span>
-                </button>
-                <button
-                  type="button"
-                  className="quick-call-btn"
-                  onClick={() => handleStartCall("video")}
-                >
-                  <Video size={15} />
-                  <span>Video Call</span>
-                </button>
+                {moduleSettings.allowVoiceCalls && (
+                  <button
+                    type="button"
+                    className="quick-call-btn"
+                    onClick={() => handleStartCall("audio")}
+                  >
+                    <Phone size={15} />
+                    <span>{activeConversation.type === "direct" ? "Audio Call" : "Voice Huddle"}</span>
+                  </button>
+                )}
+                {moduleSettings.allowVideoCalls && (
+                  <button
+                    type="button"
+                    className="quick-call-btn"
+                    onClick={() => handleStartCall("video")}
+                  >
+                    <Video size={15} />
+                    <span>{activeConversation.type === "direct" ? "Video Call" : "Video Huddle"}</span>
+                  </button>
+                )}
               </div>
             )}
 
@@ -1433,7 +1491,7 @@ export default function Messages() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════ */}
-      {/* MODAL 1: NEW DIRECT MESSAGE (Select Staff from Directory)           */}
+      {/* MODAL 1: NEW DIRECT MESSAGE / CALL (Select Staff from Directory)    */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {newChatModalOpen && (
         <div className="comm-modal-backdrop">
@@ -1441,7 +1499,7 @@ export default function Messages() {
             <div className="comm-dialog-header">
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <Users size={18} color="#059669" />
-                <h3 style={{ margin: 0 }}>Start Direct Message</h3>
+                <h3 style={{ margin: 0 }}>Start Direct Message or Call</h3>
               </div>
               <button
                 type="button"
@@ -1454,34 +1512,93 @@ export default function Messages() {
 
             <div className="comm-dialog-body">
               <p style={{ margin: "0 0 12px 0", fontSize: 13, color: "#64748b" }}>
-                Select a staff member from the organization directory to open a 1-on-1 Teams/WhatsApp chat:
+                Select a staff member from the organization directory to open a 1-on-1 chat or start a live call:
               </p>
 
               <div className="directory-list-scroll">
-                {users
-                  .filter((u) => u.id !== currentUserId)
-                  .map((target) => (
-                    <div
-                      key={target.id}
-                      className="directory-user-card"
-                      onClick={async () => {
-                        const conv = await createDirectConversation(currentUserId, target);
-                        setConversations(getStoredConversations());
-                        setSelectedConvId(conv.id);
-                        setNewChatModalOpen(false);
-                      }}
-                    >
-                      <div className="dir-avatar">
-                        {target.name.slice(0, 2).toUpperCase()}
-                        {target.status === "online" && <span className="online-dot" />}
-                      </div>
-                      <div className="dir-meta">
-                        <strong>{target.name}</strong>
-                        <span className="dir-role">{target.roleName} · {target.region}</span>
-                      </div>
+                {(users.filter((u) => u.id !== currentUserId).length > 0
+                  ? users.filter((u) => u.id !== currentUserId)
+                  : users
+                ).map((target) => (
+                  <div
+                    key={target.id}
+                    className="directory-user-card"
+                    onClick={async () => {
+                      const conv = await createDirectConversation(currentUserId, target);
+                      setConversations(getStoredConversations());
+                      setSelectedConvId(conv.id);
+                      setNewChatModalOpen(false);
+                    }}
+                  >
+                    <div className="dir-avatar">
+                      {target.name.slice(0, 2).toUpperCase()}
+                      {target.status === "online" && <span className="online-dot" />}
+                    </div>
+                    <div className="dir-meta">
+                      <strong>{target.name}</strong>
+                      <span className="dir-role">{target.roleName} · {target.region}</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {moduleSettings.allowVoiceCalls && (
+                        <button
+                          type="button"
+                          title={`Voice Call ${target.name}`}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const conv = await createDirectConversation(currentUserId, target);
+                            setConversations(getStoredConversations());
+                            setSelectedConvId(conv.id);
+                            setNewChatModalOpen(false);
+                            handleStartCall("audio", target, conv.id);
+                          }}
+                          style={{
+                            width: 30,
+                            height: 30,
+                            borderRadius: 8,
+                            border: "1px solid #a7f3d0",
+                            background: "#f0fdf4",
+                            color: "#059669",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <Phone size={14} />
+                        </button>
+                      )}
+                      {moduleSettings.allowVideoCalls && (
+                        <button
+                          type="button"
+                          title={`Video Call ${target.name}`}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const conv = await createDirectConversation(currentUserId, target);
+                            setConversations(getStoredConversations());
+                            setSelectedConvId(conv.id);
+                            setNewChatModalOpen(false);
+                            handleStartCall("video", target, conv.id);
+                          }}
+                          style={{
+                            width: 30,
+                            height: 30,
+                            borderRadius: 8,
+                            border: "1px solid #bfdbfe",
+                            background: "#eff6ff",
+                            color: "#2563eb",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <Video size={14} />
+                        </button>
+                      )}
                       <ChevronRight size={16} color="#94a3b8" />
                     </div>
-                  ))}
+                  </div>
+                ))}
               </div>
             </div>
           </div>

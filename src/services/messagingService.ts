@@ -1,4 +1,6 @@
+import { supabase } from "../lib/supabase";
 import { loadUserAccounts } from "./userManagementService";
+import { getRegions } from "./regionService";
 
 export interface ChatUser {
   id: string;
@@ -237,6 +239,111 @@ class MessagingEventEmitter {
 }
 
 export const messagingEvents = new MessagingEventEmitter();
+
+// ── Real-Time Cross-Tab & Supabase Broadcast Synchronization ─────────────────
+let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
+const CLIENT_INSTANCE_ID = `client-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+function ensureRealtimeSync() {
+  if (typeof window === "undefined") return;
+  if (realtimeChannel) return;
+
+  try {
+    realtimeChannel = supabase.channel("penedge-communications-hub", {
+      config: { broadcast: { self: false } },
+    });
+
+    realtimeChannel
+      .on("broadcast", { event: "new_message" }, ({ payload }) => {
+        if (!payload || payload._origin === CLIENT_INSTANCE_ID) return;
+        const msg = payload.message as ChatMessage;
+        if (!msg || !msg.id) return;
+
+        const existingMsgs = getStoredMessages();
+        if (!existingMsgs.some((m) => m.id === msg.id)) {
+          const nextMsgs = [...existingMsgs, msg];
+          localStorage.setItem(STORAGE_KEY_MESSAGES, JSON.stringify(nextMsgs));
+          messagingEvents.emit("messages_updated", nextMsgs);
+        }
+
+        const convs = getStoredConversations();
+        const idx = convs.findIndex((c) => c.id === msg.conversationId);
+        if (idx !== -1) {
+          const updated = { ...convs[idx] };
+          updated.lastMessage = msg;
+          updated.updatedAt = msg.timestamp;
+          updated.unreadCount = (updated.unreadCount || 0) + 1;
+          convs.splice(idx, 1);
+          convs.unshift(updated);
+          localStorage.setItem(STORAGE_KEY_CONVERSATIONS, JSON.stringify(convs));
+          messagingEvents.emit("conversations_updated", convs);
+        }
+
+        playMessageNotificationSound(msg.priority === "urgent");
+        messagingEvents.emit("new_message", msg);
+        if (msg.isPushNotification) {
+          messagingEvents.emit("push_notification", msg);
+        }
+      })
+      .on("broadcast", { event: "call_state_changed" }, ({ payload }) => {
+        if (!payload || payload._origin === CLIENT_INSTANCE_ID) return;
+        const call = (payload.call ?? null) as CallSession | null;
+        if (!call) {
+          localStorage.removeItem(STORAGE_KEY_ACTIVE_CALL);
+          stopRingingSound();
+        } else {
+          localStorage.setItem(STORAGE_KEY_ACTIVE_CALL, JSON.stringify(call));
+          if (call.status === "ringing") {
+            startRingingSound();
+            messagingEvents.emit("incoming_call", call);
+          } else {
+            stopRingingSound();
+          }
+        }
+        messagingEvents.emit("call_state_changed", call);
+      })
+      .subscribe();
+  } catch (err) {
+    console.warn("Realtime channel setup notice:", err);
+  }
+
+  // Cross-tab storage listener
+  window.addEventListener("storage", (e: StorageEvent) => {
+    if (e.key === STORAGE_KEY_MESSAGES) {
+      const msgs = getStoredMessages();
+      messagingEvents.emit("messages_updated", msgs);
+      if (msgs.length > 0) {
+        messagingEvents.emit("new_message", msgs[msgs.length - 1]);
+      }
+    } else if (e.key === STORAGE_KEY_CONVERSATIONS) {
+      messagingEvents.emit("conversations_updated", getStoredConversations());
+    } else if (e.key === STORAGE_KEY_ACTIVE_CALL) {
+      const call = getActiveCall();
+      if (!call || call.status !== "ringing") {
+        stopRingingSound();
+      }
+      messagingEvents.emit("call_state_changed", call);
+    } else if (e.key === STORAGE_KEY_SETTINGS) {
+      messagingEvents.emit("settings_updated", getMessagingSettings());
+    }
+  });
+}
+
+function broadcastRealtimeEvent(event: string, data: Record<string, any>) {
+  ensureRealtimeSync();
+  if (!realtimeChannel) return;
+  try {
+    void realtimeChannel.send({
+      type: "broadcast",
+      event,
+      payload: { ...data, _origin: CLIENT_INSTANCE_ID },
+    });
+  } catch {}
+}
+
+if (typeof window !== "undefined") {
+  ensureRealtimeSync();
+}
 
 // Web Audio sound generator for rings and message alerts
 let audioCtx: AudioContext | null = null;
@@ -491,16 +598,165 @@ export async function initializeMessaging(currentUserId: string): Promise<{
   users: ChatUser[];
   conversations: Conversation[];
 }> {
+  ensureRealtimeSync();
   const users = await getDirectoryUsers(currentUserId);
   let convs = getStoredConversations();
-  let msgs = getStoredMessages();
+  const msgs = getStoredMessages();
 
   if (convs.length === 0) {
     const seeded = seedDefaultConversations(currentUserId, users);
     convs = seeded.conversations;
-    msgs = seeded.messages;
+  }
+
+  let modified = false;
+  const nowIso = new Date().toISOString();
+
+  // 1. Ensure All-Hands Bulletin exists and has all participants
+  const annIndex = convs.findIndex((c) => c.id === "conv-announcements-all-hands" || c.type === "announcement");
+  if (annIndex === -1) {
+    convs.unshift({
+      id: "conv-announcements-all-hands",
+      type: "announcement",
+      title: "📢 Pen Edge All-Hands & Field Bulletins",
+      description: "Official executive announcements, target directives & policy alerts.",
+      participantIds: users.map((u) => u.id),
+      unreadCount: 0,
+      isPinned: true,
+      isBroadcast: true,
+      channelCategory: "announcements",
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+    modified = true;
+  } else {
+    const ann = convs[annIndex];
+    const allIds = users.map((u) => u.id);
+    if (ann.participantIds.length !== allIds.length) {
+      convs[annIndex] = { ...ann, participantIds: allIds };
+      modified = true;
+    }
+  }
+
+  // 2. Sync Territory Hub channels from active regions & staff assignments
+  try {
+    const regions = await getRegions();
+    const activeRegions = regions.filter((r) => r.is_active);
+    for (const reg of activeRegions) {
+      const slug = reg.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const channelId = `conv-hub-${slug}`;
+      const regionMembers = users
+        .filter(
+          (u) =>
+            u.region.toLowerCase() === reg.name.toLowerCase() ||
+            u.region === "National" ||
+            u.roleKey === "administrator" ||
+            u.roleKey === "national_sales_manager" ||
+            u.roleKey === "hr"
+        )
+        .map((u) => u.id);
+      if (currentUserId && !regionMembers.includes(currentUserId)) {
+        regionMembers.push(currentUserId);
+      }
+
+      const existingIdx = convs.findIndex((c) => c.id === channelId);
+      if (existingIdx === -1) {
+        convs.push({
+          id: channelId,
+          type: "channel",
+          title: `📍 ${reg.name} Territory Hub`,
+          description: reg.description || `Field coordination, visits & sales execution for ${reg.name}.`,
+          participantIds: regionMembers,
+          unreadCount: 0,
+          channelCategory: "regions",
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
+        modified = true;
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to sync territory hub channels:", err);
+  }
+
+  // 3. Sync Direct 1-on-1 conversations for every active staff member in directory
+  const effectiveSelfId = currentUserId || "current-user";
+  for (const target of users) {
+    if (target.id === effectiveSelfId) continue;
+
+    // Remove any stale placeholder conversation created with "current-user" if real user ID is now known
+    if (effectiveSelfId !== "current-user") {
+      const staleId = `conv-dm-${["current-user", target.id].sort().join("-")}`;
+      const realId = `conv-dm-${[effectiveSelfId, target.id].sort().join("-")}`;
+      const staleIdx = convs.findIndex((c) => c.id === staleId);
+      if (staleIdx !== -1 && staleId !== realId) {
+        const staleConv = convs[staleIdx];
+        if (!convs.some((c) => c.id === realId)) {
+          convs[staleIdx] = {
+            ...staleConv,
+            id: realId,
+            participantIds: [effectiveSelfId, target.id],
+          };
+        } else {
+          convs.splice(staleIdx, 1);
+        }
+        modified = true;
+      }
+    }
+
+    const dmId = `conv-dm-${[effectiveSelfId, target.id].sort().join("-")}`;
+    const existingDmIdx = convs.findIndex(
+      (c) =>
+        c.id === dmId ||
+        (c.type === "direct" &&
+          c.participantIds.includes(effectiveSelfId) &&
+          c.participantIds.includes(target.id))
+    );
+
+    if (existingDmIdx === -1) {
+      const lastMsg = [...msgs].reverse().find((m) => m.conversationId === dmId);
+      convs.push({
+        id: dmId,
+        type: "direct",
+        title: target.name,
+        description: `${target.roleName} · ${target.region}`,
+        participantIds: [effectiveSelfId, target.id],
+        unreadCount: 0,
+        lastMessage: lastMsg,
+        channelCategory: "direct",
+        createdAt: nowIso,
+        updatedAt: lastMsg?.timestamp || nowIso,
+      });
+      modified = true;
+    } else {
+      const existingDm = convs[existingDmIdx];
+      const expectedDesc = `${target.roleName} · ${target.region}`;
+      if (existingDm.title !== target.name || existingDm.description !== expectedDesc) {
+        convs[existingDmIdx] = {
+          ...existingDm,
+          title: target.name,
+          description: expectedDesc,
+        };
+        modified = true;
+      }
+    }
+  }
+
+  // Sort conversations: pinned first, then those with messages by updatedAt desc, then direct/channels
+  convs.sort((a, b) => {
+    if (a.isPinned && !b.isPinned) return -1;
+    if (!a.isPinned && b.isPinned) return 1;
+    if (a.lastMessage && !b.lastMessage) return -1;
+    if (!a.lastMessage && b.lastMessage) return 1;
+    if (a.lastMessage && b.lastMessage) {
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    }
+    if (a.type === "direct" && b.type !== "direct") return -1;
+    if (a.type !== "direct" && b.type === "direct") return 1;
+    return a.title.localeCompare(b.title);
+  });
+
+  if (modified) {
     saveStoredConversations(convs);
-    saveStoredMessages(msgs);
   }
 
   return { users, conversations: convs };
@@ -552,7 +808,7 @@ export async function sendMessage(payload: SendMessagePayload): Promise<ChatMess
   const updatedMessages = [...allMessages, newMsg];
   saveStoredMessages(updatedMessages);
 
-  // Update conversation lastMessage & move to top
+  // Update conversation lastMessage & move to top (keeping pinned announcement at top if applicable)
   const convIndex = allConvs.findIndex((c) => c.id === payload.conversationId);
   if (convIndex !== -1) {
     const targetConv = { ...allConvs[convIndex] };
@@ -576,23 +832,33 @@ export async function sendMessage(payload: SendMessagePayload): Promise<ChatMess
 
   saveStoredConversations(allConvs);
 
-  // Play notification sound & trigger real-time event
+  // Play notification sound & trigger real-time event locally and via Supabase Broadcast
   playMessageNotificationSound(newMsg.priority === "urgent");
   messagingEvents.emit("new_message", newMsg);
+  broadcastRealtimeEvent("new_message", { message: newMsg });
 
   if (newMsg.isPushNotification) {
     messagingEvents.emit("push_notification", newMsg);
   }
 
-  // Simulate remote peer delivery check mark after 400ms
+  // Update delivery & read status ticks
+  setTimeout(() => {
+    const list = getStoredMessages();
+    const idx = list.findIndex((m) => m.id === newMsg.id);
+    if (idx !== -1 && list[idx].status === "sent") {
+      list[idx].status = "delivered";
+      saveStoredMessages(list);
+    }
+  }, 350);
+
   setTimeout(() => {
     const list = getStoredMessages();
     const idx = list.findIndex((m) => m.id === newMsg.id);
     if (idx !== -1) {
-      list[idx].status = "delivered";
+      list[idx].status = "read";
       saveStoredMessages(list);
     }
-  }, 400);
+  }, 1200);
 
   return newMsg;
 }
@@ -714,6 +980,7 @@ export function saveActiveCall(call: CallSession | null): void {
       localStorage.setItem(STORAGE_KEY_ACTIVE_CALL, JSON.stringify(call));
     }
     messagingEvents.emit("call_state_changed", call);
+    broadcastRealtimeEvent("call_state_changed", { call });
   } catch { }
 }
 
@@ -785,14 +1052,15 @@ export function endCall(callId: string, reason: "ended" | "missed" | "declined" 
       ? Math.max(1, Math.round((new Date(now).getTime() - new Date(current.connectedAt).getTime()) / 1000))
       : 0;
 
-    // Log call entry to chat conversation if exists
-    if (current.conversationId) {
+    const settings = getMessagingSettings();
+    // Log call entry to chat conversation if exists and enabled
+    if (current.conversationId && settings.recordCallLogsInChat !== false) {
       void sendMessage({
         conversationId: current.conversationId,
         senderId: current.callerId,
         senderName: current.callerName,
         senderRole: current.callerRole,
-        content: `${current.callType === "video" ? "📹 Video Call" : "📞 Voice Call"} — ${
+        content: `${current.callType === "video" ? "📹 Video Call" : "📞 Voice Call"} with ${current.receiverName} — ${
           reason === "ended"
             ? `Duration: ${Math.floor(duration / 60)}m ${duration % 60}s`
             : reason === "missed"

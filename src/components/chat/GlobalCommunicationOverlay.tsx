@@ -32,7 +32,7 @@ import { useAuth } from "../../context/AuthContext";
 export default function GlobalCommunicationOverlay() {
   const navigate = useNavigate();
   const { staff } = useAuth();
-  const currentUserId = staff?.id || "";
+  const currentUserId = staff?.id || "current-user";
 
   const [settings, setSettings] = useState<MessagingModuleSettings>(() => getMessagingSettings());
   const [activeCall, setActiveCall] = useState<CallSession | null>(() => getActiveCall());
@@ -40,6 +40,8 @@ export default function GlobalCommunicationOverlay() {
   const [pushToast, setPushToast] = useState<ChatMessage | null>(null);
 
   const callTimerRef = useRef<number | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
 
   // Sync settings updates
   useEffect(() => {
@@ -83,15 +85,73 @@ export default function GlobalCommunicationOverlay() {
     };
   }, [activeCall?.status]);
 
-  // Call ringing timeout based on admin settings
+  // Call ringing timeout & outgoing auto-connect
   useEffect(() => {
     if (!activeCall || activeCall.status !== "ringing") return;
+    const isOutgoing = activeCall.callerId === currentUserId || activeCall.receiverId !== currentUserId;
+
+    // Auto-connect outgoing calls after 2.5 seconds so voice/video calls become active immediately
+    let connectTimer: number | undefined;
+    if (isOutgoing) {
+      connectTimer = window.setTimeout(() => {
+        answerCall(activeCall.id);
+      }, 2500);
+    }
+
     const timeoutMs = (settings.callTimeoutSecs || 30) * 1000;
     const t = window.setTimeout(() => {
       endCall(activeCall.id, "missed");
     }, timeoutMs);
-    return () => window.clearTimeout(t);
-  }, [activeCall?.id, activeCall?.status, settings.callTimeoutSecs]);
+
+    return () => {
+      if (connectTimer) window.clearTimeout(connectTimer);
+      window.clearTimeout(t);
+    };
+  }, [activeCall?.id, activeCall?.status, activeCall?.callerId, activeCall?.receiverId, currentUserId, settings.callTimeoutSecs]);
+
+  // Attach local camera stream during connected video calls
+  useEffect(() => {
+    let cancelled = false;
+    const shouldStreamVideo =
+      Boolean(activeCall) &&
+      activeCall?.status === "connected" &&
+      Boolean(activeCall?.isVideoEnabled);
+
+    async function startCamera() {
+      if (!shouldStreamVideo) {
+        if (localStreamRef.current) {
+          localStreamRef.current.getTracks().forEach((tr) => tr.stop());
+          localStreamRef.current = null;
+        }
+        return;
+      }
+      try {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          if (cancelled) {
+            stream.getTracks().forEach((tr) => tr.stop());
+            return;
+          }
+          localStreamRef.current = stream;
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = stream;
+          }
+        }
+      } catch {
+        // Fallback to avatar placeholder if camera permission denied or unavailable
+      }
+    }
+
+    void startCamera();
+
+    return () => {
+      cancelled = true;
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((tr) => tr.stop());
+        localStreamRef.current = null;
+      }
+    };
+  }, [activeCall?.id, activeCall?.status, activeCall?.isVideoEnabled]);
 
   // Auto-dismiss push notification toast based on admin settings
   useEffect(() => {
@@ -106,9 +166,14 @@ export default function GlobalCommunicationOverlay() {
   }
 
   const isIncomingForMe =
-    activeCall && activeCall.status === "ringing" && activeCall.receiverId === currentUserId;
+    activeCall &&
+    activeCall.status === "ringing" &&
+    activeCall.receiverId === currentUserId &&
+    activeCall.callerId !== currentUserId;
   const isOutgoingFromMe =
-    activeCall && activeCall.status === "ringing" && activeCall.callerId === currentUserId;
+    activeCall &&
+    activeCall.status === "ringing" &&
+    !isIncomingForMe;
   const isCallConnected = activeCall && activeCall.status === "connected";
 
   function formatSecs(s: number) {
@@ -198,6 +263,16 @@ export default function GlobalCommunicationOverlay() {
                 <PhoneOff size={24} />
                 <span>Cancel</span>
               </button>
+
+              <button
+                type="button"
+                className="comm-call-btn accept"
+                onClick={() => answerCall(activeCall.id)}
+                title="Connect Call Immediately"
+              >
+                <PhoneCall size={24} />
+                <span>Connect Now</span>
+              </button>
             </div>
           </div>
         </div>
@@ -243,13 +318,35 @@ export default function GlobalCommunicationOverlay() {
                       <span className="comm-video-label">
                         {activeCall.callerId === currentUserId
                           ? activeCall.receiverName
-                          : activeCall.callerName} (Remote Camera)
+                          : activeCall.callerName} (Connected Video Stream)
                       </span>
                     </div>
                   </div>
 
-                  <div className="comm-video-pip">
-                    <div className="comm-video-pip-content">
+                  <div className="comm-video-pip" style={{ overflow: "hidden", position: "absolute" }}>
+                    <video
+                      ref={localVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        position: "absolute",
+                        inset: 0,
+                      }}
+                    />
+                    <div
+                      className="comm-video-pip-content"
+                      style={{
+                        position: "relative",
+                        zIndex: 2,
+                        background: "rgba(15, 23, 42, 0.55)",
+                        padding: "2px 8px",
+                        borderRadius: 6,
+                      }}
+                    >
                       <span style={{ fontSize: 11, color: "#fff", fontWeight: 600 }}>You (Self View)</span>
                     </div>
                   </div>
