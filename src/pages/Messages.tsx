@@ -26,6 +26,7 @@ import {
   Pause,
   Compass,
   Settings,
+  Trash2,
 } from "lucide-react";
 import LogoLoader from "../components/brand/LogoLoader";
 import { useAuth } from "../context/AuthContext";
@@ -36,6 +37,11 @@ import {
   sendMessage,
   markConversationAsRead,
   toggleMessageReaction,
+  deleteMessage,
+  clearConversationMessages,
+  clearConversationCallLogs,
+  clearAllCallLogs,
+  clearAllMessagesAndCalls,
   createDirectConversation,
   initiateCall,
   formatRoleName,
@@ -87,6 +93,7 @@ export default function Messages() {
   // Modals
   const [newChatModalOpen, setNewChatModalOpen] = useState(false);
   const [broadcastModalOpen, setBroadcastModalOpen] = useState(false);
+  const [clearHistoryModalOpen, setClearHistoryModalOpen] = useState(false);
   const [broadcastTitle, setBroadcastTitle] = useState("");
   const [broadcastContent, setBroadcastContent] = useState("");
   const [broadcastTargetRole, setBroadcastTargetRole] = useState("all");
@@ -651,6 +658,21 @@ export default function Messages() {
                 <Plus size={15} />
                 <span>New</span>
               </button>
+              <button
+                type="button"
+                className="msg-hdr-btn"
+                onClick={() => setClearHistoryModalOpen(true)}
+                title="Clear Calls & Messages History"
+                style={{
+                  background: "#fff1f2",
+                  color: "#e11d48",
+                  borderColor: "#fecdd3",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <Trash2 size={13} />
+                <span>Clear</span>
+              </button>
             </div>
           </div>
 
@@ -922,6 +944,16 @@ export default function Messages() {
 
                 <button
                   type="button"
+                  className="chat-action-btn icon-only"
+                  onClick={() => setClearHistoryModalOpen(true)}
+                  title="Clear Calls or Messages"
+                  style={{ color: "#e11d48", borderColor: "#fecdd3", background: "#fff1f2" }}
+                >
+                  <Trash2 size={16} />
+                </button>
+
+                <button
+                  type="button"
                   className={`chat-action-btn icon-only ${showRightPanel ? "active" : ""}`}
                   onClick={() => setShowRightPanel(!showRightPanel)}
                   title="Toggle Contact & Media Details"
@@ -1121,6 +1153,17 @@ export default function Messages() {
                               </div>
                             )}
                           </div>
+
+                          {/* Delete individual message or call log */}
+                          <button
+                            type="button"
+                            className="msg-reaction-add-btn"
+                            onClick={() => deleteMessage(msg.id)}
+                            title={isCallLog ? "Delete Call Log" : "Delete Message"}
+                            style={{ marginLeft: 2, color: "#94a3b8" }}
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         </div>
 
                         {/* Render active reaction chips */}
@@ -1485,6 +1528,34 @@ export default function Messages() {
                 <Radio size={14} />
                 <span>View All-Hands Announcements</span>
               </button>
+              <button
+                type="button"
+                className="info-tool-btn"
+                onClick={() => {
+                  if (!activeConversation) return;
+                  if (window.confirm(`Clear all call logs in "${activeConversation.title}"?`)) {
+                    clearConversationCallLogs(activeConversation.id);
+                  }
+                }}
+                style={{ color: "#b45309", borderColor: "#fde68a", background: "#fffbeb" }}
+              >
+                <Phone size={14} />
+                <span>Clear Call Logs in This Chat</span>
+              </button>
+              <button
+                type="button"
+                className="info-tool-btn"
+                onClick={() => {
+                  if (!activeConversation) return;
+                  if (window.confirm(`Clear all messages & calls in "${activeConversation.title}"?`)) {
+                    clearConversationMessages(activeConversation.id);
+                  }
+                }}
+                style={{ color: "#e11d48", borderColor: "#fecdd3", background: "#fff1f2" }}
+              >
+                <Trash2 size={14} />
+                <span>Clear Chat Messages &amp; Calls</span>
+              </button>
             </div>
           </div>
         </aside>
@@ -1701,6 +1772,171 @@ export default function Messages() {
                   }}
                 >
                   <Radio size={14} /> Send Live Broadcast
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* MODAL 3: CLEAR CALLS & MESSAGES HISTORY                            */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {clearHistoryModalOpen && (
+        <div className="comm-modal-backdrop">
+          <div className="comm-dialog" style={{ maxWidth: 460 }}>
+            <div className="comm-dialog-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Trash2 size={18} color="#e11d48" />
+                <h3 style={{ margin: 0 }}>Clear Calls &amp; Messages</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setClearHistoryModalOpen(false)}
+                className="dialog-close-btn"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="comm-dialog-body">
+              <p style={{ margin: "0 0 14px 0", fontSize: 13, color: "#64748b" }}>
+                Choose whether to clear call logs or messages for the current conversation or across all chats:
+              </p>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {activeConversation && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearConversationCallLogs(activeConversation.id);
+                        setClearHistoryModalOpen(false);
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "12px 14px",
+                        borderRadius: 10,
+                        border: "1px solid #fde68a",
+                        background: "#fffbeb",
+                        color: "#92400e",
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <div>
+                        <strong style={{ display: "block", fontSize: 13 }}>
+                          Clear Call Logs in Current Chat
+                        </strong>
+                        <span style={{ fontSize: 11.5, opacity: 0.85 }}>
+                          Removes only voice/video call entries in {activeConversation.title}
+                        </span>
+                      </div>
+                      <Phone size={16} />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearConversationMessages(activeConversation.id);
+                        setClearHistoryModalOpen(false);
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "12px 14px",
+                        borderRadius: 10,
+                        border: "1px solid #fecdd3",
+                        background: "#fff1f2",
+                        color: "#be123c",
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <div>
+                        <strong style={{ display: "block", fontSize: 13 }}>
+                          Clear All Messages &amp; Calls in Current Chat
+                        </strong>
+                        <span style={{ fontSize: 11.5, opacity: 0.85 }}>
+                          Empties all chat messages and call logs in {activeConversation.title}
+                        </span>
+                      </div>
+                      <Trash2 size={16} />
+                    </button>
+                  </>
+                )}
+
+                <div style={{ height: 1, background: "#e2e8f0", margin: "4px 0" }} />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm("Clear all voice and video call logs across all conversations?")) {
+                      clearAllCallLogs();
+                      setClearHistoryModalOpen(false);
+                    }
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "12px 14px",
+                    borderRadius: 10,
+                    border: "1px solid #cbd5e1",
+                    background: "#f8fafc",
+                    color: "#334155",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <div>
+                    <strong style={{ display: "block", fontSize: 13 }}>
+                      Clear All Call Logs (All Conversations)
+                    </strong>
+                    <span style={{ fontSize: 11.5, color: "#64748b" }}>
+                      Deletes all call history and resets any active call session
+                    </span>
+                  </div>
+                  <PhoneCall size={16} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "Clear ALL messages and call logs across every conversation? Conversation channels and contacts will remain intact.",
+                      )
+                    ) {
+                      clearAllMessagesAndCalls();
+                      setClearHistoryModalOpen(false);
+                    }
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "12px 14px",
+                    borderRadius: 10,
+                    border: "1px solid #f43f5e",
+                    background: "#e11d48",
+                    color: "#ffffff",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <div>
+                    <strong style={{ display: "block", fontSize: 13 }}>
+                      Clear All Messages &amp; Call History (Global)
+                    </strong>
+                    <span style={{ fontSize: 11.5, opacity: 0.9 }}>
+                      Wipes all messages, attachments, and call logs across all chats
+                    </span>
+                  </div>
+                  <Trash2 size={16} />
                 </button>
               </div>
             </div>

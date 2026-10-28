@@ -13,11 +13,14 @@ import {
   Bell,
   Lock,
   Plus,
+  Trash2,
 } from "lucide-react";
 import {
   getMessagingSettings,
   saveMessagingSettings,
   resetMessagingSettingsToDefault,
+  clearAllCallLogs,
+  clearAllMessagesAndCalls,
   playMessageNotificationSound,
   previewTestRingtone,
   type MessagingModuleSettings,
@@ -799,6 +802,63 @@ export function CommunicationsSection() {
               <option value={365}>365 Days (Full Fiscal Year)</option>
               <option value={9999}>Indefinite (Keep All History)</option>
             </select>
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm("Clear all voice and video call logs across all conversations?")) {
+                    clearAllCallLogs();
+                    setSaveStatus("saved");
+                    setTimeout(() => setSaveStatus("idle"), 2500);
+                  }
+                }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #fde68a",
+                  background: "#fffbeb",
+                  color: "#b45309",
+                  cursor: "pointer",
+                }}
+              >
+                <Phone size={13} /> Clear All Call Logs
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Clear ALL messages and call logs across all conversations? Channels and contacts will remain intact.",
+                    )
+                  ) {
+                    clearAllMessagesAndCalls();
+                    setSaveStatus("saved");
+                    setTimeout(() => setSaveStatus("idle"), 2500);
+                  }
+                }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #fecdd3",
+                  background: "#fff1f2",
+                  color: "#e11d48",
+                  cursor: "pointer",
+                }}
+              >
+                <Trash2 size={13} /> Clear All Messages &amp; Calls
+              </button>
+            </div>
           </div>
         </div>
       </div>

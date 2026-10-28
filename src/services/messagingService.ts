@@ -302,6 +302,17 @@ function ensureRealtimeSync() {
         }
         messagingEvents.emit("call_state_changed", call);
       })
+      .on("broadcast", { event: "messages_synced" }, ({ payload }) => {
+        if (!payload || payload._origin === CLIENT_INSTANCE_ID) return;
+        if (Array.isArray(payload.messages)) {
+          localStorage.setItem(STORAGE_KEY_MESSAGES, JSON.stringify(payload.messages));
+          messagingEvents.emit("messages_updated", payload.messages);
+        }
+        if (Array.isArray(payload.conversations)) {
+          localStorage.setItem(STORAGE_KEY_CONVERSATIONS, JSON.stringify(payload.conversations));
+          messagingEvents.emit("conversations_updated", payload.conversations);
+        }
+      })
       .subscribe();
   } catch (err) {
     console.warn("Realtime channel setup notice:", err);
@@ -902,6 +913,121 @@ export function toggleMessageReaction(messageId: string, emoji: string, userId: 
   }
 
   saveStoredMessages(msgs);
+}
+
+export function deleteMessage(messageId: string): void {
+  const allMessages = getStoredMessages();
+  const targetMsg = allMessages.find((m) => m.id === messageId);
+  if (!targetMsg) return;
+
+  const remaining = allMessages.filter((m) => m.id !== messageId);
+  saveStoredMessages(remaining);
+
+  const allConvs = getStoredConversations();
+  const convIdx = allConvs.findIndex((c) => c.id === targetMsg.conversationId);
+  if (convIdx !== -1) {
+    const convRemaining = remaining.filter((m) => m.conversationId === targetMsg.conversationId);
+    const latest = convRemaining.length > 0 ? convRemaining[convRemaining.length - 1] : undefined;
+    allConvs[convIdx] = {
+      ...allConvs[convIdx],
+      lastMessage: latest,
+      updatedAt: latest?.timestamp || allConvs[convIdx].createdAt,
+    };
+    saveStoredConversations(allConvs);
+  }
+
+  broadcastRealtimeEvent("messages_synced", {
+    messages: remaining,
+    conversations: allConvs,
+  });
+}
+
+export function clearConversationMessages(conversationId: string): void {
+  const allMessages = getStoredMessages();
+  const remaining = allMessages.filter((m) => m.conversationId !== conversationId);
+  saveStoredMessages(remaining);
+
+  const allConvs = getStoredConversations();
+  const convIdx = allConvs.findIndex((c) => c.id === conversationId);
+  if (convIdx !== -1) {
+    allConvs[convIdx] = {
+      ...allConvs[convIdx],
+      lastMessage: undefined,
+      unreadCount: 0,
+    };
+    saveStoredConversations(allConvs);
+  }
+
+  broadcastRealtimeEvent("messages_synced", {
+    messages: remaining,
+    conversations: allConvs,
+  });
+}
+
+export function clearConversationCallLogs(conversationId: string): void {
+  const allMessages = getStoredMessages();
+  const remaining = allMessages.filter(
+    (m) => !(m.conversationId === conversationId && m.type === "call_log"),
+  );
+  saveStoredMessages(remaining);
+
+  const allConvs = getStoredConversations();
+  const convIdx = allConvs.findIndex((c) => c.id === conversationId);
+  if (convIdx !== -1) {
+    const convRemaining = remaining.filter((m) => m.conversationId === conversationId);
+    const latest = convRemaining.length > 0 ? convRemaining[convRemaining.length - 1] : undefined;
+    allConvs[convIdx] = {
+      ...allConvs[convIdx],
+      lastMessage: latest,
+      updatedAt: latest?.timestamp || allConvs[convIdx].createdAt,
+    };
+    saveStoredConversations(allConvs);
+  }
+
+  broadcastRealtimeEvent("messages_synced", {
+    messages: remaining,
+    conversations: allConvs,
+  });
+}
+
+export function clearAllCallLogs(): void {
+  const allMessages = getStoredMessages();
+  const remaining = allMessages.filter((m) => m.type !== "call_log");
+  saveStoredMessages(remaining);
+
+  const allConvs = getStoredConversations().map((conv) => {
+    const convRemaining = remaining.filter((m) => m.conversationId === conv.id);
+    const latest = convRemaining.length > 0 ? convRemaining[convRemaining.length - 1] : undefined;
+    return {
+      ...conv,
+      lastMessage: latest,
+      updatedAt: latest?.timestamp || conv.createdAt,
+    };
+  });
+  saveStoredConversations(allConvs);
+  saveActiveCall(null);
+
+  broadcastRealtimeEvent("messages_synced", {
+    messages: remaining,
+    conversations: allConvs,
+  });
+}
+
+export function clearAllMessagesAndCalls(): void {
+  saveStoredMessages([]);
+
+  const allConvs = getStoredConversations().map((conv) => ({
+    ...conv,
+    lastMessage: undefined,
+    unreadCount: 0,
+  }));
+  saveStoredConversations(allConvs);
+  saveActiveCall(null);
+
+  broadcastRealtimeEvent("messages_synced", {
+    messages: [],
+    conversations: allConvs,
+  });
 }
 
 export async function createDirectConversation(
