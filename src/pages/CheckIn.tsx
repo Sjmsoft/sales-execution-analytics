@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   CalendarCheck,
@@ -395,6 +395,7 @@ function UnifiedMap({
 
 export default function CheckIn() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { staff, role } = useAuth();
   const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
   const isBA = roleKey === "brand_ambassador" || roleKey === "ba" || roleKey === "vsr";
@@ -415,15 +416,31 @@ export default function CheckIn() {
     return () => clearInterval(timer);
   }, []);
 
-  // Form Mode: "attendance" (Daily Work Shift) vs "outlet" (Store Visit)
-  const [selectedVisitType, setSelectedVisitType] = useState<VisitType>("attendance");
+  const isOutletRoute =
+    location.pathname.includes("/visits/check-in") ||
+    location.pathname.includes("/visits/new") ||
+    location.pathname.includes("/new-visit") ||
+    location.pathname.includes("/outlet-visit");
 
-  // Enforce attendance-only mode for BA profiles
+  // Form Mode: "attendance" (Daily Work Shift) vs "outlet" (Store Visit)
+  const [selectedVisitType, setSelectedVisitType] = useState<VisitType>(
+    !isBA && isOutletRoute ? "outlet" : "attendance"
+  );
+
+  // Sync mode with route changes & enforce attendance-only mode for BA profiles
   useEffect(() => {
-    if (isBA && selectedVisitType !== "attendance") {
+    if (isBA) {
+      if (selectedVisitType !== "attendance") {
+        setSelectedVisitType("attendance");
+      }
+      return;
+    }
+    if (isOutletRoute) {
+      setSelectedVisitType("outlet");
+    } else if (location.pathname === "/attendance" || location.pathname === "/check-in") {
       setSelectedVisitType("attendance");
     }
-  }, [isBA, selectedVisitType]);
+  }, [isBA, isOutletRoute, location.pathname]);
 
   // Session state
   const [pageStatus, setPageStatus] = useState<PageStatus>("loading");
@@ -586,7 +603,10 @@ export default function CheckIn() {
 
   // Restore active check-in session from DB
   useEffect(() => {
-    if (!staff?.id) return;
+    if (!staff?.id) {
+      setPageStatus("idle");
+      return;
+    }
     let cancelled = false;
 
     async function restoreSession() {

@@ -18,11 +18,22 @@ export default function AdminRoute({ children }: AdminRouteProps) {
     return <Navigate to="/login" replace />;
   }
 
-  const roleKey = (role?.key || staff?.user_roles?.key || "").toLowerCase();
-  const isAdmin = roleKey === "administrator" || role?.hierarchy_level === 1;
+  const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
+  const isAdmin =
+    roleKey === "administrator" ||
+    roleKey === "admin" ||
+    roleKey === "a0000000-0000-4000-8000-000000000001" ||
+    role?.hierarchy_level === 1;
+  const isBA = roleKey === "brand_ambassador" || roleKey === "ba" || roleKey === "vsr";
+  const isExecutive =
+    isAdmin ||
+    roleKey === "national_sales_manager" ||
+    roleKey === "nsm" ||
+    roleKey === "hr" ||
+    (role?.hierarchy_level === 2 && role?.can_view_all_sales === true);
 
   if (!isAdmin) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={isBA ? "/check-in" : isExecutive ? "/" : "/sales"} replace />;
   }
 
   return <>{children}</>;

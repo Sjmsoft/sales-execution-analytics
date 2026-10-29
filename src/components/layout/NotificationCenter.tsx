@@ -26,6 +26,7 @@ import {
   type NotificationItem,
   type NotificationType,
 } from "../../services/notificationService";
+import { useAuth } from "../../context/AuthContext";
 import "./NotificationCenter.css";
 
 function formatRelativeTime(isoString: string): string {
@@ -63,6 +64,14 @@ function getNotificationIcon(type: NotificationType) {
 
 export default function NotificationCenter() {
   const navigate = useNavigate();
+  const { staff, role } = useAuth();
+  const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
+  const isAdmin =
+    roleKey === "administrator" ||
+    roleKey === "admin" ||
+    roleKey === "a0000000-0000-4000-8000-000000000001" ||
+    role?.hierarchy_level === 1;
+
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"all" | "unread">("all");
   const [notifications, setNotifications] = useState<NotificationItem[]>(() =>
@@ -316,7 +325,7 @@ export default function NotificationCenter() {
           {/* Footer */}
           <div className="notif-dropdown-footer">
             <Link
-              to="/settings/notifications"
+              to="/notifications"
               className="notif-footer-link"
               onClick={() => setIsOpen(false)}
             >
@@ -324,15 +333,17 @@ export default function NotificationCenter() {
               <ChevronRight size={13} />
             </Link>
 
-            <Link
-              to="/settings"
-              className="notif-settings-link"
-              onClick={() => setIsOpen(false)}
-              title="Alert Preferences"
-            >
-              <Settings size={13} />
-              <span>Settings</span>
-            </Link>
+            {isAdmin && (
+              <Link
+                to="/settings?tab=notifications"
+                className="notif-settings-link"
+                onClick={() => setIsOpen(false)}
+                title="Alert Preferences"
+              >
+                <Settings size={13} />
+                <span>Settings</span>
+              </Link>
+            )}
           </div>
         </div>
       )}

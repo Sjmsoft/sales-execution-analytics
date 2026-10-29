@@ -20,8 +20,6 @@ const generalStaffRoles = [
   "market_sitter",
 ];
 
-
-
 // BA and VSR roles are permitted on Daily Attendance, Sales, Targets, and Visits (attendance history)
 const baAllowedRoles = [
   ...generalStaffRoles,
@@ -30,7 +28,7 @@ const baAllowedRoles = [
   "vsr",
 ];
 
-// All staff roles permitted on Messages & Calls (Admin, HR, NSM, RSM, SE, BA, VSR, Market Sitter)
+// All staff roles permitted on Messages & Calls and Notifications (Admin, HR, NSM, RSM, SE, BA, VSR, Market Sitter)
 const allStaffRoles = [
   ...baAllowedRoles,
   "admin",
@@ -51,6 +49,7 @@ const allStaffRoles = [
 export const navigationItems: NavigationItem[] = [
   { label: "Dashboard", path: "/", icon: "dashboard", roles: executiveRoles },
   { label: "Check-In & Attendance", path: "/check-in", icon: "attendance", roles: allStaffRoles },
+  { label: "Messages & Calls", path: "/messages", icon: "messages", roles: allStaffRoles },
   { label: "Sales", path: "/sales", icon: "sales", roles: baAllowedRoles },
   { label: "Targets", path: "/targets", icon: "targets", roles: baAllowedRoles },
   { label: "Outlets", path: "/outlets", icon: "outlets", roles: generalStaffRoles },
@@ -60,6 +59,6 @@ export const navigationItems: NavigationItem[] = [
   { label: "Field Team Performance", path: "/reports/field-performance", icon: "users", roles: generalStaffRoles },
   { label: "Team", path: "/staff", icon: "team", roles: generalStaffRoles },
   { label: "Team Activity", path: "/visits/activity", icon: "activity", roles: generalStaffRoles },
+  { label: "Notifications", path: "/notifications", icon: "notifications", roles: allStaffRoles },
   { label: "Settings", path: "/settings", icon: "settings", roles: ["administrator"] },
-  { label: "Notifications", path: "/settings/notifications", icon: "notifications", roles: ["administrator"] },
 ];

@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { getUnreadNotificationsCount, subscribeNotifications } from "../../services/notificationService";
+import { getUnreadMessagesCount, messagingEvents } from "../../services/messagingService";
 
 type MobileNavProps = {
   isDrawerOpen: boolean;
@@ -43,12 +44,22 @@ export default function MobileNav({
   const [searchQuery, setSearchQuery] = useState("");
   const [showQuickActionModal, setShowQuickActionModal] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(() => getUnreadNotificationsCount());
+  const [unreadMsgCount, setUnreadMsgCount] = useState(() => getUnreadMessagesCount());
 
   useEffect(() => {
     const unsub = subscribeNotifications((items) => {
       setUnreadNotifCount(items.filter((n) => !n.isRead).length);
     });
-    return () => unsub();
+    const updateMsgCount = () => setUnreadMsgCount(getUnreadMessagesCount());
+    const unsubMsg1 = messagingEvents.on("new_message", updateMsgCount);
+    const unsubMsg2 = messagingEvents.on("conversations_updated", updateMsgCount);
+    const unsubMsg3 = messagingEvents.on("messages_updated", updateMsgCount);
+    return () => {
+      unsub();
+      unsubMsg1();
+      unsubMsg2();
+      unsubMsg3();
+    };
   }, []);
 
   // Calculate user initials
@@ -84,7 +95,7 @@ export default function MobileNav({
         title: "Field & Trade Operations",
         items: [
           ...(isExecutive ? [{ label: "Dashboard", path: "/", icon: LayoutDashboard, badge: "Home" }] : []),
-          { label: "Messages & Calls", path: "/messages", icon: MessageSquare, badge: "Live" },
+          { label: "Messages & Calls", path: "/messages", icon: MessageSquare, badge: unreadMsgCount > 0 ? `${unreadMsgCount} new` : "Live" },
           { label: "Notifications Hub", path: "/notifications", icon: Bell, badge: unreadNotifCount > 0 ? `${unreadNotifCount}` : null },
           { label: isBA ? "Daily Attendance" : "Check-In & Attendance", path: "/check-in", icon: ClipboardCheck, badge: "GPS" },
           { label: "Outlet Visits History", path: "/visits", icon: History, badge: null },
@@ -116,7 +127,7 @@ export default function MobileNav({
           ]
         : []),
     ],
-    [isAdmin, isExecutive, isBA, isAttendanceExcluded, unreadNotifCount],
+    [isAdmin, isExecutive, isBA, isAttendanceExcluded, unreadNotifCount, unreadMsgCount],
   );
 
   // Filtered drawer items for search

@@ -113,14 +113,6 @@ export default function Dashboard() {
     roleKey === "nsm" ||
     roleKey === "hr";
 
-  // Executive Command Center is strictly visible to Admin, NSM, and HR only
-  if (!authLoading && !isExecutive) {
-    if (roleKey === "brand_ambassador" || roleKey === "ba" || roleKey === "vsr") {
-      return <Navigate to="/attendance" replace />;
-    }
-    return <Navigate to="/sales" replace />;
-  }
-
   // State Management
   const [timeframe, setTimeframe] = useState<TimeframeOption>("30d");
   const [activeSegment, setActiveSegment] = useState<SegmentFilter>("all");
@@ -462,6 +454,14 @@ export default function Dashboard() {
   const attendanceVisits = useMemo(() => {
     return visits.filter((v) => v.type === "attendance").slice(0, 8);
   }, [visits]);
+
+  // Executive Command Center is strictly visible to Admin, NSM, and HR only
+  if (!authLoading && !isExecutive) {
+    if (roleKey === "brand_ambassador" || roleKey === "ba" || roleKey === "vsr") {
+      return <Navigate to="/attendance" replace />;
+    }
+    return <Navigate to="/sales" replace />;
+  }
 
   if (visibleLoading) {
     return <DashboardSkeleton />;

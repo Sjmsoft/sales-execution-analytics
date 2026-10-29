@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { getSales, updateSale, deleteSale, type Sale } from "../services/salesService";
@@ -117,6 +118,7 @@ function getPeriodDateRange(periodKey: string): { start: string; end: string } {
 
 export default function Sales() {
   const { staff, role } = useAuth();
+  const location = useLocation();
   const userScope = useMemo(() => getUserScope(staff, role), [staff, role]);
 
   const [sales, setSales] = useState<Sale[]>([]);
@@ -134,7 +136,17 @@ export default function Sales() {
   >([]);
 
   // View mode switcher: Complete Overview | Visual Tracker & Charts | Transaction Ledger
-  const [viewMode, setViewMode] = useState<"complete" | "tracker" | "ledger">("complete");
+  const [viewMode, setViewMode] = useState<"complete" | "tracker" | "ledger">(() =>
+    location.pathname.includes("/tracker") ? "tracker" : "complete"
+  );
+
+  useEffect(() => {
+    if (location.pathname.includes("/tracker")) {
+      setViewMode("tracker");
+    } else if (location.pathname === "/sales") {
+      setViewMode("complete");
+    }
+  }, [location.pathname]);
 
   // Chart state
   const [chartMetric, setChartMetric] = useState<"revenue" | "units">("revenue");

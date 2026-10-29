@@ -9,6 +9,7 @@ import { useAuth } from "../../context/AuthContext";
 import { navigationItems } from "../../config/navigation";
 import LogoLoader from "../brand/LogoLoader";
 import GlobalCommunicationOverlay from "../chat/GlobalCommunicationOverlay";
+import { useAppearance } from "../../hooks/useAppearance";
 import "../chat/messaging.css";
 
 /** How long the branded logo overlay shows on every page navigation. */
@@ -26,6 +27,8 @@ type AppLayoutProps = {
 };
 
 export default function AppLayout({ children }: AppLayoutProps) {
+  // Mount appearance engine globally so saved theme, accent color, and compact mode apply across all routes
+  useAppearance();
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(() => {
     try {

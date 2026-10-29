@@ -87,7 +87,9 @@ export default function Messages() {
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [recordDuration, setRecordDuration] = useState(0);
-  const [showRightPanel, setShowRightPanel] = useState(true);
+  const [showRightPanel, setShowRightPanel] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth > 900 : true
+  );
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
 
   // Modals

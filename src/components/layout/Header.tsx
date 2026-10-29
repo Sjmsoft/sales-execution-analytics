@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { LogOut, MapPin, MessageSquare, PanelLeftClose, PanelLeftOpen, Download, WifiOff } from "lucide-react";
+import { LogOut, MapPin, MessageSquare, PanelLeftClose, PanelLeftOpen, Download, WifiOff, Sun, Moon } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import BrandLogo3D from "../brand/BrandLogo3D";
 import { getUnreadMessagesCount, messagingEvents } from "../../services/messagingService";
 import NotificationCenter from "./NotificationCenter";
 import { usePWA } from "../../hooks/usePWA";
+import { useAppearance } from "../../hooks/useAppearance";
 
 type HeaderProps = {
   onMenuClick: () => void;
@@ -20,6 +21,7 @@ export default function Header({
 }: HeaderProps) {
   const { staff, role, signOut } = useAuth();
   const { isInstallable, isOffline, installApp } = usePWA();
+  const { resolvedTheme, setColorScheme } = useAppearance();
 
   const initials = useMemo(() => {
     if (!staff?.name) return "PE";
@@ -82,6 +84,30 @@ export default function Header({
 
       {/* ── Header Right: User Info & Actions ── */}
       <div className="header-user">
+        {/* Quick Theme Toggle (Light / Dark) */}
+        <button
+          type="button"
+          onClick={() => setColorScheme(resolvedTheme === "dark" ? "light" : "dark")}
+          title={resolvedTheme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+          aria-label={resolvedTheme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 36,
+            height: 36,
+            borderRadius: "50%",
+            background: "var(--surface-subtle, #f1f5f9)",
+            color: "var(--text-main, #334155)",
+            border: "1px solid var(--border-default, #e2e8f0)",
+            cursor: "pointer",
+            marginRight: 2,
+            transition: "all 0.15s ease",
+          }}
+        >
+          {resolvedTheme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
+
         {/* Messages & Calls Quick Link */}
         <Link
           to="/messages"
@@ -96,9 +122,9 @@ export default function Header({
             width: 36,
             height: 36,
             borderRadius: "50%",
-            background: "#f1f5f9",
-            color: "#334155",
-            border: "1px solid #e2e8f0",
+            background: "var(--surface-subtle, #f1f5f9)",
+            color: "var(--text-main, #334155)",
+            border: "1px solid var(--border-default, #e2e8f0)",
             textDecoration: "none",
             marginRight: 4,
             transition: "all 0.15s ease",

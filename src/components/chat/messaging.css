@@ -2098,7 +2098,16 @@ body.compact-mode .app-content.messages-route,
 @media (max-width: 900px) {
   .chat-right-panel,
   .messages-info-panel {
-    display: none !important;
+    position: fixed !important;
+    top: 56px !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 85% !important;
+    max-width: 340px !important;
+    z-index: 100 !important;
+    display: flex !important;
+    box-shadow: -4px 0 24px rgba(15, 23, 42, 0.22) !important;
+    background: var(--surface, #ffffff) !important;
   }
 }
 
@@ -2212,7 +2221,8 @@ body.compact-mode .app-content.messages-route,
   }
 
   /* Slide-over contact info panel on mobile */
-  .chat-right-panel {
+  .chat-right-panel,
+  .messages-info-panel {
     position: fixed !important;
     top: 56px !important;
     right: 0 !important;
@@ -2222,6 +2232,119 @@ body.compact-mode .app-content.messages-route,
     z-index: 100 !important;
     display: flex !important;
     box-shadow: -4px 0 20px rgba(0, 0, 0, 0.18) !important;
-    background: #ffffff !important;
+    background: var(--surface, #ffffff) !important;
   }
 }
+
+/* ── Dark Mode Overrides for Messages & Calls Hub ─────────────────────────── */
+[data-theme="dark"] .messages-hub-container,
+html.dark .messages-hub-container {
+  background: var(--bg-main, #0b1120);
+  color: var(--text-main, #f8fafc);
+}
+
+[data-theme="dark"] .messages-sidebar,
+html.dark .messages-sidebar,
+[data-theme="dark"] .messages-sidebar-header,
+html.dark .messages-sidebar-header,
+[data-theme="dark"] .chat-stage-header,
+html.dark .chat-stage-header,
+[data-theme="dark"] .chat-composer-wrap,
+html.dark .chat-composer-wrap,
+[data-theme="dark"] .messages-info-panel,
+html.dark .messages-info-panel,
+[data-theme="dark"] .info-panel-header,
+html.dark .info-panel-header {
+  background: var(--surface, #111827) !important;
+  border-color: var(--border-default, #1e293b) !important;
+  color: var(--text-main, #f8fafc) !important;
+}
+
+[data-theme="dark"] .messages-main-panel,
+html.dark .messages-main-panel,
+[data-theme="dark"] .chat-messages-stream,
+html.dark .chat-messages-stream {
+  background: var(--bg-main, #0b1120) !important;
+}
+
+[data-theme="dark"] .messages-search-box,
+html.dark .messages-search-box,
+[data-theme="dark"] .messages-tabs,
+html.dark .messages-tabs,
+[data-theme="dark"] .chat-smart-replies-bar,
+html.dark .chat-smart-replies-bar,
+[data-theme="dark"] .chat-composer-box,
+html.dark .chat-composer-box,
+[data-theme="dark"] .info-card-box,
+html.dark .info-card-box,
+[data-theme="dark"] .info-quick-action-btn,
+html.dark .info-quick-action-btn {
+  background: var(--surface-subtle, #1e293b) !important;
+  border-color: var(--border-default, #334155) !important;
+  color: var(--text-main, #f8fafc) !important;
+}
+
+[data-theme="dark"] .messages-search-input,
+html.dark .messages-search-input,
+[data-theme="dark"] .composer-textarea,
+html.dark .composer-textarea,
+[data-theme="dark"] .conv-title,
+html.dark .conv-title,
+[data-theme="dark"] .stage-header-info h3,
+html.dark .stage-header-info h3,
+[data-theme="dark"] .info-panel-header h4,
+html.dark .info-panel-header h4,
+[data-theme="dark"] .info-profile-name,
+html.dark .info-profile-name {
+  color: var(--text-main, #f8fafc) !important;
+}
+
+[data-theme="dark"] .conversation-item,
+html.dark .conversation-item {
+  border-color: transparent !important;
+}
+
+[data-theme="dark"] .conversation-item:hover,
+html.dark .conversation-item:hover {
+  background: var(--surface-hover, #1e293b) !important;
+}
+
+[data-theme="dark"] .conversation-item.active,
+html.dark .conversation-item.active {
+  background: rgba(16, 185, 129, 0.14) !important;
+  border-color: rgba(16, 185, 129, 0.35) !important;
+}
+
+[data-theme="dark"] .msg-bubble-wrap.incoming .msg-bubble,
+html.dark .msg-bubble-wrap.incoming .msg-bubble {
+  background: var(--surface, #1e293b) !important;
+  border-color: var(--border-default, #334155) !important;
+  color: var(--text-main, #f8fafc) !important;
+}
+
+[data-theme="dark"] .smart-reply-chip,
+html.dark .smart-reply-chip,
+[data-theme="dark"] .chat-action-btn,
+html.dark .chat-action-btn,
+[data-theme="dark"] .role-chip,
+html.dark .role-chip {
+  background: var(--surface, #111827) !important;
+  border-color: var(--border-default, #334155) !important;
+  color: var(--text-secondary, #cbd5e1) !important;
+}
+
+[data-theme="dark"] .comm-dialog,
+html.dark .comm-dialog {
+  background: var(--surface, #111827) !important;
+  border-color: var(--border-default, #334155) !important;
+  color: var(--text-main, #f8fafc) !important;
+}
+
+[data-theme="dark"] .comm-dialog-header,
+html.dark .comm-dialog-header,
+[data-theme="dark"] .comm-dialog-footer,
+html.dark .comm-dialog-footer {
+  background: var(--surface-subtle, #1e293b) !important;
+  border-color: var(--border-default, #334155) !important;
+}
+

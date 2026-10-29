@@ -31,6 +31,7 @@ import { navigationItems } from "../../config/navigation";
 import { useAuth } from "../../context/AuthContext";
 import BrandLogo3D from "../brand/BrandLogo3D";
 import { getUnreadNotificationsCount, subscribeNotifications } from "../../services/notificationService";
+import { getUnreadMessagesCount, messagingEvents } from "../../services/messagingService";
 
 type SidebarProps = {
   mobileOpen: boolean;
@@ -54,6 +55,7 @@ const navigationIcons: Record<string, LucideIcon> = {
   analytics: ChartNoAxesCombined,
   vsr: Network,
   ms: UsersRound,
+  users: UsersRound,
   team: Users,
   activity: Activity,
   settings: Settings,
@@ -88,7 +90,7 @@ const navigationGroups: NavigationGroup[] = [
   {
     id: "management",
     title: "Organization & System",
-    paths: ["/staff", "/visits/activity", "/settings", "/settings/notifications"],
+    paths: ["/staff", "/visits/activity", "/notifications", "/settings", "/settings/notifications"],
   },
 ];
 
@@ -101,16 +103,30 @@ export default function Sidebar({
   const { staff, role, signOut } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [unreadNotifCount, setUnreadNotifCount] = useState(() => getUnreadNotificationsCount());
+  const [unreadMsgCount, setUnreadMsgCount] = useState(() => getUnreadMessagesCount());
 
   useEffect(() => {
     const unsub = subscribeNotifications((items) => {
       setUnreadNotifCount(items.filter((n) => !n.isRead).length);
     });
-    return () => unsub();
+    const updateMsgCount = () => setUnreadMsgCount(getUnreadMessagesCount());
+    const unsubMsg1 = messagingEvents.on("new_message", updateMsgCount);
+    const unsubMsg2 = messagingEvents.on("conversations_updated", updateMsgCount);
+    const unsubMsg3 = messagingEvents.on("messages_updated", updateMsgCount);
+    return () => {
+      unsub();
+      unsubMsg1();
+      unsubMsg2();
+      unsubMsg3();
+    };
   }, []);
 
   const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
-  const isAdmin = roleKey === "administrator" || roleKey === "admin" || role?.hierarchy_level === 1;
+  const isAdmin =
+    roleKey === "administrator" ||
+    roleKey === "admin" ||
+    roleKey === "a0000000-0000-4000-8000-000000000001" ||
+    role?.hierarchy_level === 1;
   const isExecutive =
     isAdmin ||
     roleKey === "national_sales_manager" ||
@@ -123,29 +139,33 @@ export default function Sidebar({
   const visibleItems = useMemo(
     () =>
       navigationItems.filter((item) => {
-        // Unified Check-In & Attendance and Outlet Visits History are enabled for all users across the organization
-        if (item.path === "/check-in" || item.path === "/attendance" || item.path === "/visits") {
+        // Unified Check-In & Attendance, Messages & Calls, Notifications, and Outlet Visits History are enabled for all users
+        if (
+          item.path === "/check-in" ||
+          item.path === "/attendance" ||
+          item.path === "/visits" ||
+          item.path === "/messages" ||
+          item.path === "/notifications"
+        ) {
           return true;
         }
-        // Messages & Calls is enabled for all users across the organization
-        if (item.path === "/messages") {
-          return true;
-        }
-        // BA & VSR roles see: Check-In, Sales, Targets, and Outlet Visits History
+        // BA & VSR roles see: Check-In, Messages, Sales, Targets, Visits, and Notifications
         if (isBA) {
           return (
             item.path === "/check-in" ||
             item.path === "/attendance" ||
+            item.path === "/messages" ||
             item.path === "/sales" ||
             item.path === "/targets" ||
-            item.path === "/visits"
+            item.path === "/visits" ||
+            item.path === "/notifications"
           );
         }
         // Executive Command Center dashboard only visible to admin, NSM and HR
         if (item.path === "/") {
           return isExecutive;
         }
-        if (item.path.startsWith("/settings")) {
+        if (item.path === "/settings" || item.path.startsWith("/settings/")) {
           return isAdmin;
         }
         return roleKey ? item.roles.includes(roleKey) : true;
@@ -329,7 +349,23 @@ export default function Sidebar({
                               <div className="nav-item-left">
                                 <Icon className="nav-icon" aria-hidden="true" />
                                 <span>{isBA && item.path === "/check-in" ? "Daily Attendance" : item.label}</span>
-                                {item.path === "/settings/notifications" && unreadNotifCount > 0 && (
+                                {item.path === "/messages" && unreadMsgCount > 0 && (
+                                  <span
+                                    className="nav-item-badge"
+                                    style={{
+                                      fontSize: 10,
+                                      fontWeight: 800,
+                                      background: "#059669",
+                                      color: "#ffffff",
+                                      padding: "1px 6px",
+                                      borderRadius: 999,
+                                      marginLeft: 6,
+                                    }}
+                                  >
+                                    {unreadMsgCount}
+                                  </span>
+                                )}
+                                {(item.path === "/notifications" || item.path === "/settings/notifications") && unreadNotifCount > 0 && (
                                   <span
                                     className="nav-item-badge"
                                     style={{

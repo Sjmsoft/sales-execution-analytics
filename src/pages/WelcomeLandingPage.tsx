@@ -13,6 +13,8 @@ import {
   LayoutDashboard,
   FileSpreadsheet,
   ClipboardCheck,
+  MessageSquare,
+  RefreshCw,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useUserLocation } from "../hooks/useUserLocation";
@@ -20,7 +22,7 @@ import "./WelcomeLandingPage.css";
 import BrandLogo3D from "../components/brand/BrandLogo3D";
 
 export default function WelcomeLandingPage() {
-  const { user, staff, role, signOut } = useAuth();
+  const { user, staff, role, signOut, refreshStaff } = useAuth();
   const { userLocation, isLocating } = useUserLocation(staff?.id);
   const navigate = useNavigate();
 
@@ -87,6 +89,46 @@ export default function WelcomeLandingPage() {
 
       {/* ── Main Landing Body ── */}
       <main className="pen-landing-content">
+        {!staff && (
+          <div
+            style={{
+              background: "rgba(245, 158, 11, 0.12)",
+              border: "1px solid rgba(245, 158, 11, 0.35)",
+              borderRadius: "12px",
+              padding: "14px 18px",
+              marginBottom: "20px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "12px",
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ color: "#fde68a", fontSize: "13.5px" }}>
+              <strong>Staff profile linking in progress:</strong> Your account ({user?.email}) is authenticated, and your staff directory profile is being synchronized.
+            </div>
+            <button
+              type="button"
+              onClick={() => void refreshStaff()}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                background: "#f59e0b",
+                color: "#0f172a",
+                border: "none",
+                borderRadius: "8px",
+                padding: "8px 14px",
+                fontSize: "12.5px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              <RefreshCw size={14} />
+              <span>Sync Staff Profile</span>
+            </button>
+          </div>
+        )}
         {/* Hero Welcome Banner */}
         <section className="pen-landing-hero">
           <div className="pen-hero-left">
@@ -359,6 +401,21 @@ export default function WelcomeLandingPage() {
                     <ArrowRight size={14} />
                   </div>
                 </Link>
+
+                {/* Module for BA: Messages & Calls */}
+                <Link to="/messages" className="pen-module-card">
+                  <div>
+                    <div className="pen-module-icon-wrap cyan">
+                      <MessageSquare size={22} />
+                    </div>
+                    <h3>Messages & Calls</h3>
+                    <p>Communicate with field supervisors, receive broadcast directives, and place audio or video calls.</p>
+                  </div>
+                  <div className="pen-module-cta">
+                    <span>Open Messages & Calls</span>
+                    <ArrowRight size={14} />
+                  </div>
+                </Link>
               </>
             ) : (
               <>
@@ -467,6 +524,21 @@ export default function WelcomeLandingPage() {
                   </div>
                   <div className="pen-module-cta">
                     <span>Proceed to Reports</span>
+                    <ArrowRight size={14} />
+                  </div>
+                </Link>
+
+                {/* Module 7: Messages & Calls */}
+                <Link to="/messages" className="pen-module-card">
+                  <div>
+                    <div className="pen-module-icon-wrap cyan">
+                      <MessageSquare size={22} />
+                    </div>
+                    <h3>Messages & Calls</h3>
+                    <p>Collaborate with regional hubs, broadcast executive bulletins, and place instant audio or video calls.</p>
+                  </div>
+                  <div className="pen-module-cta">
+                    <span>Open Messages & Calls</span>
                     <ArrowRight size={14} />
                   </div>
                 </Link>

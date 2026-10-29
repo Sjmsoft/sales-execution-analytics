@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate, useSearchParams } from "react-router-dom";
 
 import {
   User,
@@ -488,7 +488,7 @@ function DrinkCategoriesSection() {
 /* ─── Main Page ───────────────────────────────────── */
 
 export default function Settings() {
-  const { user, staff, role, loading: authLoading } = useAuth();
+  const { user, staff, role, loading: authLoading, refreshStaff } = useAuth();
   const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
   const isAdmin =
     roleKey === "administrator" ||
@@ -496,11 +496,24 @@ export default function Settings() {
     roleKey === "a0000000-0000-4000-8000-000000000001" ||
     role?.hierarchy_level === 1;
 
-  const searchParams = new URLSearchParams(window.location.search);
+  const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = (searchParams.get("tab") as TabId) || "profile";
 
   /* tab state */
-  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
+  const [activeTab, setActiveTabState] = useState<TabId>(initialTab);
+
+  // Sync activeTab when URL query param ?tab=... changes
+  useEffect(() => {
+    const paramTab = searchParams.get("tab") as TabId | null;
+    if (paramTab && paramTab in TAB_LABELS && paramTab !== activeTab) {
+      setActiveTabState(paramTab);
+    }
+  }, [searchParams, activeTab]);
+
+  const setActiveTab = (tab: TabId) => {
+    setActiveTabState(tab);
+    setSearchParams({ tab }, { replace: true });
+  };
 
   /* settings menu sidebar collapse state */
   const [menuSidebarCollapsed, setMenuSidebarCollapsed] = useState<boolean>(() => {
@@ -562,10 +575,6 @@ export default function Settings() {
     }
   }, [activeTab]);
 
-  if (!authLoading && !isAdmin) {
-    return <Navigate to="/" replace />;
-  }
-
   /* ── Profile section ── */
   const [profileName, setProfileName] = useState(staff?.name ?? "");
   const [profilePhone, setProfilePhone] = useState(staff?.phone ?? "");
@@ -581,20 +590,26 @@ export default function Settings() {
     setProfileEmail(user?.email ?? "");
   }, [staff, user]);
 
-  if (authLoading) {
-    return (
-      <div className="settings-page">
-        <SettingsSkeleton />
-      </div>
-    );
-  }
-
   async function saveProfile() {
     setProfileSave("saving");
     try {
-      if (user) {
-        await supabase.auth.updateUser({ email: profileEmail });
+      if (staff?.id) {
+        const { error: staffErr } = await supabase
+          .from("staff")
+          .update({
+            name: profileName.trim() || staff.name,
+            phone: profilePhone.trim() || null,
+            email: profileEmail.trim() || staff.email,
+          })
+          .eq("id", staff.id);
+        if (staffErr) {
+          console.warn("Staff update notice:", staffErr);
+        }
       }
+      if (user && profileEmail.trim() && profileEmail.trim() !== user.email) {
+        await supabase.auth.updateUser({ email: profileEmail.trim() });
+      }
+      await refreshStaff();
       setProfileSave("saved");
       setTimeout(() => setProfileSave("idle"), 3000);
     } catch {
@@ -677,6 +692,18 @@ export default function Settings() {
   /* ── Privacy section ── */
   const [shareAnalytics, setShareAnalytics] = useState(true);
   const [sessionTimeout, setSessionTimeout] = useState("60");
+
+  if (authLoading) {
+    return (
+      <div className="settings-page">
+        <SettingsSkeleton />
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <div className="settings-page">
