@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, Navigate, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import {
   User,
@@ -37,10 +37,19 @@ import {
   ChevronRight,
   ChevronDown,
   LogOut,
+  KeyRound,
+  Mail,
+  RefreshCw,
+  Copy,
 } from "lucide-react";
 import { useAppearance, THEME_COLOR_OPTIONS } from "../hooks/useAppearance";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
+import {
+  sendPasswordResetEmail,
+  getPasswordResetRecord,
+  clearPasswordResetRequirement,
+} from "../services/userManagementService";
 import { UserManagementSection } from "./settings/UserManagementSection";
 import { DrinksAndProductsSection } from "./settings/DrinksAndProductsSection";
 import { RoleManagementSection } from "./settings/RoleManagementSection";
@@ -254,11 +263,17 @@ export default function Settings() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const rawParamTab = searchParams.get("tab");
+  const accountTabs: TabId[] = ["profile", "security", "notifications", "appearance", "regional", "privacy"];
+
   const initialTab: TabId =
     rawParamTab === "drinkCategories"
-      ? "drinksAndProducts"
+      ? isAdmin
+        ? "drinksAndProducts"
+        : "security"
       : rawParamTab && rawParamTab in TAB_LABELS
-      ? (rawParamTab as TabId)
+      ? !isAdmin && !accountTabs.includes(rawParamTab as TabId)
+        ? "security"
+        : (rawParamTab as TabId)
       : "profile";
 
   /* tab state */
@@ -268,13 +283,16 @@ export default function Settings() {
   useEffect(() => {
     const paramTab = searchParams.get("tab");
     if (paramTab === "drinkCategories") {
-      setActiveTabState("drinksAndProducts");
+      setActiveTabState(isAdmin ? "drinksAndProducts" : "security");
       return;
     }
-    if (paramTab && paramTab in TAB_LABELS && paramTab !== activeTab) {
-      setActiveTabState(paramTab as TabId);
+    if (paramTab && paramTab in TAB_LABELS) {
+      const targetTab = !isAdmin && !accountTabs.includes(paramTab as TabId) ? "security" : (paramTab as TabId);
+      if (targetTab !== activeTab) {
+        setActiveTabState(targetTab);
+      }
     }
-  }, [searchParams, activeTab]);
+  }, [searchParams, activeTab, isAdmin]);
 
   const setActiveTab = (tab: TabId) => {
     setActiveTabState(tab);
@@ -400,8 +418,61 @@ export default function Settings() {
   const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [securitySave, setSecuritySave] = useState<SaveState>("idle");
   const [pwError, setPwError] = useState("");
+  const [copiedSuggestedPw, setCopiedSuggestedPw] = useState(false);
+  const [resetEmailStatus, setResetEmailStatus] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
+  const [sendingResetEmail, setSendingResetEmail] = useState(false);
+  const [pwResetRecord, setPwResetRecord] = useState(() => getPasswordResetRecord(user?.email));
+
+  useEffect(() => {
+    setPwResetRecord(getPasswordResetRecord(user?.email));
+  }, [user?.email]);
 
   const isSecurityDirty = Boolean(currentPw || newPw || confirmPw);
+
+  function generateStrongUserPassword() {
+    const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+    const lower = "abcdefghijkmnopqrstuvwxyz";
+    const nums = "23456789";
+    const syms = "!@#$%&*";
+    let generated =
+      "Pen" +
+      upper.charAt(Math.floor(Math.random() * upper.length)) +
+      lower.charAt(Math.floor(Math.random() * lower.length));
+    for (let i = 0; i < 4; i++) {
+      generated += nums.charAt(Math.floor(Math.random() * nums.length));
+    }
+    generated += syms.charAt(Math.floor(Math.random() * syms.length));
+    setNewPw(generated);
+    setConfirmPw(generated);
+    setShowNewPw(true);
+    setShowConfirmPw(true);
+    setPwError("");
+  }
+
+  async function handleSendSelfResetEmail() {
+    const targetEmail = user?.email || staff?.email;
+    if (!targetEmail) {
+      setResetEmailStatus({ type: "err", msg: "No email address found on your account." });
+      return;
+    }
+    setSendingResetEmail(true);
+    setResetEmailStatus(null);
+    try {
+      const res = await sendPasswordResetEmail(targetEmail);
+      if (res.success) {
+        setResetEmailStatus({
+          type: "ok",
+          msg: `Password reset link sent to ${targetEmail}. Check your email inbox or spam folder.`,
+        });
+      } else {
+        setResetEmailStatus({ type: "err", msg: res.message });
+      }
+    } catch (err: any) {
+      setResetEmailStatus({ type: "err", msg: err?.message || "Could not send reset email." });
+    } finally {
+      setSendingResetEmail(false);
+    }
+  }
 
   async function savePassword() {
     setPwError("");
@@ -410,20 +481,38 @@ export default function Settings() {
       return;
     }
     if (newPw !== confirmPw) {
-      setPwError("Passwords do not match.");
+      setPwError("New password and confirmation do not match.");
       return;
     }
     setSecuritySave("saving");
     try {
+      // Optional current password verification when user provides their current password
+      if (currentPw.trim() && user?.email) {
+        const { error: verifyErr } = await supabase.auth.signInWithPassword({
+          email: user.email,
+          password: currentPw,
+        });
+        if (verifyErr) {
+          setPwError("Current password is incorrect. Leave it blank if using a recovery session, or request a reset link below.");
+          setSecuritySave("error");
+          return;
+        }
+      }
+
       const { error } = await supabase.auth.updateUser({
         password: newPw,
       });
-      if (error) throw error;
+      if (error) {
+        setPwError(error.message);
+        throw error;
+      }
+      await clearPasswordResetRequirement(user?.email || staff?.email);
+      setPwResetRecord(getPasswordResetRecord(user?.email));
       setCurrentPw("");
       setNewPw("");
       setConfirmPw("");
       setSecuritySave("saved");
-      setTimeout(() => setSecuritySave("idle"), 3000);
+      setTimeout(() => setSecuritySave("idle"), 3500);
     } catch {
       setSecuritySave("error");
     }
@@ -580,18 +669,16 @@ export default function Settings() {
     );
   }
 
-  if (!isAdmin) {
-    return <Navigate to="/" replace />;
-  }
-
   return (
     <div className="settings-page">
       {/* Page header */}
       <div className="settings-page-header">
         <div>
-          <h1 className="settings-page-title">Settings</h1>
+          <h1 className="settings-page-title">{isAdmin ? "Settings" : "Account & Security Settings"}</h1>
           <p className="settings-page-subtitle">
-            Manage your account preferences and application settings
+            {isAdmin
+              ? "Manage your account preferences and application settings"
+              : "Update your personal profile, change your password, and customize your workspace"}
           </p>
         </div>
       </div>
@@ -689,60 +776,64 @@ export default function Settings() {
             )}
           </div>
 
-          {/* Group 2: Product Catalog */}
-          <div className="settings-sidebar-group">
-            {!menuSidebarCollapsed ? (
-              <button
-                type="button"
-                className="settings-sidebar-group-header"
-                onClick={() => toggleGroup("catalog")}
-                aria-expanded={!collapsedGroups.catalog}
-              >
-                <span className="settings-sidebar-group-title">Product Catalog & Regions</span>
-                <ChevronDown
-                  size={14}
-                  className={`settings-group-chevron${collapsedGroups.catalog ? " settings-group-chevron--collapsed" : ""}`}
-                />
-              </button>
-            ) : (
-              <div className="settings-sidebar-divider" title="Product Catalog & Regions" />
-            )}
-            {(!collapsedGroups.catalog || menuSidebarCollapsed) && (
-              <div className="settings-sidebar-group-items">
-                <SubnavButton id="drinksAndProducts" icon={Wine} label="Drinks & Products" active={activeTab === "drinksAndProducts"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
-                <SubnavButton id="outletTypes" icon={Building2} label="Outlet Types" active={activeTab === "outletTypes"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
-                <SubnavButton id="paymentMethods" icon={CreditCard} label="Payment Methods" active={activeTab === "paymentMethods"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
-                <SubnavButton id="visitOutcomes" icon={CheckCircle2} label="Visit Outcomes" active={activeTab === "visitOutcomes"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
-                <SubnavButton id="regions" icon={MapPin} label="Regions" active={activeTab === "regions"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
-              </div>
-            )}
-          </div>
+          {/* Group 2: Product Catalog (Admin only) */}
+          {isAdmin && (
+            <div className="settings-sidebar-group">
+              {!menuSidebarCollapsed ? (
+                <button
+                  type="button"
+                  className="settings-sidebar-group-header"
+                  onClick={() => toggleGroup("catalog")}
+                  aria-expanded={!collapsedGroups.catalog}
+                >
+                  <span className="settings-sidebar-group-title">Product Catalog & Regions</span>
+                  <ChevronDown
+                    size={14}
+                    className={`settings-group-chevron${collapsedGroups.catalog ? " settings-group-chevron--collapsed" : ""}`}
+                  />
+                </button>
+              ) : (
+                <div className="settings-sidebar-divider" title="Product Catalog & Regions" />
+              )}
+              {(!collapsedGroups.catalog || menuSidebarCollapsed) && (
+                <div className="settings-sidebar-group-items">
+                  <SubnavButton id="drinksAndProducts" icon={Wine} label="Drinks & Products" active={activeTab === "drinksAndProducts"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                  <SubnavButton id="outletTypes" icon={Building2} label="Outlet Types" active={activeTab === "outletTypes"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                  <SubnavButton id="paymentMethods" icon={CreditCard} label="Payment Methods" active={activeTab === "paymentMethods"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                  <SubnavButton id="visitOutcomes" icon={CheckCircle2} label="Visit Outcomes" active={activeTab === "visitOutcomes"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                  <SubnavButton id="regions" icon={MapPin} label="Regions" active={activeTab === "regions"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Group 3: Integrations & Field Tracking */}
-          <div className="settings-sidebar-group">
-            {!menuSidebarCollapsed ? (
-              <button
-                type="button"
-                className="settings-sidebar-group-header"
-                onClick={() => toggleGroup("integrations")}
-                aria-expanded={!collapsedGroups.integrations}
-              >
-                <span className="settings-sidebar-group-title">Integrations & Tracking</span>
-                <ChevronDown
-                  size={14}
-                  className={`settings-group-chevron${collapsedGroups.integrations ? " settings-group-chevron--collapsed" : ""}`}
-                />
-              </button>
-            ) : (
-              <div className="settings-sidebar-divider" title="Integrations & Tracking" />
-            )}
-            {(!collapsedGroups.integrations || menuSidebarCollapsed) && (
-              <div className="settings-sidebar-group-items">
-                <SubnavButton id="geofencing" icon={Compass} label="Geofencing & Integrations" active={activeTab === "geofencing"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
-                <SubnavButton id="communications" icon={MessageSquare} label="Communications & Calls" active={activeTab === "communications"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
-              </div>
-            )}
-          </div>
+          {/* Group 3: Integrations & Field Tracking (Admin only) */}
+          {isAdmin && (
+            <div className="settings-sidebar-group">
+              {!menuSidebarCollapsed ? (
+                <button
+                  type="button"
+                  className="settings-sidebar-group-header"
+                  onClick={() => toggleGroup("integrations")}
+                  aria-expanded={!collapsedGroups.integrations}
+                >
+                  <span className="settings-sidebar-group-title">Integrations & Tracking</span>
+                  <ChevronDown
+                    size={14}
+                    className={`settings-group-chevron${collapsedGroups.integrations ? " settings-group-chevron--collapsed" : ""}`}
+                  />
+                </button>
+              ) : (
+                <div className="settings-sidebar-divider" title="Integrations & Tracking" />
+              )}
+              {(!collapsedGroups.integrations || menuSidebarCollapsed) && (
+                <div className="settings-sidebar-group-items">
+                  <SubnavButton id="geofencing" icon={Compass} label="Geofencing & Integrations" active={activeTab === "geofencing"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                  <SubnavButton id="communications" icon={MessageSquare} label="Communications & Calls" active={activeTab === "communications"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Group 4: Administration */}
           {isAdmin && (
@@ -864,101 +955,299 @@ export default function Settings() {
           {/* ── Security ── */}
           {activeTab === "security" && (
             <div className="settings-section-content">
-              <div className="settings-section-titles" style={{ marginBottom: '1.5rem' }}>
-                <h3 className="settings-section-title">Security</h3>
-                <p className="settings-section-subtitle">Password and authentication</p>
+              <div className="settings-section-titles" style={{ marginBottom: "1.5rem" }}>
+                <h3 className="settings-section-title">Password &amp; Account Security</h3>
+                <p className="settings-section-subtitle">
+                  Change your login password or request a password reset link via Email or WhatsApp
+                </p>
               </div>
-          <div className="settings-form">
-            <p className="settings-section-note">
-              Enter a new password (minimum 8 characters) to update your account credentials.
-            </p>
-            <div className="settings-form-grid">
-              <div className="settings-field settings-field--full settings-field--pw">
-                <label htmlFor="sett-cur-pw">Current password</label>
-                <div className="settings-pw-wrap">
-                  <input
-                    id="sett-cur-pw"
-                    type={showCurrentPw ? "text" : "password"}
-                    value={currentPw}
-                    onChange={(e) => setCurrentPw(e.target.value)}
-                    placeholder="••••••••"
-                  />
-                  <button
-                    type="button"
-                    className="settings-pw-eye"
-                    onClick={() => setShowCurrentPw((v) => !v)}
-                    aria-label={showCurrentPw ? "Hide" : "Show"}
-                  >
-                    {showCurrentPw ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
+
+              {/* Temporary Password Reset Banner (if Admin recently reset this user's password) */}
+              {pwResetRecord?.mustChangeOnLogin && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "10px",
+                    background: "#fffbeb",
+                    border: "1px solid #fde68a",
+                    color: "#92400e",
+                    padding: "12px 16px",
+                    borderRadius: "10px",
+                    marginBottom: "1.25rem",
+                    fontSize: "0.84rem",
+                  }}
+                >
+                  <KeyRound size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <div>
+                    <strong style={{ display: "block", marginBottom: 2 }}>
+                      Temporary Password Active
+                    </strong>
+                    <span>
+                      Your password was recently reset by an Administrator. Please set your new personal password below to secure your account.
+                    </span>
+                  </div>
                 </div>
-              </div>
-              <div className="settings-field settings-field--pw">
-                <label htmlFor="sett-new-pw">New password</label>
-                <div className="settings-pw-wrap">
-                  <input
-                    id="sett-new-pw"
-                    type={showNewPw ? "text" : "password"}
-                    value={newPw}
-                    onChange={(e) => {
-                      setNewPw(e.target.value);
-                      if (pwError) setPwError("");
+              )}
+
+              <div className="settings-form">
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: "10px",
+                    marginBottom: "12px",
+                  }}
+                >
+                  <p className="settings-section-note" style={{ margin: 0 }}>
+                    Enter a strong password (at least 8 characters) to update your account credentials.
+                  </p>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <button
+                      type="button"
+                      onClick={generateStrongUserPassword}
+                      className="btn-ghost-sm"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        border: "1px solid #cbd5e1",
+                        background: "#f8fafc",
+                      }}
+                    >
+                      <RefreshCw size={13} />
+                      <span>Suggest Strong Password</span>
+                    </button>
+                    {newPw && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(newPw);
+                          setCopiedSuggestedPw(true);
+                          setTimeout(() => setCopiedSuggestedPw(false), 2000);
+                        }}
+                        className="btn-ghost-sm"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          border: "1px solid #cbd5e1",
+                          background: "#ffffff",
+                        }}
+                      >
+                        {copiedSuggestedPw ? <Check size={13} /> : <Copy size={13} />}
+                        <span>{copiedSuggestedPw ? "Copied" : "Copy"}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="settings-form-grid">
+                  <div className="settings-field settings-field--full settings-field--pw">
+                    <label htmlFor="sett-cur-pw">
+                      Current password <span style={{ fontWeight: 400, color: "#64748b" }}>(optional if using a reset link)</span>
+                    </label>
+                    <div className="settings-pw-wrap">
+                      <input
+                        id="sett-cur-pw"
+                        type={showCurrentPw ? "text" : "password"}
+                        value={currentPw}
+                        onChange={(e) => {
+                          setCurrentPw(e.target.value);
+                          if (pwError) setPwError("");
+                        }}
+                        placeholder="Enter current password to verify"
+                      />
+                      <button
+                        type="button"
+                        className="settings-pw-eye"
+                        onClick={() => setShowCurrentPw((v) => !v)}
+                        aria-label={showCurrentPw ? "Hide" : "Show"}
+                      >
+                        {showCurrentPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="settings-field settings-field--pw">
+                    <label htmlFor="sett-new-pw">New password *</label>
+                    <div className="settings-pw-wrap">
+                      <input
+                        id="sett-new-pw"
+                        type={showNewPw ? "text" : "password"}
+                        value={newPw}
+                        onChange={(e) => {
+                          setNewPw(e.target.value);
+                          if (pwError) setPwError("");
+                        }}
+                        placeholder="Minimum 8 characters"
+                      />
+                      <button
+                        type="button"
+                        className="settings-pw-eye"
+                        onClick={() => setShowNewPw((v) => !v)}
+                        aria-label={showNewPw ? "Hide" : "Show"}
+                      >
+                        {showNewPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="settings-field settings-field--pw">
+                    <label htmlFor="sett-conf-pw">Confirm new password *</label>
+                    <div className="settings-pw-wrap">
+                      <input
+                        id="sett-conf-pw"
+                        type={showConfirmPw ? "text" : "password"}
+                        value={confirmPw}
+                        onChange={(e) => {
+                          setConfirmPw(e.target.value);
+                          if (pwError) setPwError("");
+                        }}
+                        placeholder="Re-enter new password"
+                      />
+                      <button
+                        type="button"
+                        className="settings-pw-eye"
+                        onClick={() => setShowConfirmPw((v) => !v)}
+                        aria-label={showConfirmPw ? "Hide" : "Show"}
+                      >
+                        {showConfirmPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Live Password Requirements Checklist */}
+                {newPw.length > 0 && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "12px",
+                      marginTop: "12px",
+                      padding: "10px 14px",
+                      borderRadius: "8px",
+                      background: "#f8fafc",
+                      border: "1px solid #e2e8f0",
+                      fontSize: "0.78rem",
                     }}
-                    placeholder="Minimum 8 characters"
-                  />
-                  <button
-                    type="button"
-                    className="settings-pw-eye"
-                    onClick={() => setShowNewPw((v) => !v)}
-                    aria-label={showNewPw ? "Hide" : "Show"}
                   >
-                    {showNewPw ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
+                    <span style={{ color: newPw.length >= 8 ? "#059669" : "#64748b", fontWeight: 600 }}>
+                      {newPw.length >= 8 ? "✓" : "○"} 8+ characters
+                    </span>
+                    <span
+                      style={{
+                        color: /[A-Z]/.test(newPw) && /[a-z]/.test(newPw) ? "#059669" : "#64748b",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {/[A-Z]/.test(newPw) && /[a-z]/.test(newPw) ? "✓" : "○"} Upper &amp; lowercase
+                    </span>
+                    <span style={{ color: /\d/.test(newPw) ? "#059669" : "#64748b", fontWeight: 600 }}>
+                      {/\d/.test(newPw) ? "✓" : "○"} Contains a number
+                    </span>
+                    <span
+                      style={{
+                        color: confirmPw && newPw === confirmPw ? "#059669" : "#64748b",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {confirmPw && newPw === confirmPw ? "✓" : "○"} Passwords match
+                    </span>
+                  </div>
+                )}
+
+                {pwError && (
+                  <p className="settings-pw-error" style={{ marginTop: "10px" }}>
+                    <AlertCircle size={14} /> {pwError}
+                  </p>
+                )}
               </div>
-              <div className="settings-field settings-field--pw">
-                <label htmlFor="sett-conf-pw">Confirm new password</label>
-                <div className="settings-pw-wrap">
-                  <input
-                    id="sett-conf-pw"
-                    type={showConfirmPw ? "text" : "password"}
-                    value={confirmPw}
-                    onChange={(e) => {
-                      setConfirmPw(e.target.value);
-                      if (pwError) setPwError("");
+
+              <SaveBar
+                state={securitySave}
+                dirty={isSecurityDirty}
+                saveLabel="Update password"
+                onSave={savePassword}
+                onReset={() => {
+                  setCurrentPw("");
+                  setNewPw("");
+                  setConfirmPw("");
+                  setPwError("");
+                  setSecuritySave("idle");
+                }}
+              />
+
+              {/* Self-Service Password Reset via Email / WhatsApp Card */}
+              <div
+                style={{
+                  marginTop: "24px",
+                  padding: "18px 20px",
+                  borderRadius: "12px",
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <h4 style={{ margin: "0 0 6px 0", fontSize: "0.95rem", fontWeight: 700, color: "#0f172a" }}>
+                  Forgot Current Password or Need a Reset Link?
+                </h4>
+                <p style={{ margin: "0 0 14px 0", fontSize: "0.82rem", color: "#475569", lineHeight: 1.5 }}>
+                  You can send a password reset link directly to your registered email (<strong>{user?.email || staff?.email || "—"}</strong>) or request an Administrator password reset via WhatsApp.
+                </p>
+
+                {resetEmailStatus && (
+                  <div
+                    style={{
+                      marginBottom: "12px",
+                      padding: "9px 12px",
+                      borderRadius: "8px",
+                      fontSize: "0.81rem",
+                      background: resetEmailStatus.type === "ok" ? "#f0fdf4" : "#fef2f2",
+                      border: `1px solid ${resetEmailStatus.type === "ok" ? "#bbf7d0" : "#fecaca"}`,
+                      color: resetEmailStatus.type === "ok" ? "#166534" : "#991b1b",
                     }}
-                    placeholder="Re-enter new password"
-                  />
+                  >
+                    {resetEmailStatus.msg}
+                  </div>
+                )}
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
                   <button
                     type="button"
-                    className="settings-pw-eye"
-                    onClick={() => setShowConfirmPw((v) => !v)}
-                    aria-label={showConfirmPw ? "Hide" : "Show"}
+                    onClick={() => void handleSendSelfResetEmail()}
+                    disabled={sendingResetEmail}
+                    className="btn-primary-sm"
+                    style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
-                    {showConfirmPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                    <Mail size={14} />
+                    <span>{sendingResetEmail ? "Sending Reset Link..." : "Send Reset Link to My Email"}</span>
                   </button>
+
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(
+                      `Hello Admin, please help reset my Pen Edge Sales Execution password.\nName: ${staff?.name || "Staff"}\nEmail: ${user?.email || staff?.email || ""}\nPhone: ${staff?.phone || ""}`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "8px 14px",
+                      borderRadius: "8px",
+                      background: "#16a34a",
+                      color: "#ffffff",
+                      fontSize: "0.82rem",
+                      fontWeight: 600,
+                      textDecoration: "none",
+                    }}
+                  >
+                    <MessageSquare size={14} />
+                    <span>Request Admin Reset via WhatsApp</span>
+                  </a>
                 </div>
               </div>
-            </div>
-            {pwError && (
-              <p className="settings-pw-error">
-                <AlertCircle size={14} /> {pwError}
-              </p>
-            )}
-          </div>
-          <SaveBar
-            state={securitySave}
-            dirty={isSecurityDirty}
-            saveLabel="Update password"
-            onSave={savePassword}
-            onReset={() => {
-              setCurrentPw("");
-              setNewPw("");
-              setConfirmPw("");
-              setPwError("");
-              setSecuritySave("idle");
-            }}
-          />
             </div>
           )}
 

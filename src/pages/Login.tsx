@@ -18,9 +18,12 @@ import {
   Sparkles,
   Shield,
   Zap,
+  MessageSquare,
+  Phone,
 } from "lucide-react";
 import { signIn } from "../services/authService";
-import { sendPasswordResetEmail } from "../services/userManagementService";
+import { sendPasswordResetEmail, clearPasswordResetRequirement } from "../services/userManagementService";
+import { supabase } from "../lib/supabase";
 import "./Login.css";
 import BrandLogo3D from "../components/brand/BrandLogo3D";
 
@@ -36,10 +39,23 @@ export default function Login() {
   // Forgot password modal state
   const [forgotModalOpen, setForgotModalOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotPhone, setForgotPhone] = useState("");
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotStatus, setForgotStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
-  // Restore saved remember-me email on mount
+  // Password Recovery (when arriving from email reset link)
+  const [recoveryModalOpen, setRecoveryModalOpen] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hash = window.location.hash;
+    return params.get("reset") === "recovery" || hash.includes("type=recovery");
+  });
+  const [recoveryNewPassword, setRecoveryNewPassword] = useState("");
+  const [recoveryConfirmPassword, setRecoveryConfirmPassword] = useState("");
+  const [recoveryShowPw, setRecoveryShowPw] = useState(false);
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoveryStatus, setRecoveryStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  // Restore saved remember-me email on mount & listen for Supabase PASSWORD_RECOVERY event
   useEffect(() => {
     try {
       const savedEmail = localStorage.getItem("pen_remembered_email");
@@ -50,6 +66,16 @@ export default function Login() {
     } catch {
       // Ignore localStorage errors
     }
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event: string) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setRecoveryModalOpen(true);
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   // Handle password keydown to detect caps lock
@@ -135,6 +161,63 @@ export default function Login() {
       });
     } finally {
       setForgotLoading(false);
+    }
+  }
+
+  function handleRequestWhatsAppReset() {
+    if (!forgotEmail.trim()) {
+      setForgotStatus({ type: "error", msg: "Please enter your registered staff email address first." });
+      return;
+    }
+    const text = encodeURIComponent(
+      `Hello Admin,\n\nI need a password reset for my Pen Edge Sales Execution account.\n• Staff Email: ${forgotEmail.trim()}${
+        forgotPhone.trim() ? `\n• My Phone / WhatsApp: ${forgotPhone.trim()}` : ""
+      }\n\nPlease reset my password and send the temporary password to my email or WhatsApp.`
+    );
+    window.open(`https://wa.me/?text=${text}`, "_blank", "noopener,noreferrer");
+    setForgotStatus({
+      type: "success",
+      msg: "Opened WhatsApp with your password reset request ready to send to your Administrator.",
+    });
+  }
+
+  async function handleCompleteRecoveryPassword(e: FormEvent) {
+    e.preventDefault();
+    if (recoveryNewPassword.length < 8) {
+      setRecoveryStatus({ type: "error", msg: "New password must be at least 8 characters long." });
+      return;
+    }
+    if (recoveryNewPassword !== recoveryConfirmPassword) {
+      setRecoveryStatus({ type: "error", msg: "Passwords do not match." });
+      return;
+    }
+
+    setRecoveryLoading(true);
+    setRecoveryStatus(null);
+    try {
+      const { data, error: updateErr } = await supabase.auth.updateUser({
+        password: recoveryNewPassword,
+      });
+      if (updateErr) throw updateErr;
+      if (data.user?.email) {
+        clearPasswordResetRequirement(data.user.email);
+      }
+      setRecoveryStatus({
+        type: "success",
+        msg: "Your password has been updated! You can now sign in with your new password.",
+      });
+      setPassword(recoveryNewPassword);
+      setTimeout(() => {
+        setRecoveryModalOpen(false);
+        window.history.replaceState({}, document.title, "/login");
+      }, 1600);
+    } catch (err: unknown) {
+      setRecoveryStatus({
+        type: "error",
+        msg: err instanceof Error ? err.message : "Failed to update password. Please request a fresh reset link.",
+      });
+    } finally {
+      setRecoveryLoading(false);
     }
   }
 
@@ -460,7 +543,7 @@ export default function Login() {
             </div>
 
             <p className="pen-modal-desc">
-              Enter your registered staff email address. We will send you a secure verification link to set up a new password.
+              Receive an instant password reset link via Email, or request an Administrator reset delivered to your Email or WhatsApp number.
             </p>
 
             {forgotStatus && (
@@ -513,7 +596,26 @@ export default function Login() {
                 </div>
               </div>
 
-              <div className="pen-modal-actions">
+              <div className="pen-field-group" style={{ marginTop: 12 }}>
+                <label htmlFor="reset-phone-input" className="pen-field-label">
+                  Your Phone / WhatsApp Number (Optional)
+                </label>
+                <div className="pen-input-box">
+                  <span className="pen-input-leading-icon" aria-hidden="true">
+                    <Phone size={17} />
+                  </span>
+                  <input
+                    id="reset-phone-input"
+                    type="tel"
+                    className="pen-text-input"
+                    value={forgotPhone}
+                    onChange={(e) => setForgotPhone(e.target.value)}
+                    placeholder="e.g. +234 803 000 0000"
+                  />
+                </div>
+              </div>
+
+              <div className="pen-modal-actions" style={{ flexWrap: "wrap", gap: 8 }}>
                 <button
                   type="button"
                   className="pen-modal-cancel"
@@ -521,6 +623,29 @@ export default function Login() {
                   disabled={forgotLoading}
                 >
                   Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRequestWhatsAppReset}
+                  disabled={forgotLoading || !forgotEmail.trim()}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    padding: "10px 14px",
+                    borderRadius: 10,
+                    fontSize: "0.82rem",
+                    fontWeight: 700,
+                    background: "rgba(22, 163, 74, 0.18)",
+                    color: "#4ade80",
+                    border: "1px solid rgba(34, 197, 94, 0.4)",
+                    cursor: forgotLoading || !forgotEmail.trim() ? "not-allowed" : "pointer",
+                    opacity: forgotLoading || !forgotEmail.trim() ? 0.5 : 1,
+                  }}
+                >
+                  <MessageSquare size={15} />
+                  <span>Request via WhatsApp</span>
                 </button>
                 <button
                   type="submit"
@@ -535,7 +660,150 @@ export default function Login() {
                   ) : (
                     <>
                       <Mail size={15} />
-                      <span>Send Reset Link</span>
+                      <span>Send Email Reset Link</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+          PASSWORD RECOVERY (SET NEW PASSWORD) MODAL DIALOG
+          ========================================================= */}
+      {recoveryModalOpen && (
+        <div
+          className="pen-modal-backdrop"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setRecoveryModalOpen(false);
+          }}
+        >
+          <div
+            className="pen-modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="recovery-modal-title"
+          >
+            <div className="pen-modal-header">
+              <div className="pen-modal-title">
+                <KeyRound size={20} style={{ color: "#10b981" }} />
+                <h3 id="recovery-modal-title">Set Your New Password</h3>
+              </div>
+              <button
+                type="button"
+                className="pen-modal-close"
+                onClick={() => setRecoveryModalOpen(false)}
+                aria-label="Close dialog"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="pen-modal-desc">
+              Enter and confirm your new password below (minimum 8 characters) to complete your password reset.
+            </p>
+
+            {recoveryStatus && (
+              <div
+                className="pen-error-banner"
+                style={{
+                  background:
+                    recoveryStatus.type === "success"
+                      ? "rgba(16, 185, 129, 0.15)"
+                      : "rgba(239, 68, 68, 0.15)",
+                  borderColor:
+                    recoveryStatus.type === "success"
+                      ? "rgba(16, 185, 129, 0.4)"
+                      : "rgba(239, 68, 68, 0.4)",
+                  color: recoveryStatus.type === "success" ? "#6ee7b7" : "#fca5a5",
+                  marginBottom: "16px",
+                }}
+                role="alert"
+              >
+                {recoveryStatus.type === "success" ? (
+                  <CheckCircle2 size={18} style={{ color: "#10b981", flexShrink: 0 }} />
+                ) : (
+                  <AlertCircle size={18} style={{ color: "#ef4444", flexShrink: 0 }} />
+                )}
+                <div style={{ flex: 1 }}>{recoveryStatus.msg}</div>
+              </div>
+            )}
+
+            <form onSubmit={handleCompleteRecoveryPassword}>
+              <div className="pen-field-group">
+                <label htmlFor="recovery-new-pw" className="pen-field-label">
+                  New Password
+                </label>
+                <div className="pen-input-box">
+                  <span className="pen-input-leading-icon" aria-hidden="true">
+                    <Lock size={17} />
+                  </span>
+                  <input
+                    id="recovery-new-pw"
+                    type={recoveryShowPw ? "text" : "password"}
+                    className="pen-text-input"
+                    value={recoveryNewPassword}
+                    onChange={(e) => setRecoveryNewPassword(e.target.value)}
+                    placeholder="Minimum 8 characters"
+                    required
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    className="pen-input-trailing-btn"
+                    onClick={() => setRecoveryShowPw(!recoveryShowPw)}
+                  >
+                    {recoveryShowPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="pen-field-group" style={{ marginTop: 12 }}>
+                <label htmlFor="recovery-confirm-pw" className="pen-field-label">
+                  Confirm New Password
+                </label>
+                <div className="pen-input-box">
+                  <span className="pen-input-leading-icon" aria-hidden="true">
+                    <Lock size={17} />
+                  </span>
+                  <input
+                    id="recovery-confirm-pw"
+                    type={recoveryShowPw ? "text" : "password"}
+                    className="pen-text-input"
+                    value={recoveryConfirmPassword}
+                    onChange={(e) => setRecoveryConfirmPassword(e.target.value)}
+                    placeholder="Repeat new password"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="pen-modal-actions">
+                <button
+                  type="button"
+                  className="pen-modal-cancel"
+                  onClick={() => setRecoveryModalOpen(false)}
+                  disabled={recoveryLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="pen-modal-submit"
+                  disabled={recoveryLoading || recoveryNewPassword.length < 8}
+                >
+                  {recoveryLoading ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} />
+                      <span>Updating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <KeyRound size={15} />
+                      <span>Save New Password</span>
                     </>
                   )}
                 </button>

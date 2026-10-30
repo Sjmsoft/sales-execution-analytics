@@ -138,38 +138,46 @@ export default function Sidebar({
   // Filter items visible to this role
   const visibleItems = useMemo(
     () =>
-      navigationItems.filter((item) => {
-        // Unified Check-In & Attendance, Messages & Calls, Notifications, and Outlet Visits History are enabled for all users
-        if (
-          item.path === "/check-in" ||
-          item.path === "/attendance" ||
-          item.path === "/visits" ||
-          item.path === "/messages" ||
-          item.path === "/notifications"
-        ) {
-          return true;
-        }
-        // BA & VSR roles see: Check-In, Messages, Sales, Targets, Visits, and Notifications
-        if (isBA) {
-          return (
+      navigationItems
+        .filter((item) => {
+          // Unified Check-In & Attendance, Messages & Calls, Notifications, Account Settings, and Outlet Visits History are enabled for all users
+          if (
             item.path === "/check-in" ||
             item.path === "/attendance" ||
-            item.path === "/messages" ||
-            item.path === "/sales" ||
-            item.path === "/targets" ||
             item.path === "/visits" ||
-            item.path === "/notifications"
-          );
-        }
-        // Executive Command Center dashboard only visible to admin, NSM and HR
-        if (item.path === "/") {
-          return isExecutive;
-        }
-        if (item.path === "/settings" || item.path.startsWith("/settings/")) {
-          return isAdmin;
-        }
-        return roleKey ? item.roles.includes(roleKey) : true;
-      }),
+            item.path === "/messages" ||
+            item.path === "/notifications" ||
+            item.path === "/settings"
+          ) {
+            return true;
+          }
+          // BA & VSR roles see: Check-In, Messages, Sales, Targets, Visits, Notifications, and Account Settings
+          if (isBA) {
+            return (
+              item.path === "/check-in" ||
+              item.path === "/attendance" ||
+              item.path === "/messages" ||
+              item.path === "/sales" ||
+              item.path === "/targets" ||
+              item.path === "/visits" ||
+              item.path === "/notifications" ||
+              item.path === "/settings"
+            );
+          }
+          // Executive Command Center dashboard only visible to admin, NSM and HR
+          if (item.path === "/") {
+            return isExecutive;
+          }
+          if (item.path.startsWith("/settings/")) {
+            return isAdmin;
+          }
+          return roleKey ? item.roles.includes(roleKey) : true;
+        })
+        .map((item) =>
+          item.path === "/settings" && !isAdmin
+            ? { ...item, label: "Account & Password" }
+            : item
+        ),
     [roleKey, isAdmin, isExecutive, isBA]
   );
 

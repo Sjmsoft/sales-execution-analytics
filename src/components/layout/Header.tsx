@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { LogOut, MapPin, Menu, MessageSquare, PanelLeftClose, PanelLeftOpen, Download, WifiOff, Sun, Moon } from "lucide-react";
+import { LogOut, MapPin, Menu, MessageSquare, PanelLeftClose, PanelLeftOpen, Download, WifiOff, Sun, Moon, KeyRound } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import BrandLogo3D from "../brand/BrandLogo3D";
 import { getUnreadMessagesCount, messagingEvents } from "../../services/messagingService";
@@ -180,6 +180,29 @@ export default function Header({
         >
           {resolvedTheme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
         </button>
+
+        {/* Quick Change Password / Security Settings Link */}
+        <Link
+          to="/settings?tab=security"
+          title="Account Security & Change Password"
+          aria-label="Account security and change password"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 36,
+            height: 36,
+            borderRadius: "50%",
+            background: "var(--surface-subtle, #f1f5f9)",
+            color: "var(--text-main, #334155)",
+            border: "1px solid var(--border-default, #e2e8f0)",
+            textDecoration: "none",
+            marginRight: 2,
+            transition: "all 0.15s ease",
+          }}
+        >
+          <KeyRound size={15} />
+        </Link>
 
         {/* Messages & Calls Quick Link */}
         <Link

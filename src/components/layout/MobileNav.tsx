@@ -118,13 +118,28 @@ export default function MobileNav({
               title: "Team & Configuration",
               items: [
                 { label: "Field Team Directory", path: "/staff", icon: Users, badge: null },
-                ...(isAdmin
-                  ? [{ label: "System Settings", path: "/settings", icon: Settings, badge: null }]
-                  : []),
+                {
+                  label: isAdmin ? "System Settings" : "Account & Password",
+                  path: isAdmin ? "/settings" : "/settings?tab=security",
+                  icon: Settings,
+                  badge: null,
+                },
               ],
             },
           ]
-        : []),
+        : [
+            {
+              title: "Account & Security",
+              items: [
+                {
+                  label: "Account & Password",
+                  path: "/settings?tab=security",
+                  icon: Settings,
+                  badge: null,
+                },
+              ],
+            },
+          ]),
     ],
     [isAdmin, isExecutive, isBA, isAttendanceExcluded, unreadNotifCount, unreadMsgCount],
   );

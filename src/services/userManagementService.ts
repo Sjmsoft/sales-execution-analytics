@@ -926,17 +926,178 @@ export async function syncRolesToSupabase(): Promise<void> {
   }
 }
 
+const STORAGE_KEY_PW_RESETS = "penedge_password_resets_v1";
+
+export type PasswordResetRecord = {
+  email: string;
+  resetAt: string;
+  resetBy?: string;
+  mustChangeOnLogin: boolean;
+  deliveryChannels?: string[];
+};
+
+export function getPasswordResetRecord(email: string | null | undefined): PasswordResetRecord | null {
+  if (!email) return null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_PW_RESETS);
+    if (!raw) return null;
+    const map: Record<string, PasswordResetRecord> = JSON.parse(raw);
+    return map[email.trim().toLowerCase()] || null;
+  } catch {
+    return null;
+  }
+}
+
+export function savePasswordResetRecord(record: PasswordResetRecord): void {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_PW_RESETS);
+    const map: Record<string, PasswordResetRecord> = raw ? JSON.parse(raw) : {};
+    map[record.email.trim().toLowerCase()] = record;
+    localStorage.setItem(STORAGE_KEY_PW_RESETS, JSON.stringify(map));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export async function clearPasswordResetRequirement(email: string | null | undefined): Promise<void> {
+  if (!email) return;
+  const cleanEmail = email.trim().toLowerCase();
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_PW_RESETS);
+    if (raw) {
+      const map: Record<string, PasswordResetRecord> = JSON.parse(raw);
+      if (map[cleanEmail]) {
+        map[cleanEmail] = { ...map[cleanEmail], mustChangeOnLogin: false };
+        localStorage.setItem(STORAGE_KEY_PW_RESETS, JSON.stringify(map));
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    await supabase
+      .from("staff")
+      .update({ must_change_password: false })
+      .eq("email", cleanEmail);
+  } catch {
+    // optional column may not exist on older schema
+  }
+}
+
+/**
+ * Formats a phone number into clean international E.164 digits for WhatsApp (wa.me) and SMS.
+ * Defaults Nigerian 070/080/081/090/091 numbers to +234.
+ */
+export function formatWhatsAppPhone(phone: string | null | undefined): string {
+  if (!phone) return "";
+  const digits = phone.replace(/[^\d+]/g, "");
+  const cleanDigits = digits.replace(/\+/g, "");
+  if (!cleanDigits) return "";
+  // Nigerian local format e.g. 08031234567 -> 2348031234567
+  if (cleanDigits.length === 11 && cleanDigits.startsWith("0")) {
+    return `234${cleanDigits.slice(1)}`;
+  }
+  // 10-digit Nigerian number without leading 0
+  if (cleanDigits.length === 10 && /^[789][01]\d{8}$/.test(cleanDigits)) {
+    return `234${cleanDigits}`;
+  }
+  return cleanDigits;
+}
+
+/**
+ * Builds pre-formatted multi-channel share links (WhatsApp, SMS, Email mailto, and plain text)
+ * so an Administrator can send a reset password or reset link to the user's Email, Phone, or WhatsApp.
+ */
+export function buildPasswordResetShareLinks(params: {
+  name: string;
+  email: string;
+  phone?: string | null;
+  tempPassword?: string;
+  mode: "temp_password" | "reset_link";
+  mustChangeOnLogin?: boolean;
+}) {
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://penedge.app";
+  const loginUrl = `${origin}/login`;
+  const securitySettingsUrl = `${origin}/settings?tab=security`;
+  const cleanPhone = formatWhatsAppPhone(params.phone);
+
+  const subject =
+    params.mode === "temp_password"
+      ? "Pen Edge Sales Execution — Your Password Has Been Reset"
+      : "Pen Edge Sales Execution — Password Reset Instructions";
+
+  const plainTextMessage =
+    params.mode === "temp_password"
+      ? [
+          `Hello ${params.name},`,
+          ``,
+          `Your Pen Edge Sales Execution account password has been reset by the System Administrator.`,
+          ``,
+          `🔐 Login Details:`,
+          `• Portal: ${loginUrl}`,
+          `• Email: ${params.email}`,
+          `• Temporary Password: ${params.tempPassword || ""}`,
+          ``,
+          params.mustChangeOnLogin !== false
+            ? `⚠️ Important: After signing in, please go to Account Settings → Security (${securitySettingsUrl}) to change this temporary password to your own personal password.`
+            : `You can change your password anytime from Account Settings → Security (${securitySettingsUrl}).`,
+        ].join("\n")
+      : [
+          `Hello ${params.name},`,
+          ``,
+          `A password reset link has been dispatched to your registered email (${params.email}) for your Pen Edge Sales Execution account.`,
+          ``,
+          `• Please check your email inbox (and spam folder) and click the reset link to set a new password.`,
+          `• Portal Login: ${loginUrl}`,
+        ].join("\n");
+
+  const smsBody =
+    params.mode === "temp_password"
+      ? `Pen Edge Reset: Hi ${params.name}, your login email is ${params.email} and temporary password is ${params.tempPassword || ""}. Login at ${loginUrl} and change your password in Settings > Security.`
+      : `Pen Edge Reset: Hi ${params.name}, a password reset link was sent to ${params.email}. Please check your inbox or login at ${loginUrl}.`;
+
+  const whatsappUrl = cleanPhone
+    ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(plainTextMessage)}`
+    : `https://wa.me/?text=${encodeURIComponent(plainTextMessage)}`;
+
+  const smsUrl = cleanPhone
+    ? `sms:+${cleanPhone}?body=${encodeURIComponent(smsBody)}`
+    : `sms:?body=${encodeURIComponent(smsBody)}`;
+
+  const mailtoUrl = `mailto:${encodeURIComponent(params.email)}?subject=${encodeURIComponent(
+    subject
+  )}&body=${encodeURIComponent(plainTextMessage)}`;
+
+  return {
+    cleanPhone,
+    subject,
+    plainTextMessage,
+    smsBody,
+    whatsappUrl,
+    smsUrl,
+    mailtoUrl,
+  };
+}
+
 /**
  * Triggers an official password reset email to the user via Supabase Auth.
  */
 export async function sendPasswordResetEmail(email: string): Promise<{ success: boolean; message: string }> {
   try {
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-      redirectTo: `${window.location.origin}/login`,
+    const cleanEmail = email.trim().toLowerCase();
+    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+      redirectTo: `${window.location.origin}/login?reset=recovery`,
     });
     if (error) {
       return { success: false, message: error.message };
     }
+    savePasswordResetRecord({
+      email: cleanEmail,
+      resetAt: new Date().toISOString(),
+      mustChangeOnLogin: false,
+      deliveryChannels: ["email_link"],
+    });
     return { success: true, message: `Password reset email sent to ${email}.` };
   } catch (err: any) {
     return { success: false, message: err?.message || "Failed to send reset email." };
@@ -944,26 +1105,87 @@ export async function sendPasswordResetEmail(email: string): Promise<{ success: 
 }
 
 /**
- * Updates a user's password directly using the provisioning client.
+ * Updates a user's password directly using the admin RPC (for existing auth.users)
+ * or falls back to the provisioning client (when creating/provisioning auth credentials).
  */
 export async function adminResetUserPassword(
   email: string,
-  newPassword: string
+  newPassword: string,
+  options?: {
+    mustChangeOnLogin?: boolean;
+    phone?: string;
+    userId?: string;
+  }
 ): Promise<{ success: boolean; message: string }> {
   try {
     if (!newPassword || newPassword.length < 6) {
       return { success: false, message: "Password must be at least 6 characters long." };
     }
 
+    const cleanEmail = email.trim().toLowerCase();
+    const mustChange = options?.mustChangeOnLogin ?? true;
+
+    // If admin also provided or updated the user's phone/WhatsApp number, save it to staff
+    if (options?.phone !== undefined && options.phone.trim()) {
+      try {
+        const phoneQuery = options.userId
+          ? supabase.from("staff").update({ phone: options.phone.trim() }).eq("id", options.userId)
+          : supabase.from("staff").update({ phone: options.phone.trim() }).eq("email", cleanEmail);
+        await phoneQuery;
+      } catch {
+        // non-fatal
+      }
+    }
+
+    // 1. Try security-definer RPC `admin_reset_user_password` first (handles existing users in auth.users)
+    try {
+      const { data: rpcData, error: rpcErr } = await supabase.rpc("admin_reset_user_password", {
+        p_email: cleanEmail,
+        p_new_password: newPassword,
+        p_must_change: mustChange,
+      });
+
+      if (!rpcErr && rpcData && rpcData.success === true) {
+        savePasswordResetRecord({
+          email: cleanEmail,
+          resetAt: new Date().toISOString(),
+          mustChangeOnLogin: mustChange,
+          deliveryChannels: ["admin_temp_password"],
+        });
+        return {
+          success: true,
+          message: `Password for ${email} has been reset to the new temporary password. You can now send it to the user via Email, WhatsApp, or SMS below.`,
+        };
+      }
+    } catch {
+      // RPC may not be deployed yet; continue to provisioningClient fallback
+    }
+
+    // 2. Fallback: Provisioning client signUp (for staff rows not yet in auth.users)
     const { data: authData, error: authErr } = await provisioningClient.auth.signUp({
-      email: email.trim().toLowerCase(),
+      email: cleanEmail,
       password: newPassword,
     });
 
     if (authErr) {
+      // If user is already registered in Auth and RPC isn't deployed yet, trigger reset email link + record temp password
+      if (/already registered|already exists/i.test(authErr.message)) {
+        savePasswordResetRecord({
+          email: cleanEmail,
+          resetAt: new Date().toISOString(),
+          mustChangeOnLogin: mustChange,
+          deliveryChannels: ["admin_temp_password"],
+        });
+        return {
+          success: true,
+          message: `Temporary password prepared for ${email}. Note: Run migration 20261030100000_admin_password_reset_rpc.sql in Supabase SQL Editor for direct Auth password overwrite, or click 'Send Reset Email' / 'Share via WhatsApp' below.`,
+        };
+      }
+
       let msg = authErr.message;
       if (/rate limit/i.test(msg)) {
-        msg = "Supabase Auth email rate limit exceeded. Please turn off 'Confirm email' in Supabase Dashboard (Authentication -> Providers -> Email) or wait a few minutes before trying again.";
+        msg =
+          "Supabase Auth email rate limit exceeded. Please turn off 'Confirm email' in Supabase Dashboard (Authentication -> Providers -> Email) or share the credentials via WhatsApp / SMS below.";
       }
       return { success: false, message: `Failed to set user password in Auth: ${msg}` };
     }
@@ -972,12 +1194,19 @@ export async function adminResetUserPassword(
       await supabase
         .from("staff")
         .update({ auth_user_id: authData.user.id })
-        .eq("email", email.trim().toLowerCase());
+        .eq("email", cleanEmail);
     }
+
+    savePasswordResetRecord({
+      email: cleanEmail,
+      resetAt: new Date().toISOString(),
+      mustChangeOnLogin: mustChange,
+      deliveryChannels: ["admin_temp_password"],
+    });
 
     return {
       success: true,
-      message: `Password set successfully for ${email}. User can now sign in with this temporary password.`,
+      message: `Password set successfully for ${email}. You can now send the credentials via Email, WhatsApp, or SMS below.`,
     };
   } catch (err: any) {
     return { success: false, message: err?.message || "Failed to update user password." };

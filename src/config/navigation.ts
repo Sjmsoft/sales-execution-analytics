@@ -60,5 +60,5 @@ export const navigationItems: NavigationItem[] = [
   { label: "Team", path: "/staff", icon: "team", roles: generalStaffRoles },
   { label: "Team Activity", path: "/visits/activity", icon: "activity", roles: generalStaffRoles },
   { label: "Notifications", path: "/notifications", icon: "notifications", roles: allStaffRoles },
-  { label: "Settings", path: "/settings", icon: "settings", roles: ["administrator"] },
+  { label: "Settings", path: "/settings", icon: "settings", roles: allStaffRoles },
 ];
