@@ -1,6 +1,6 @@
 import type { Sale } from "./salesService";
 import type { VisitRecord } from "./visitsService";
-import type { Outlet } from "./referenceService";
+import { doesOutletMatchRegion, type Outlet } from "./referenceService";
 import type { TargetRecord } from "./targetsService";
 
 export type RoleTier = "national" | "regional" | "individual";
@@ -231,10 +231,11 @@ export function filterOutletsByScope(outlets: Outlet[], scope: UserScope): Outle
   }
 
   return outlets.filter((o) => {
+    if (scope.assignedRegions.some((reg) => doesOutletMatchRegion(o, reg))) return true;
     if (matchRegion(o.region_id, scope.assignedRegions)) return true;
     if (matchRegion(o.region, scope.assignedRegions)) return true;
     if (matchRegion(o.state, scope.assignedRegions)) return true;
-    if (o.assigned_manager && normalize(o.assigned_manager) === normalize(scope.staffName)) return true;
+    if (o.assigned_manager && (o.assigned_manager === scope.staffId || normalize(o.assigned_manager) === normalize(scope.staffName))) return true;
     return false;
   });
 }

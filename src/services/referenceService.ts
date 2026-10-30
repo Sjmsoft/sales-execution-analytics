@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { canonicalizeRegionName } from "./regionService";
 
 export type Outlet = {
   id: string;
@@ -22,6 +23,72 @@ export type Outlet = {
 };
 
 const STORAGE_KEY_OUTLETS = "penedge_configured_outlets_v1";
+const STORAGE_KEY_OUTLET_REGIONS = "penedge_outlet_selected_regions_v1";
+
+function getSelectedOutletRegionsMap(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_OUTLET_REGIONS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") return parsed;
+    }
+  } catch (e) {
+    console.warn("localStorage outlet regions read error:", e);
+  }
+  return {};
+}
+
+export function saveSelectedOutletRegion(
+  id: string | null | undefined,
+  name: string | null | undefined,
+  regionId: string | null | undefined
+): void {
+  const canonical = canonicalizeRegionName(regionId) || (regionId || "").trim();
+  if (!canonical || isValidUuid(canonical)) return;
+  try {
+    const map = getSelectedOutletRegionsMap();
+    if (id && id.trim()) {
+      map[`id:${id.trim()}`] = canonical;
+    }
+    if (name && name.trim()) {
+      map[`name:${name.trim().toLowerCase()}`] = canonical;
+    }
+    localStorage.setItem(STORAGE_KEY_OUTLET_REGIONS, JSON.stringify(map));
+  } catch (e) {
+    console.warn("localStorage outlet regions write error:", e);
+  }
+}
+
+export function lookupSelectedOutletRegion(
+  id?: string | null,
+  name?: string | null
+): string | null {
+  const map = getSelectedOutletRegionsMap();
+  if (id && map[`id:${id.trim()}`]) {
+    const val = map[`id:${id.trim()}`];
+    return canonicalizeRegionName(val) || val;
+  }
+  if (name && name.trim() && map[`name:${name.trim().toLowerCase()}`]) {
+    const val = map[`name:${name.trim().toLowerCase()}`];
+    return canonicalizeRegionName(val) || val;
+  }
+  return null;
+}
+
+function extractEmbeddedRegionFromRemarks(remarks?: string | null): {
+  embeddedRegion: string | null;
+  cleanRemarks: string | null;
+} {
+  if (!remarks) return { embeddedRegion: null, cleanRemarks: remarks ?? null };
+  const match = remarks.match(/\[Region:\s*([^\]]+)\]/i);
+  if (!match) return { embeddedRegion: null, cleanRemarks: remarks };
+  const extracted = canonicalizeRegionName(match[1].trim()) || match[1].trim();
+  const cleaned = remarks.replace(/\s*\[Region:\s*[^\]]+\]\s*/gi, " ").trim();
+  return {
+    embeddedRegion: extracted || null,
+    cleanRemarks: cleaned || null,
+  };
+}
 
 export function isValidUuid(id: string | null | undefined): boolean {
   if (!id) return false;
@@ -46,11 +113,38 @@ function getLocalOutlets(): Outlet[] {
       const items: Outlet[] = JSON.parse(raw);
       let needsResave = false;
       const sanitized = items.map((o) => {
+        let updated = o;
         if (!isValidUuid(o.id)) {
           needsResave = true;
-          return { ...o, id: generateUuid() };
+          updated = { ...updated, id: generateUuid() };
         }
-        return o;
+        const selectedOverride = lookupSelectedOutletRegion(updated.id, updated.name);
+        const { embeddedRegion, cleanRemarks } = extractEmbeddedRegionFromRemarks(
+          updated.visit_remarks
+        );
+        if (cleanRemarks !== updated.visit_remarks) {
+          needsResave = true;
+          updated = { ...updated, visit_remarks: cleanRemarks };
+        }
+        const existingRegion =
+          updated.region_id &&
+          !isValidUuid(String(updated.region_id)) &&
+          String(updated.region_id).toLowerCase() !== "unassigned"
+            ? String(updated.region_id).trim()
+            : null;
+        const chosenRegion =
+          selectedOverride ||
+          embeddedRegion ||
+          existingRegion ||
+          inferOutletRegion(updated);
+        const canonical = chosenRegion
+          ? canonicalizeRegionName(chosenRegion) || chosenRegion
+          : null;
+        if (canonical && canonical !== updated.region_id) {
+          needsResave = true;
+          updated = { ...updated, region_id: canonical };
+        }
+        return updated;
       });
       if (needsResave) {
         localStorage.setItem(STORAGE_KEY_OUTLETS, JSON.stringify(sanitized));
@@ -65,9 +159,27 @@ function getLocalOutlets(): Outlet[] {
 
 function saveLocalOutlet(outlet: Outlet): void {
   try {
+    const canonicalRegion =
+      canonicalizeRegionName(outlet.region_id) || outlet.region_id;
+    const normalizedOutlet: Outlet = {
+      ...outlet,
+      region_id: canonicalRegion,
+    };
+    saveSelectedOutletRegion(
+      normalizedOutlet.id,
+      normalizedOutlet.name,
+      normalizedOutlet.region_id
+    );
     const current = getLocalOutlets();
-    const idx = current.findIndex((o) => o.id === outlet.id || o.name.toLowerCase() === outlet.name.toLowerCase());
-    const updated = idx >= 0 ? current.map((o, i) => (i === idx ? outlet : o)) : [outlet, ...current];
+    const idx = current.findIndex(
+      (o) =>
+        o.id === normalizedOutlet.id ||
+        o.name.trim().toLowerCase() === normalizedOutlet.name.trim().toLowerCase()
+    );
+    const updated =
+      idx >= 0
+        ? current.map((o, i) => (i === idx ? normalizedOutlet : o))
+        : [normalizedOutlet, ...current];
     localStorage.setItem(STORAGE_KEY_OUTLETS, JSON.stringify(updated));
   } catch (e) {
     console.warn("localStorage save outlet error:", e);
@@ -97,15 +209,20 @@ export async function getOutlets(): Promise<Outlet[]> {
       console.warn("Supabase fetch outlets error:", error);
     } else if (data) {
       const localById = new Map(localList.map((o) => [o.id, o]));
+      const localByName = new Map(
+        localList.map((o) => [o.name.trim().toLowerCase(), o])
+      );
       const remoteList: Outlet[] = data.map((d) => {
-        const norm = normalizeRemoteOutlet(d);
-        const local = localById.get(norm.id);
+        const local =
+          localById.get(d.id) ||
+          localByName.get(String(d.name || "").trim().toLowerCase());
+        const norm = normalizeRemoteOutlet(d, local);
         const enriched = { ...norm };
-        // If remote region_id is empty or UUID while local holds the human region name, preserve the name
-        if (local?.region_id && (!norm.region_id || isValidUuid(norm.region_id))) {
-          enriched.region_id = local.region_id;
-        }
-        if (local?.outlet_type && isNaN(Number(local.outlet_type)) && typeof norm.outlet_type === "number") {
+        if (
+          local?.outlet_type &&
+          isNaN(Number(local.outlet_type)) &&
+          typeof norm.outlet_type === "number"
+        ) {
           enriched.outlet_type = local.outlet_type;
         }
         if (local?.assigned_manager && !norm.assigned_manager) {
@@ -114,7 +231,9 @@ export async function getOutlets(): Promise<Outlet[]> {
         return enriched;
       });
       const remoteById = new Map(remoteList.map((o) => [o.id, o]));
-      const remoteByName = new Map(remoteList.map((o) => [o.name.trim().toLowerCase(), o]));
+      const remoteByName = new Map(
+        remoteList.map((o) => [o.name.trim().toLowerCase(), o])
+      );
 
       // Outlets that only exist in this browser (created while the database
       // rejected writes) never received a server-side created_at. Try to push
@@ -142,10 +261,184 @@ export async function getOutlets(): Promise<Outlet[]> {
   return localList;
 }
 
-function normalizeRemoteOutlet(o: any): Outlet {
+export function inferOutletRegion(o: {
+  region_id?: string | null;
+  region?: string | null;
+  state?: string | null;
+  lga?: string | null;
+  address?: string | null;
+  name?: string | null;
+}): string | null {
+  const rawRegion = (o.region_id || o.region || "").trim();
+  if (
+    rawRegion &&
+    !isValidUuid(rawRegion) &&
+    !["unassigned", "null", "none", "n/a"].includes(rawRegion.toLowerCase())
+  ) {
+    return canonicalizeRegionName(rawRegion) || rawRegion;
+  }
+
+  const hay = `${o.lga || ""} ${o.address || ""} ${o.name || ""}`.toLowerCase();
+  const st = (o.state || "").toLowerCase();
+
+  if (
+    /\b(lekki|ajah|ikate|chevron|marwa|jakande|agungi|osapa|igbo[\s-]*efon|ikota|vgc|sangotedo|abijo|ibeju|chisco|admiralty)\b/.test(
+      hay
+    )
+  ) {
+    return "Lekki";
+  }
+  if (
+    /\b(victoria[\s-]*island|v\.?i\b|oniru|adeola[\s-]*odeku|sanusi[\s-]*fafunwa|ajose[\s-]*adeogun|kofo[\s-]*abayomi|akin[\s-]*adesola|ozumba[\s-]*mbadiwe|ligali[\s-]*ayorinde|ikoyi|banana[\s-]*island|awolowo[\s-]*rd|awolowo[\s-]*road)\b/.test(
+      hay
+    )
+  ) {
+    return "Victoria Island";
+  }
+  if (
+    /\b(ikeja|allen|opebi|alausa|ogba|adeniyi[\s-]*jones|maryland|omole|magodo|computer[\s-]*village)\b/.test(
+      hay
+    )
+  ) {
+    return "Ikeja";
+  }
+  if (
+    /\b(surulere|bode[\s-]*thomas|adeniran[\s-]*ogunsanya|ojuelegba|aguda|iponri|eric[\s-]*moore|adelabu|lawanson|kilo)\b/.test(
+      hay
+    )
+  ) {
+    return "Surulere";
+  }
+  if (/\b(eti[\s-]*osa|lagos[\s-]*island|marina|broad[\s-]*street|onikan|obalende)\b/.test(hay)) {
+    return "Lagos Island";
+  }
+  if (st.includes("lagos")) {
+    return "Lagos mainland";
+  }
+  if (
+    st.includes("river") ||
+    /\b(port[\s-]*harcourt|portharcourt|obio[\s-]*akpor|eleme|oyigbo|ikwerre|okrika|bonny|trans[\s-]*amadi|peter[\s-]*odili|rumuola|rumuokoro|rumuomasi|ada[\s-]*george|woji|diobu|eliozu)\b/.test(
+      hay
+    )
+  ) {
+    return "Portharcourt - South";
+  }
+  if (
+    st.includes("fct") ||
+    st.includes("abuja") ||
+    /\b(abuja|bwari|gwagwalada|kuje|kwali|abaji|wuse|maitama|garki|asokoro|gwarinpa|jabi|utako|kubwa|lugbe|karu|nyanya|lokogoma|gudu|apo|katampe|life[\s-]*camp|mabushi|dawaki)\b/.test(
+      hay
+    )
+  ) {
+    return "Abuja - North";
+  }
+  if (
+    st.includes("enugu") ||
+    /\b(enugu|nsukka|trans[\s-]*ekulu|independence[\s-]*layout|new[\s-]*haven|agbani|achara|ogui|uwani|abakpa|emene)\b/.test(
+      hay
+    )
+  ) {
+    return "Enugu- East";
+  }
+  if (
+    st.includes("edo") ||
+    /\b(benin|oredo|egor|ikpoba|uhunmwonde|ovia|esan|ugbowo|sapele[\s-]*road|uselu|adesuwa|ihama|ekpoma|auchi)\b/.test(
+      hay
+    )
+  ) {
+    return "Edo Region";
+  }
+  if (st.includes("anambra") || /\b(anambra|awka|onitsha|nnewi|aguata|ekwulobia|obosi|ogidi)\b/.test(hay)) {
+    return "Anambra";
+  }
+  if (st.includes("oyo") || /\b(ibadan|oyo|bodija|oluyole|dugbe|agodi|mokola|akobo|samonda|jericho|ogbomosho)\b/.test(hay)) {
+    return "Ibadan";
+  }
+  return null;
+}
+
+export function getExactOutletRegion(outlet: {
+  id?: string | null;
+  name?: string | null;
+  region_id?: string | null;
+  region?: string | null;
+  visit_remarks?: string | null;
+  state?: string | null;
+  lga?: string | null;
+  address?: string | null;
+}): string | null {
+  const selectedOverride = lookupSelectedOutletRegion(outlet.id, outlet.name);
+  if (selectedOverride) return selectedOverride;
+
+  const { embeddedRegion } = extractEmbeddedRegionFromRemarks(outlet.visit_remarks);
+  if (embeddedRegion) return embeddedRegion;
+
+  const explicit = (outlet.region_id || outlet.region || "").trim();
+  if (
+    explicit &&
+    !isValidUuid(explicit) &&
+    !["unassigned", "null", "none", "n/a"].includes(explicit.toLowerCase())
+  ) {
+    return canonicalizeRegionName(explicit) || explicit;
+  }
+
+  const inferred = inferOutletRegion(outlet);
+  return inferred ? canonicalizeRegionName(inferred) || inferred : null;
+}
+
+export function doesOutletMatchRegion(
+  outlet: Outlet,
+  selectedRegion: string,
+  _staffRegionMap?: Map<string, string[]>
+): boolean {
+  const rawSelected = selectedRegion.trim();
+  if (!rawSelected) return true;
+
+  const targetRegion = (canonicalizeRegionName(rawSelected) || rawSelected)
+    .trim()
+    .toLowerCase();
+  const outletRegion = (getExactOutletRegion(outlet) || "").trim().toLowerCase();
+
+  return Boolean(outletRegion) && outletRegion === targetRegion;
+}
+
+function normalizeRemoteOutlet(o: any, local?: Outlet): Outlet {
+  const { embeddedRegion, cleanRemarks } = extractEmbeddedRegionFromRemarks(
+    o.visit_remarks
+  );
+  const selectedOverride = lookupSelectedOutletRegion(o.id, o.name);
+  const explicitRemote =
+    o.region_id &&
+    !isValidUuid(String(o.region_id)) &&
+    String(o.region_id).toLowerCase() !== "unassigned"
+      ? String(o.region_id).trim()
+      : o.region &&
+        !isValidUuid(String(o.region)) &&
+        String(o.region).toLowerCase() !== "unassigned"
+      ? String(o.region).trim()
+      : null;
+  const localRegion =
+    local?.region_id &&
+    !isValidUuid(String(local.region_id)) &&
+    String(local.region_id).toLowerCase() !== "unassigned"
+      ? String(local.region_id).trim()
+      : null;
+
+  const chosenRegion =
+    selectedOverride ||
+    explicitRemote ||
+    embeddedRegion ||
+    localRegion ||
+    inferOutletRegion(o);
+
+  const canonicalRegion = chosenRegion
+    ? canonicalizeRegionName(chosenRegion) || chosenRegion
+    : null;
+
   return {
     ...o,
-    region_id: o.region_id ?? null,
+    visit_remarks: cleanRemarks,
+    region_id: canonicalRegion,
     outlet_type: o.outlet_type ?? 1,
   };
 }
@@ -182,16 +475,16 @@ export function toIntegerOutletType(val: unknown): number {
   return 1;
 }
 
-export function isOutletOnTrade(outletType: unknown): boolean {
-  if (outletType === 1 || outletType === "1" || outletType === "on-trade") return true;
-  if (outletType === 2 || outletType === "2" || outletType === "off-trade") return false;
-  return toIntegerOutletType(outletType) === 1;
+export function isOutletOffTrade(outletType: unknown): boolean {
+  if (outletType === 2 || outletType === "2" || outletType === "off-trade" || outletType === "off_trade") return true;
+  if (outletType === 4 || outletType === "4" || outletType === "mt" || outletType === "modern_trade" || outletType === "modern trade") return true;
+  if (outletType === 1 || outletType === "1" || outletType === "on-trade" || outletType === "on_trade") return false;
+  const intType = toIntegerOutletType(outletType);
+  return intType === 2 || intType === 4;
 }
 
-export function isOutletOffTrade(outletType: unknown): boolean {
-  if (outletType === 2 || outletType === "2" || outletType === "off-trade") return true;
-  if (outletType === 1 || outletType === "1" || outletType === "on-trade") return false;
-  return toIntegerOutletType(outletType) === 2;
+export function isOutletOnTrade(outletType: unknown): boolean {
+  return !isOutletOffTrade(outletType);
 }
 
 function isIntegerTypeError(err: any): boolean {
@@ -213,7 +506,8 @@ function isUuidTypeError(err: any): boolean {
 /**
  * Adjusts payload in-place if remote PostgreSQL columns still enforce legacy
  * strict integer (for outlet_type) or UUID (for region_id, assigned_manager).
- * Returns true if the payload was modified to allow a retry.
+ * Preserves the exact selected region inside visit_remarks so it is never lost
+ * even on legacy schemas where region_id is a UUID column.
  */
 function sanitizePayloadForLegacySchema(
   payload: Record<string, unknown>,
@@ -228,6 +522,15 @@ function sanitizePayloadForLegacySchema(
 
   if (isUuidTypeError(error)) {
     if (payload.region_id && !isValidUuid(String(payload.region_id))) {
+      const regionLabel =
+        canonicalizeRegionName(String(payload.region_id)) ||
+        String(payload.region_id).trim();
+      const existingRemarks = String(payload.visit_remarks || "")
+        .replace(/\s*\[Region:\s*[^\]]+\]\s*/gi, " ")
+        .trim();
+      payload.visit_remarks = existingRemarks
+        ? `${existingRemarks} [Region: ${regionLabel}]`
+        : `[Region: ${regionLabel}]`;
       payload.region_id = null;
       modified = true;
     }
@@ -267,7 +570,7 @@ async function syncLocalOutletToSupabase(local: Outlet): Promise<Outlet | null> 
       console.warn(`Pending outlet "${local.name}" could not be synced:`, error.message);
       return null;
     }
-    return normalizeRemoteOutlet(data);
+    return normalizeRemoteOutlet(data, local);
   } catch (err) {
     console.warn(`Pending outlet "${local.name}" sync exception:`, err);
     return null;
@@ -304,11 +607,13 @@ function parseOutletType(value: string): number | string {
 }
 
 function buildOutletPayload(input: CreateOutletInput): Record<string, unknown> {
+  const canonicalRegion =
+    canonicalizeRegionName(input.regionId) || input.regionId.trim() || null;
   return {
     name: input.name.trim(),
     outlet_type: parseOutletType(input.outletType),
     listing_status: Number(input.listingStatus) || 0,
-    region_id: input.regionId || null,
+    region_id: canonicalRegion,
     address: input.address.trim(),
     state: input.state,
     lga: input.lga,
@@ -349,6 +654,8 @@ export async function createOutlet(input: CreateOutletInput): Promise<Outlet> {
   }
 
   const normalizedName = input.name.trim();
+  const exactSelectedRegion =
+    canonicalizeRegionName(input.regionId) || input.regionId.trim();
 
   // Guard against duplicate outlet creation:
   const localList = getLocalOutlets();
@@ -363,6 +670,10 @@ export async function createOutlet(input: CreateOutletInput): Promise<Outlet> {
       `An outlet named "${normalizedName}" already exists at this location (${input.lga || ""}, ${input.state || ""}). Duplicate outlet creation prevented.`
     );
   }
+
+  // Persist the exact selected region by outlet name immediately so even if DB
+  // strips region_id for legacy UUID compatibility, the selected region is preserved
+  saveSelectedOutletRegion(null, normalizedName, exactSelectedRegion);
 
   const payload = buildOutletPayload(input);
   let { data, error } = await supabase
@@ -397,9 +708,11 @@ export async function createOutlet(input: CreateOutletInput): Promise<Outlet> {
     throw outletDbError("create", error);
   }
 
+  saveSelectedOutletRegion(data.id, normalizedName, exactSelectedRegion);
+
   const saved: Outlet = {
     ...normalizeRemoteOutlet(data),
-    region_id: input.regionId,
+    region_id: exactSelectedRegion,
     assigned_manager: input.assignedManager,
     outlet_type: input.outletType,
   };
@@ -414,6 +727,10 @@ export async function updateOutlet(
   if (!input.regionId?.trim()) {
     throw new Error("Sales region is required.");
   }
+
+  const exactSelectedRegion =
+    canonicalizeRegionName(input.regionId) || input.regionId.trim();
+  saveSelectedOutletRegion(id, input.name.trim(), exactSelectedRegion);
 
   const payload = buildOutletPayload(input);
 
@@ -495,9 +812,11 @@ export async function updateOutlet(
     if (saved.id !== id) removeLocalOutlet(id);
   }
 
+  saveSelectedOutletRegion(saved.id, input.name.trim(), exactSelectedRegion);
+
   const finalSaved: Outlet = {
     ...saved,
-    region_id: input.regionId,
+    region_id: exactSelectedRegion,
     assigned_manager: input.assignedManager,
     outlet_type: input.outletType,
   };
@@ -570,7 +889,7 @@ export async function getAssignableStaff() {
   try {
     const { data, error } = await supabase
       .from("staff")
-      .select("id, name")
+      .select("id, name, region, assigned_regions")
       .eq("is_active", true)
       .order("name");
 

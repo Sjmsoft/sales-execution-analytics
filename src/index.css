@@ -5950,9 +5950,65 @@ tbody tr:hover {
   color: #123d34;
 }
 
-.empty-icon {
-  color: #7b8882;
+.outlet-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 48px 24px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 14px;
+  background: var(--surface-card, #ffffff);
+  box-shadow: 0 2px 8px rgba(23, 32, 29, 0.03);
+}
+
+.outlet-empty-icon-wrap {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #eaf5f0;
+  color: #075544;
   margin-bottom: 4px;
+}
+
+.outlet-empty-state strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-main, #17201d);
+}
+
+.outlet-empty-state span {
+  display: block;
+  font-size: 13.5px;
+  color: var(--text-muted, #68746f);
+  max-width: 420px;
+}
+
+.outlet-empty-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #075544;
+  border-color: #b7d5c9;
+  background: #f4faf7;
+  transition: all 0.15s ease;
+}
+
+.outlet-empty-reset-btn:hover {
+  background: #eaf5f0;
+  border-color: #075544;
+}
+
+.empty-icon {
+  color: #075544;
 }
 
 .outlet-error {

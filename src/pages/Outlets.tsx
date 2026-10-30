@@ -37,9 +37,11 @@ import {
   updateOutlet,
   isOutletOnTrade,
   isOutletOffTrade,
+  doesOutletMatchRegion,
+  getExactOutletRegion,
   type Outlet,
 } from "../services/referenceService";
-import { getRegions, type RegionItem } from "../services/regionService";
+import { getRegions, canonicalizeRegionName, type RegionItem } from "../services/regionService";
 import { getOutletTypes, type OutletTypeItem } from "../services/outletTypeService";
 import {
   getUserScope,
@@ -59,8 +61,15 @@ const NIGERIAN_STATES: Record<string, string[]> = {
     "Ikeja",
     "Surulere",
     "Eti-Osa",
+    "Lekki",
+    "Ibeju-Lekki",
+    "Victoria Island",
+    "Ikoyi",
+    "Ajah",
+    "Yaba",
     "Alimosho",
     "Lagos Island",
+    "Lagos Mainland",
     "Kosofe",
     "Oshodi-Isolo",
     "Apapa",
@@ -70,6 +79,9 @@ const NIGERIAN_STATES: Record<string, string[]> = {
     "Agege",
     "Ifako-Ijaiye",
     "Amuwo-Odofin",
+    "Badagry",
+    "Epe",
+    "Ojo",
   ],
   Edo: [
     "Egor",
@@ -168,7 +180,9 @@ export default function Outlets() {
   const [gpsError, setGpsError] = useState("");
   const [capturingGps, setCapturingGps] = useState(false);
   const [manualCoordsOpen, setManualCoordsOpen] = useState(false);
-  const [staffOptions, setStaffOptions] = useState<{ id: string; name: string }[]>([]);
+  const [staffOptions, setStaffOptions] = useState<
+    { id: string; name: string; region?: string | null; assigned_regions?: string[] | null }[]
+  >([]);
   const [configuredRegions, setConfiguredRegions] = useState<RegionItem[]>([]);
   const [configuredOutletTypes, setConfiguredOutletTypes] = useState<OutletTypeItem[]>([]);
 
@@ -211,6 +225,28 @@ export default function Outlets() {
   const staffMap = useMemo(() => {
     const map = new Map<string, string>();
     staffOptions.forEach((s) => map.set(s.id, s.name));
+    return map;
+  }, [staffOptions]);
+
+  const staffRegionMap = useMemo(() => {
+    const map = new Map<string, string[]>();
+    staffOptions.forEach((s) => {
+      const regs: string[] = [];
+      if (s.region) {
+        s.region.split(/[|,;/]+/).forEach((r) => {
+          if (r.trim()) regs.push(r.trim());
+        });
+      }
+      if (Array.isArray(s.assigned_regions)) {
+        s.assigned_regions.forEach((r) => {
+          if (typeof r === "string" && r.trim() && !regs.includes(r.trim())) {
+            regs.push(r.trim());
+          }
+        });
+      }
+      map.set(s.id, regs);
+      map.set(s.name, regs);
+    });
     return map;
   }, [staffOptions]);
 
@@ -370,7 +406,7 @@ export default function Outlets() {
     void getOutletTypes().then(setConfiguredOutletTypes).catch(console.error);
     setEditingOutletId(outlet.id);
 
-    const currentRegion = outlet.region_id || (outlet as any).region || "";
+    const currentRegion = getExactOutletRegion(outlet) || "";
 
     let currentTypeKey = String(outlet.outlet_type ?? "");
     if (currentTypeKey === "1") currentTypeKey = "on-trade";
@@ -532,13 +568,52 @@ export default function Outlets() {
       if (quickCategory === "gps-missing" && hasGps) return false;
       if (quickCategory === "listed" && outlet.listing_status !== 1) return false;
 
-      if (filters.state && outlet.state !== filters.state) return false;
-      if (filters.lga && outlet.lga !== filters.lga) return false;
-      if (filters.region && outlet.region_id !== filters.region) return false;
-      if (filters.outletType && String(outlet.outlet_type ?? "") !== filters.outletType)
+      if (filters.state) {
+        const filterSt = filters.state.trim().toLowerCase().replace(/\s+state$/i, "");
+        const outletSt = (outlet.state || "").trim().toLowerCase().replace(/\s+state$/i, "");
+        const matchesState =
+          outletSt === filterSt ||
+          (filterSt === "fct" && (outletSt === "abuja" || outletSt.includes("fct"))) ||
+          (filterSt === "abuja" && (outletSt === "fct" || outletSt.includes("abuja"))) ||
+          (outletSt && (outletSt.includes(filterSt) || filterSt.includes(outletSt)));
+        if (!matchesState) return false;
+      }
+
+      if (filters.lga) {
+        const filterLga = filters.lga.trim().toLowerCase();
+        const outletLga = (outlet.lga || "").trim().toLowerCase();
+        const outletAddr = (outlet.address || "").trim().toLowerCase();
+        if (outletLga !== filterLga && !outletLga.includes(filterLga) && !outletAddr.includes(filterLga)) {
+          return false;
+        }
+      }
+
+      if (filters.region && !doesOutletMatchRegion(outlet, filters.region, staffRegionMap)) {
         return false;
-      if (filters.personnel && outlet.assigned_manager !== filters.personnel)
-        return false;
+      }
+
+      if (filters.outletType) {
+        const ft = filters.outletType.trim().toLowerCase();
+        if (ft === "1" || ft === "on-trade") {
+          if (!isOutletOnTrade(outlet.outlet_type)) return false;
+        } else if (ft === "2" || ft === "off-trade") {
+          if (!isOutletOffTrade(outlet.outlet_type)) return false;
+        } else if (String(outlet.outlet_type ?? "").toLowerCase() !== ft) {
+          return false;
+        }
+      }
+
+      if (filters.personnel) {
+        const selectedStaffName = staffMap.get(filters.personnel)?.trim().toLowerCase();
+        const mgr = (outlet.assigned_manager || "").trim();
+        if (
+          mgr !== filters.personnel &&
+          (!selectedStaffName || mgr.toLowerCase() !== selectedStaffName)
+        ) {
+          return false;
+        }
+      }
+
       if (
         filters.listingStatus &&
         String(outlet.listing_status ?? "") !== filters.listingStatus
@@ -562,7 +637,7 @@ export default function Outlets() {
       }
       return a.name.localeCompare(b.name);
     });
-  }, [filters, outlets, quickCategory, search, sortOrder]);
+  }, [filters, outlets, quickCategory, search, sortOrder, staffMap, staffRegionMap]);
 
   const availableStates = useMemo(() => {
     const fromData = outlets
@@ -585,14 +660,26 @@ export default function Outlets() {
   }, [form.state, outlets]);
 
   const availableRegions = useMemo(() => {
-    const settingsRegions = configuredRegions
-      .filter((r) => r.is_active !== false)
-      .map((r) => r.name);
-    const fromData = outlets
-      .map((o) => o.region_id)
-      .filter((r): r is string => Boolean(r));
-    const merged = Array.from(new Set([...settingsRegions, ...fromData]));
-    if (merged.length === 0) {
+    const activeConfigured = configuredRegions.filter((r) => r.is_active !== false);
+    const byLower = new Map<string, string>();
+    const addCandidate = (raw?: string | null) => {
+      if (!raw) return;
+      raw.split(/[|,;/]+/).forEach((part) => {
+        const canonical = canonicalizeRegionName(part, activeConfigured);
+        if (!canonical) return;
+        const lower = canonical.toLowerCase();
+        if (!byLower.has(lower)) {
+          byLower.set(lower, canonical);
+        }
+      });
+    };
+
+    activeConfigured.forEach((r) => addCandidate(r.name));
+    outlets.forEach((o) => {
+      addCandidate(getExactOutletRegion(o));
+    });
+
+    if (byLower.size === 0) {
       return [
         "Portharcourt - South",
         "Abuja - North",
@@ -608,46 +695,46 @@ export default function Outlets() {
         "Ibadan",
       ].sort();
     }
-    return merged.sort();
+    return Array.from(byLower.values()).sort();
   }, [configuredRegions, outlets]);
 
-  const filterStateOptions = useMemo(
-    () =>
-      [
-        ...new Set(
-          outlets
-            .map((outlet) => outlet.state)
-            .filter((value): value is string => Boolean(value))
-        ),
-      ].sort(),
-    [outlets]
-  );
+  const filterStateOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    Object.keys(NIGERIAN_STATES).forEach((st) => map.set(st.toLowerCase(), st));
+    outlets.forEach((outlet) => {
+      const raw = (outlet.state || "").trim();
+      if (!raw || raw.toLowerCase() === "unassigned") return;
+      const clean = raw.replace(/\s+State$/i, "").trim();
+      if (!map.has(clean.toLowerCase())) {
+        map.set(clean.toLowerCase(), clean);
+      }
+    });
+    return Array.from(map.values()).sort();
+  }, [outlets]);
 
-  const filterLgaOptions = useMemo(
-    () =>
-      [
-        ...new Set(
-          outlets
-            .filter((outlet) => !filters.state || outlet.state === filters.state)
-            .map((outlet) => outlet.lga)
-            .filter((value): value is string => Boolean(value))
-        ),
-      ].sort(),
-    [filters.state, outlets]
-  );
+  const filterLgaOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    const filterSt = filters.state.trim().toLowerCase().replace(/\s+state$/i, "");
+    if (filters.state && NIGERIAN_STATES[filters.state]) {
+      NIGERIAN_STATES[filters.state].forEach((lga) => map.set(lga.toLowerCase(), lga));
+    }
+    outlets.forEach((outlet) => {
+      if (filterSt) {
+        const outletSt = (outlet.state || "").trim().toLowerCase().replace(/\s+state$/i, "");
+        if (outletSt !== filterSt && !outletSt.includes(filterSt)) return;
+      }
+      const raw = (outlet.lga || "").trim();
+      if (!raw || raw.toLowerCase() === "unassigned") return;
+      if (!map.has(raw.toLowerCase())) {
+        map.set(raw.toLowerCase(), raw);
+      }
+    });
+    return Array.from(map.values()).sort();
+  }, [filters.state, outlets]);
 
-  const filterRegionOptions = useMemo(
-    () =>
-      [
-        ...new Set([
-          ...configuredRegions.filter((r) => r.is_active !== false).map((r) => r.name),
-          ...outlets
-            .map((outlet) => outlet.region_id)
-            .filter((value): value is string => Boolean(value)),
-        ]),
-      ].sort(),
-    [configuredRegions, outlets]
-  );
+  const filterRegionOptions = useMemo(() => {
+    return availableRegions;
+  }, [availableRegions]);
 
   const pageSize = 12;
   const totalPages = Math.ceil(filteredOutlets.length / pageSize);
@@ -1046,12 +1133,11 @@ export default function Outlets() {
               </div>
 
               <div className="filter-field">
-                <label htmlFor="filter-lga">LGA</label>
+                <label htmlFor="filter-lga">LGA / Area</label>
                 <select
                   id="filter-lga"
                   value={filters.lga}
                   onChange={(e) => setFilters({ ...filters, lga: e.target.value })}
-                  disabled={!filters.state}
                 >
                   <option value="">All LGAs</option>
                   {filterLgaOptions.map((lga) => (
@@ -1088,8 +1174,8 @@ export default function Outlets() {
                   }
                 >
                   <option value="">All Types</option>
-                  <option value="1">ON-TRADE</option>
-                  <option value="2">OFF-TRADE</option>
+                  <option value="on-trade">ON-TRADE ({metrics.onTrade})</option>
+                  <option value="off-trade">OFF-TRADE ({metrics.offTrade})</option>
                 </select>
               </div>
 
@@ -1171,16 +1257,18 @@ export default function Outlets() {
         </div>
       ) : filteredOutlets.length === 0 ? (
         <div className="outlet-empty-state">
-          <Store size={32} className="empty-icon" />
+          <div className="outlet-empty-icon-wrap">
+            <Store size={28} className="empty-icon" />
+          </div>
           <strong>No matching outlets found</strong>
           <span>Try adjusting your search criteria or clear active filters.</span>
           <button
             type="button"
-            className="secondary-button"
+            className="secondary-button outlet-empty-reset-btn"
             onClick={resetAllFilters}
-            style={{ marginTop: 8 }}
           >
-            Reset filters
+            <RotateCcw size={14} />
+            <span>Reset filters</span>
           </button>
         </div>
       ) : effectiveViewMode === "map" ? (
@@ -1218,6 +1306,11 @@ export default function Outlets() {
                       >
                         {isOutletOffTrade(outlet.outlet_type) ? "OFF-TRADE" : "ON-TRADE"}
                       </span>
+                      {getExactOutletRegion(outlet) && (
+                        <span className="listing-tag" style={{ background: "#eef2ff", color: "#3730a3", borderColor: "#c7d2fe" }}>
+                          {getExactOutletRegion(outlet)}
+                        </span>
+                      )}
                       {outlet.listing_status === 1 ? (
                         <span className="listing-tag listed">Listed</span>
                       ) : (
@@ -1333,6 +1426,7 @@ export default function Outlets() {
                 <tr>
                   <th scope="col">Outlet</th>
                   <th scope="col">Type</th>
+                  <th scope="col">Region</th>
                   <th scope="col">Location</th>
                   <th scope="col">Assigned Rep</th>
                   <th scope="col">GPS Status</th>
@@ -1351,6 +1445,7 @@ export default function Outlets() {
                     outlet.assigned_manager && staffMap.has(outlet.assigned_manager)
                       ? staffMap.get(outlet.assigned_manager)
                       : outlet.assigned_manager;
+                  const exactRegion = getExactOutletRegion(outlet);
 
                   return (
                     <tr key={outlet.id} className="outlet-table-row">
@@ -1373,6 +1468,12 @@ export default function Outlets() {
                           className={`trade-type-tag ${isOutletOffTrade(outlet.outlet_type) ? "off" : "on"}`}
                         >
                           {isOutletOffTrade(outlet.outlet_type) ? "OFF-TRADE" : "ON-TRADE"}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span className="rep-cell-text">
+                          {exactRegion || "—"}
                         </span>
                       </td>
 

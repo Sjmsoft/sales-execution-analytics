@@ -111,6 +111,75 @@ export const DEFAULT_SYSTEM_REGIONS: RegionItem[] = [
 
 const STORAGE_KEY_REGIONS = "penedge_configured_regions_v1";
 
+function normalizeRegionComparisonKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s*-\s*/g, "-")
+    .replace(/\s+/g, " ");
+}
+
+const IGNORED_META_REGIONS = new Set([
+  "national",
+  "all region",
+  "all regions",
+  "all",
+  "unassigned",
+  "none",
+  "n/a",
+  "null",
+  "undefined",
+  // State names that already have dedicated sales regions
+  "lagos",
+  "lagos state",
+  "rivers",
+  "rivers state",
+  "fct",
+  "oyo",
+  "oyo state",
+]);
+
+/**
+ * Canonicalizes a region name so it matches the exact spelling/casing of the
+ * configured region (e.g. "lagos mainland" -> "Lagos mainland", "enugu - east" -> "Enugu- East").
+ */
+export function canonicalizeRegionName(
+  rawName?: string | null,
+  customRegions?: RegionItem[]
+): string {
+  if (!rawName || typeof rawName !== "string") return "";
+  const trimmed = rawName.trim();
+  if (!trimmed) return "";
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(trimmed)) return "";
+  if (IGNORED_META_REGIONS.has(trimmed.toLowerCase())) return "";
+
+  const normKey = normalizeRegionComparisonKey(trimmed);
+
+  // Check against provided custom regions first
+  if (customRegions && customRegions.length > 0) {
+    const matchCustom = customRegions.find(
+      (r) => normalizeRegionComparisonKey(r.name) === normKey || r.id === trimmed
+    );
+    if (matchCustom) return matchCustom.name;
+  }
+
+  // Check against default system regions
+  const matchDefault = DEFAULT_SYSTEM_REGIONS.find(
+    (r) => normalizeRegionComparisonKey(r.name) === normKey || r.id === trimmed
+  );
+  if (matchDefault) return matchDefault.name;
+
+  // Common legacy aliases
+  if (normKey === "port harcourt-south" || normKey === "portharcourt" || normKey === "port harcourt") {
+    return "Portharcourt - South";
+  }
+  if (normKey === "abuja") return "Abuja - North";
+  if (normKey === "enugu" || normKey === "enugu-east") return "Enugu- East";
+  if (normKey === "edo" || normKey === "benin") return "Edo Region";
+
+  return trimmed;
+}
+
 function inferRegionDetails(name: string): { code: string; state: string } {
   const n = name.trim().toLowerCase();
   if (
@@ -159,8 +228,19 @@ export async function getRegions(): Promise<RegionItem[]> {
     console.warn("localStorage regions read error:", e);
   }
 
-  // Discover live regions from Supabase 'staff' table
   const discoveredNames = new Set<string>();
+
+  const addDiscoveredRegionName = (rawName: unknown) => {
+    if (!rawName || typeof rawName !== "string") return;
+    const parts = rawName.split(/[|,;/]+/);
+    for (const part of parts) {
+      const canonical = canonicalizeRegionName(part);
+      if (!canonical) continue;
+      discoveredNames.add(canonical);
+    }
+  };
+
+  // Discover live regions from Supabase 'staff' table
   try {
     const { data: staffData } = await supabase
       .from("staff")
@@ -168,14 +248,10 @@ export async function getRegions(): Promise<RegionItem[]> {
 
     if (staffData) {
       for (const s of staffData) {
-        if (s.region && typeof s.region === "string" && s.region.trim()) {
-          discoveredNames.add(s.region.trim());
-        }
+        addDiscoveredRegionName(s.region);
         if (Array.isArray(s.assigned_regions)) {
           for (const r of s.assigned_regions) {
-            if (r && typeof r === "string" && r.trim()) {
-              discoveredNames.add(r.trim());
-            }
+            addDiscoveredRegionName(r);
           }
         }
       }
@@ -184,16 +260,14 @@ export async function getRegions(): Promise<RegionItem[]> {
     console.warn("Supabase staff regions discovery notice:", err);
   }
 
-  // Also discover regions from 'outlets' table
+  // Also discover explicit region_id values from 'outlets' table (not state!)
   try {
     const { data: outletsData } = await supabase
       .from("outlets")
-      .select("state");
+      .select("region_id");
     if (outletsData) {
       for (const o of outletsData) {
-        if (o.state && typeof o.state === "string" && o.state.trim()) {
-          discoveredNames.add(o.state.trim());
-        }
+        addDiscoveredRegionName((o as any).region_id);
       }
     }
   } catch { }
@@ -202,12 +276,12 @@ export async function getRegions(): Promise<RegionItem[]> {
 
   // Add default system regions as base
   for (const def of DEFAULT_SYSTEM_REGIONS) {
-    regionMap.set(def.name.toLowerCase(), def);
+    regionMap.set(normalizeRegionComparisonKey(def.name), def);
   }
 
   // Merge discovered live regions from Supabase
   for (const name of discoveredNames) {
-    const key = name.toLowerCase();
+    const key = normalizeRegionComparisonKey(name);
     if (!regionMap.has(key)) {
       const details = inferRegionDetails(name);
       regionMap.set(key, {
@@ -221,9 +295,13 @@ export async function getRegions(): Promise<RegionItem[]> {
     }
   }
 
-  // Merge cached custom updates
+  // Merge valid cached custom updates (skipping polluted meta/state entries)
   for (const c of cached) {
-    regionMap.set(c.name.toLowerCase(), c);
+    if (!c?.name || c.name.includes("|")) continue;
+    const canonical = canonicalizeRegionName(c.name);
+    if (!canonical) continue;
+    const key = normalizeRegionComparisonKey(canonical);
+    regionMap.set(key, { ...c, name: canonical });
   }
 
   const result = Array.from(regionMap.values()).sort((a, b) =>
