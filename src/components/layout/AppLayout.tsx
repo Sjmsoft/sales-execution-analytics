@@ -13,7 +13,7 @@ import { useAppearance } from "../../hooks/useAppearance";
 import "../chat/messaging.css";
 
 /** How long the branded logo overlay shows on every page navigation. */
-const ROUTE_LOADER_MS = 750;
+const ROUTE_LOADER_MS = 250;
 
 function getRouteLabel(pathname: string) {
   const match = [...navigationItems]
@@ -136,7 +136,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
       <div className={`app-main ${desktopCollapsed ? "main-collapsed" : ""}`}>
         <Header
-          onMenuClick={() => setMobileDrawerOpen(true)}
+          onMenuClick={() => setMobileDrawerOpen((prev) => !prev)}
           sidebarCollapsed={desktopCollapsed}
           onToggleSidebar={toggleDesktopCollapsed}
         />

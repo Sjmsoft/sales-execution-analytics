@@ -14,6 +14,7 @@ import {
   TrendingUp,
   Users,
   DollarSign,
+  Download,
 } from "lucide-react";
 import "../reports.css";
 import LogoLoader from "../components/brand/LogoLoader";
@@ -168,6 +169,28 @@ export default function Reports() {
     window.print();
   };
 
+  const handleExportCsv = () => {
+    const headers = ["Date", "Staff", "Region", "Outlet", "Product", "Quantity", "Total Amount (NGN)", "Amount Paid (NGN)"];
+    const rows = sales.map((s) => [
+      s.sale_date || (s.created_at ? s.created_at.split("T")[0] : ""),
+      `"${(s.staff || "Direct Sales").replace(/"/g, '""')}"`,
+      `"${(s.outlet_region || s.staff_region || s.outlet_state || "National").replace(/"/g, '""')}"`,
+      `"${(s.outlet || "Store").replace(/"/g, '""')}"`,
+      `"${(s.drink_type || "Beverage").replace(/"/g, '""')}"`,
+      Number(s.quantity ?? 0),
+      Number(s.total_amount ?? 0),
+      Number(s.amount_paid ?? 0),
+    ]);
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pen-edge-sales-report-${period}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="reports-page">
       {/* HEADER */}
@@ -181,7 +204,7 @@ export default function Reports() {
             <p>Comprehensive analytics of commercial execution, territory performance, and representative KPIs</p>
           </div>
         </div>
-        <div className="reports-controls">
+        <div className="reports-controls" style={{ flexWrap: "wrap" }}>
           <div className="report-filter-select">
             <Calendar size={15} />
             <select value={period} onChange={(e) => setPeriod(e.target.value)}>
@@ -190,10 +213,52 @@ export default function Reports() {
               <option value="this_week">This Week</option>
               <option value="this_month">This Month</option>
               <option value="this_year">This Year</option>
+              <option value="custom">Custom Date Range</option>
             </select>
             <ChevronDown size={14} className="chevron" />
           </div>
-          <button className="report-print-btn" onClick={handlePrint}>
+          {period === "custom" && (
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                aria-label="Start date"
+                style={{
+                  padding: "7px 10px",
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  fontSize: "0.82rem",
+                  background: "#ffffff",
+                }}
+              />
+              <span style={{ fontSize: "0.8rem", color: "#64748b" }}>to</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                aria-label="End date"
+                style={{
+                  padding: "7px 10px",
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  fontSize: "0.82rem",
+                  background: "#ffffff",
+                }}
+              />
+            </div>
+          )}
+          <button
+            type="button"
+            className="report-print-btn"
+            onClick={handleExportCsv}
+            disabled={sales.length === 0}
+            style={{ background: "#ffffff", color: "#092c1f", border: "1px solid #cbd5e1" }}
+          >
+            <Download size={15} />
+            <span>Export CSV</span>
+          </button>
+          <button type="button" className="report-print-btn" onClick={handlePrint}>
             <Printer size={15} />
             <span>Print Report</span>
           </button>
@@ -279,20 +344,28 @@ export default function Reports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {repPerformance.map(rep => (
-                      <tr key={rep.name}>
-                        <td>
-                          <strong>{rep.name}</strong>
-                          <span className="table-sub">{rep.orders} Orders · {rep.units} Units</span>
-                        </td>
-                        <td className="num-col"><strong>{formatCurrency(rep.revenue)}</strong></td>
-                        <td className="num-col">
-                          <span className={`rep-collect-badge ${rep.collectionRate >= 90 ? 'good' : rep.collectionRate >= 70 ? 'avg' : 'poor'}`}>
-                            {rep.collectionRate}%
-                          </span>
+                    {repPerformance.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} style={{ textAlign: "center", padding: "24px", color: "#64748b" }}>
+                          No representative sales recorded for this period.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      repPerformance.map(rep => (
+                        <tr key={rep.name}>
+                          <td>
+                            <strong>{rep.name}</strong>
+                            <span className="table-sub">{rep.orders} Orders · {rep.units} Units</span>
+                          </td>
+                          <td className="num-col"><strong>{formatCurrency(rep.revenue)}</strong></td>
+                          <td className="num-col">
+                            <span className={`rep-collect-badge ${rep.collectionRate >= 90 ? 'good' : rep.collectionRate >= 70 ? 'avg' : 'poor'}`}>
+                              {rep.collectionRate}%
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -313,13 +386,21 @@ export default function Reports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {regionPerformance.map(reg => (
-                      <tr key={reg.region}>
-                        <td><strong>{reg.region}</strong></td>
-                        <td className="num-col">{reg.units.toLocaleString()}</td>
-                        <td className="num-col"><strong>{formatCurrency(reg.revenue)}</strong></td>
+                    {regionPerformance.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} style={{ textAlign: "center", padding: "24px", color: "#64748b" }}>
+                          No regional data recorded for this period.
+                        </td>
                       </tr>
-                    ))}
+                    ) : (
+                      regionPerformance.map(reg => (
+                        <tr key={reg.region}>
+                          <td><strong>{reg.region}</strong></td>
+                          <td className="num-col">{reg.units.toLocaleString()}</td>
+                          <td className="num-col"><strong>{formatCurrency(reg.revenue)}</strong></td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -331,23 +412,27 @@ export default function Reports() {
                 <h3><Package size={16}/> Beverage Product Mix</h3>
               </div>
               <div className="rcard-body scrollable">
-                <div className="report-list-blocks">
-                  {productPerformance.map((prod, idx) => (
-                    <div className="report-list-block" key={prod.product}>
-                      <div className="rlb-left">
-                        <div className="rlb-index">#{idx + 1}</div>
-                        <div>
-                          <strong>{prod.product}</strong>
-                          <span>{prod.units.toLocaleString()} Units Sold</span>
+                {productPerformance.length === 0 ? (
+                  <div className="rcard-empty">No product sales recorded for this period.</div>
+                ) : (
+                  <div className="report-list-blocks">
+                    {productPerformance.map((prod, idx) => (
+                      <div className="report-list-block" key={prod.product}>
+                        <div className="rlb-left">
+                          <div className="rlb-index">#{idx + 1}</div>
+                          <div>
+                            <strong>{prod.product}</strong>
+                            <span>{prod.units.toLocaleString()} Units Sold</span>
+                          </div>
+                        </div>
+                        <div className="rlb-right">
+                          <strong>{formatCurrency(prod.revenue)}</strong>
+                          <span>{totalRevenue > 0 ? Math.round((prod.revenue / totalRevenue) * 100) : 0}% Share</span>
                         </div>
                       </div>
-                      <div className="rlb-right">
-                        <strong>{formatCurrency(prod.revenue)}</strong>
-                        <span>{totalRevenue > 0 ? Math.round((prod.revenue / totalRevenue) * 100) : 0}% Share</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -357,22 +442,26 @@ export default function Reports() {
                 <h3><Store size={16}/> Top 10 Retail Outlets</h3>
               </div>
               <div className="rcard-body scrollable">
-                <div className="report-list-blocks">
-                  {outletPerformance.map((out, idx) => (
-                    <div className="report-list-block" key={out.outlet}>
-                      <div className="rlb-left">
-                        <div className="rlb-index">#{idx + 1}</div>
-                        <div>
-                          <strong>{out.outlet}</strong>
-                          <span>{out.orders} Transactions</span>
+                {outletPerformance.length === 0 ? (
+                  <div className="rcard-empty">No outlet transactions recorded for this period.</div>
+                ) : (
+                  <div className="report-list-blocks">
+                    {outletPerformance.map((out, idx) => (
+                      <div className="report-list-block" key={out.outlet}>
+                        <div className="rlb-left">
+                          <div className="rlb-index">#{idx + 1}</div>
+                          <div>
+                            <strong>{out.outlet}</strong>
+                            <span>{out.orders} Transactions</span>
+                          </div>
+                        </div>
+                        <div className="rlb-right">
+                          <strong>{formatCurrency(out.revenue)}</strong>
                         </div>
                       </div>
-                      <div className="rlb-right">
-                        <strong>{formatCurrency(out.revenue)}</strong>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 

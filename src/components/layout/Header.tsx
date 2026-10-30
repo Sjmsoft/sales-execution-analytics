@@ -1,12 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { LogOut, MapPin, MessageSquare, PanelLeftClose, PanelLeftOpen, Download, WifiOff, Sun, Moon } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
+import { LogOut, MapPin, Menu, MessageSquare, PanelLeftClose, PanelLeftOpen, Download, WifiOff, Sun, Moon } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import BrandLogo3D from "../brand/BrandLogo3D";
 import { getUnreadMessagesCount, messagingEvents } from "../../services/messagingService";
 import NotificationCenter from "./NotificationCenter";
 import { usePWA } from "../../hooks/usePWA";
 import { useAppearance } from "../../hooks/useAppearance";
+
+const ROUTE_TITLES: Record<string, { title: string; section: string }> = {
+  "/": { title: "Executive Command Center", section: "Overview" },
+  "/messages": { title: "Messages & Calls", section: "Communications" },
+  "/notifications": { title: "Notifications Hub", section: "Overview" },
+  "/check-in": { title: "Check-In & Attendance", section: "Field Operations" },
+  "/attendance": { title: "Daily Attendance", section: "Field Operations" },
+  "/visits/check-in": { title: "Outlet Visit Check-In", section: "Field Operations" },
+  "/visits/activity": { title: "Team Activity", section: "Analytics & Tracking" },
+  "/visits": { title: "Outlet Visits History", section: "Field Operations" },
+  "/outlets": { title: "Outlets Directory", section: "Trade Network" },
+  "/sales/new": { title: "Record New Sale", section: "Sales Execution" },
+  "/sales": { title: "Sales Transactions", section: "Sales Execution" },
+  "/targets": { title: "Sales Targets", section: "Revenue Planning" },
+  "/reports/field-performance": { title: "Field Team Performance", section: "Analytics" },
+  "/reports": { title: "Performance Reports", section: "Analytics" },
+  "/staff": { title: "Field Team Directory", section: "Organization" },
+  "/settings": { title: "System Settings", section: "Administration" },
+};
 
 type HeaderProps = {
   onMenuClick: () => void;
@@ -19,9 +38,22 @@ export default function Header({
   sidebarCollapsed = false,
   onToggleSidebar,
 }: HeaderProps) {
+  const location = useLocation();
   const { staff, role, signOut } = useAuth();
   const { isInstallable, isOffline, installApp } = usePWA();
   const { resolvedTheme, setColorScheme } = useAppearance();
+
+  const currentRouteMeta = useMemo(() => {
+    const exact = ROUTE_TITLES[location.pathname];
+    if (exact) return exact;
+    const matchKey = Object.keys(ROUTE_TITLES)
+      .filter((k) => k !== "/")
+      .sort((a, b) => b.length - a.length)
+      .find((k) => location.pathname.startsWith(k));
+    return matchKey
+      ? ROUTE_TITLES[matchKey]
+      : { title: "Sales Execution Analytics", section: "Workspace" };
+  }, [location.pathname]);
 
   const initials = useMemo(() => {
     if (!staff?.name) return "PE";
@@ -48,8 +80,34 @@ export default function Header({
 
   return (
     <header className="app-header">
-      {/* ── Mobile Header Brand Block ── */}
-      <div className="mobile-header-brand">
+      {/* ── Mobile Header Brand Block & Menu Button ── */}
+      <div className="mobile-header-brand" style={{ gap: 10 }}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onMenuClick();
+          }}
+          aria-label="Open navigation menu"
+          title="Open navigation menu"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 36,
+            height: 36,
+            borderRadius: 8,
+            border: "1px solid var(--border-default, #e2e8f0)",
+            background: "var(--surface-subtle, #f8fafc)",
+            color: "var(--text-main, #0f172a)",
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          <Menu size={18} />
+        </button>
+
         <Link to="/" className="mobile-brand-link" aria-label="Go to dashboard">
           <BrandLogo3D size={34} tone="light" motion="sway" />
           <div className="mobile-brand-copy">
@@ -77,8 +135,23 @@ export default function Header({
           </button>
         )}
 
-        <div className="header-title">
-          <h1>Sales Execution Analytics</h1>
+        <div className="header-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <h1 style={{ margin: 0 }}>{currentRouteMeta.title}</h1>
+          <span
+            style={{
+              fontSize: "0.7rem",
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+              padding: "2px 8px",
+              borderRadius: 999,
+              background: "var(--surface-subtle, #f1f5f9)",
+              color: "var(--text-muted, #64748b)",
+              border: "1px solid var(--border-default, #e2e8f0)",
+            }}
+          >
+            {currentRouteMeta.section}
+          </span>
         </div>
       </div>
 

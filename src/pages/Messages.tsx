@@ -27,6 +27,8 @@ import {
   Compass,
   Settings,
   Trash2,
+  Lock,
+  Globe,
 } from "lucide-react";
 import LogoLoader from "../components/brand/LogoLoader";
 import { useAuth } from "../context/AuthContext";
@@ -48,6 +50,16 @@ import {
   SMART_REPLIES,
   messagingEvents,
   getMessagingSettings,
+  canUserSeeContact,
+  filterDirectoryUsersForViewer,
+  canUserCallTarget,
+  canUserSendMessage,
+  canUserReceiveMessages,
+  canUserDeleteMessage,
+  getEffectiveRolePermission,
+  getEffectiveDirectoryScopeForUser,
+  isNationalLeadershipRole,
+  doRegionsOverlap,
   type MessagingModuleSettings,
   type ChatUser,
   type ChatMessage,
@@ -94,6 +106,8 @@ export default function Messages() {
 
   // Modals
   const [newChatModalOpen, setNewChatModalOpen] = useState(false);
+  const [directoryRegionFilter, setDirectoryRegionFilter] = useState<string>("all");
+  const [directorySearchQuery, setDirectorySearchQuery] = useState<string>("");
   const [broadcastModalOpen, setBroadcastModalOpen] = useState(false);
   const [clearHistoryModalOpen, setClearHistoryModalOpen] = useState(false);
   const [broadcastTitle, setBroadcastTitle] = useState("");
@@ -193,11 +207,17 @@ export default function Messages() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
-  // Voice recording simulation timer
+  // Voice recording simulation timer (enforces maxVoiceNoteSecs)
   useEffect(() => {
     if (isRecordingVoice) {
       voiceTimerRef.current = window.setInterval(() => {
-        setRecordDuration((d) => d + 1);
+        setRecordDuration((d) => {
+          const next = d + 1;
+          if (moduleSettings.maxVoiceNoteSecs && next >= moduleSettings.maxVoiceNoteSecs) {
+            void handleFinishVoiceRecording();
+          }
+          return next;
+        });
       }, 1000);
     } else {
       setRecordDuration(0);
@@ -206,31 +226,102 @@ export default function Messages() {
     return () => {
       if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
     };
-  }, [isRecordingVoice]);
+  }, [isRecordingVoice, moduleSettings.maxVoiceNoteSecs]);
 
-  const activeConversation = useMemo(
-    () => conversations.find((c) => c.id === selectedConvId) || conversations[0],
-    [conversations, selectedConvId],
+  // Current user's scope & permissions context
+  const viewerContext = useMemo(() => {
+    const selfFromDir = users.find((u) => u.id === currentUserId);
+    const assignedRegs = Array.isArray((staff as any)?.assigned_regions)
+      ? (staff as any).assigned_regions
+      : selfFromDir?.assignedRegions || (staff?.region ? [staff.region] : []);
+    return {
+      id: currentUserId,
+      roleKey: currentUserRole,
+      region: staff?.region || selfFromDir?.region || "National",
+      assignedRegions: assignedRegs,
+      reportsToId: (staff as any)?.reports_to_id || (staff as any)?.reports_to || selfFromDir?.reportsToId || null,
+    };
+  }, [currentUserId, currentUserRole, staff, users]);
+
+  const myRolePermission = useMemo(
+    () => getEffectiveRolePermission(currentUserRole, moduleSettings),
+    [currentUserRole, moduleSettings],
   );
 
-  const directPartner = useMemo(() => {
-    if (!activeConversation || activeConversation.type !== "direct") return null;
-    const partnerId = activeConversation.participantIds.find(
-      (id) => id !== currentUserId && id !== "current-user",
-    );
-    return (
-      users.find((u) => u.id === partnerId) ||
-      users.find((u) => u.name.toLowerCase() === activeConversation.title.toLowerCase()) ||
-      null
-    );
-  }, [activeConversation, users, currentUserId]);
+  const effectiveDirectoryScope = useMemo(
+    () => getEffectiveDirectoryScopeForUser(viewerContext, moduleSettings),
+    [viewerContext, moduleSettings],
+  );
 
-  // Filtered conversations
+  // Filter callable/messageable contacts according to Admin Directory & Region Visibility settings
+  const visibleDirectoryUsers = useMemo(() => {
+    const baseVisible = filterDirectoryUsersForViewer(
+      users.filter((u) => u.id !== currentUserId),
+      viewerContext,
+      moduleSettings,
+    );
+    return baseVisible;
+  }, [users, currentUserId, viewerContext, moduleSettings]);
+
+  const modalFilteredDirectoryUsers = useMemo(() => {
+    return visibleDirectoryUsers.filter((u) => {
+      if (directoryRegionFilter === "my_region") {
+        if (!doRegionsOverlap(viewerContext, u)) return false;
+      } else if (directoryRegionFilter !== "all") {
+        if (u.region.toLowerCase() !== directoryRegionFilter.toLowerCase()) return false;
+      }
+      if (directorySearchQuery.trim()) {
+        const q = directorySearchQuery.toLowerCase();
+        return (
+          u.name.toLowerCase().includes(q) ||
+          u.roleName.toLowerCase().includes(q) ||
+          u.region.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [visibleDirectoryUsers, directoryRegionFilter, directorySearchQuery, viewerContext]);
+
+  const availableDirectoryRegions = useMemo(() => {
+    const set = new Set<string>();
+    visibleDirectoryUsers.forEach((u) => {
+      if (u.region && u.region.trim()) set.add(u.region.trim());
+    });
+    return Array.from(set).sort();
+  }, [visibleDirectoryUsers]);
+
+  // Filtered conversations (enforcing Region & Contact Visibility + Territory Hub scope)
   const filteredConversations = useMemo(() => {
     return conversations.filter((c) => {
       if (activeTab !== "all" && c.type !== activeTab) {
         return false;
       }
+
+      // Enforce Territory Hub region restriction if enabled by Admin
+      if (
+        c.type === "channel" &&
+        c.channelCategory === "regions" &&
+        moduleSettings.restrictTerritoryHubsToRegion &&
+        !isNationalLeadershipRole(currentUserRole)
+      ) {
+        const hubRegionName = c.title.replace(/^📍\s*/i, "").replace(/\s*Territory Hub$/i, "").trim();
+        if (hubRegionName && !doRegionsOverlap(viewerContext, { region: hubRegionName })) {
+          return false;
+        }
+      }
+
+      // Enforce Direct Contact Visibility Scope (unless there's already an active chat message or user is visible)
+      if (c.type === "direct") {
+        const pId = c.participantIds.find((id) => id !== currentUserId && id !== "current-user");
+        const pUser =
+          users.find((u) => u.id === pId) ||
+          users.find((u) => u.name.toLowerCase() === c.title.toLowerCase());
+        if (pUser) {
+          const vis = canUserSeeContact(viewerContext, pUser, moduleSettings);
+          if (!vis.visible) return false;
+        }
+      }
+
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesTitle = c.title.toLowerCase().includes(q);
@@ -248,7 +339,81 @@ export default function Messages() {
       }
       return true;
     });
-  }, [conversations, activeTab, searchQuery, roleFilter, users, currentUserId]);
+  }, [conversations, activeTab, searchQuery, roleFilter, users, currentUserId, currentUserRole, viewerContext, moduleSettings]);
+
+  const activeConversation = useMemo(
+    () =>
+      filteredConversations.find((c) => c.id === selectedConvId) ||
+      conversations.find((c) => c.id === selectedConvId) ||
+      filteredConversations[0] ||
+      conversations[0],
+    [filteredConversations, conversations, selectedConvId],
+  );
+
+  const directPartner = useMemo(() => {
+    if (!activeConversation || activeConversation.type !== "direct") return null;
+    const partnerId = activeConversation.participantIds.find(
+      (id) => id !== currentUserId && id !== "current-user",
+    );
+    return (
+      users.find((u) => u.id === partnerId) ||
+      users.find((u) => u.name.toLowerCase() === activeConversation.title.toLowerCase()) ||
+      null
+    );
+  }, [activeConversation, users, currentUserId]);
+
+  // Evaluate active conversation calling & messaging permissions
+  const activeCallTargetMeta = useMemo(() => {
+    if (directPartner) {
+      return {
+        target: directPartner,
+        isGroupHuddle: false,
+      };
+    }
+    return {
+      target: {
+        id: activeConversation?.id || "channel-huddle",
+        name: activeConversation?.title || "Channel Huddle",
+        roleKey: "regional_sales_manager",
+        region: viewerContext.region,
+      },
+      isGroupHuddle: true,
+    };
+  }, [directPartner, activeConversation, viewerContext.region]);
+
+  const activeVoiceCallPermission = useMemo(
+    () =>
+      canUserCallTarget(
+        viewerContext,
+        activeCallTargetMeta.target,
+        "audio",
+        moduleSettings,
+        activeCallTargetMeta.isGroupHuddle,
+      ),
+    [viewerContext, activeCallTargetMeta, moduleSettings],
+  );
+
+  const activeVideoCallPermission = useMemo(
+    () =>
+      canUserCallTarget(
+        viewerContext,
+        activeCallTargetMeta.target,
+        "video",
+        moduleSettings,
+        activeCallTargetMeta.isGroupHuddle,
+      ),
+    [viewerContext, activeCallTargetMeta, moduleSettings],
+  );
+
+  const activeSendPermission = useMemo(
+    () => canUserSendMessage(viewerContext, activeConversation, directPartner, moduleSettings),
+    [viewerContext, activeConversation, directPartner, moduleSettings],
+  );
+
+  const activeReceivePermission = useMemo(
+    () => canUserReceiveMessages(viewerContext, moduleSettings),
+    [viewerContext, moduleSettings],
+  );
 
   // Smart suggestions relevant to current chat
   const suggestions = useMemo(() => {
@@ -263,6 +428,15 @@ export default function Messages() {
 
   // Send message handler
   async function handleSendMessage(overrideText?: string, attachments?: MessageAttachment[], msgType: ChatMessage["type"] = "text") {
+    const sendCheck = canUserSendMessage(viewerContext, activeConversation, directPartner, moduleSettings);
+    if (!sendCheck.allowed) {
+      alert(sendCheck.reason);
+      return;
+    }
+    if (attachments && attachments.length > 0 && !myRolePermission.canSendAttachments) {
+      alert(`Your role (${myRolePermission.roleName}) is not permitted to send media or file attachments.`);
+      return;
+    }
     const textToSend = (overrideText ?? inputText).trim();
     if (!textToSend && (!attachments || attachments.length === 0)) return;
     const targetConvId = selectedConvId || activeConversation?.id;
@@ -516,6 +690,24 @@ export default function Messages() {
   function handleStartCall(callType: "audio" | "video", targetOverride?: ChatUser, convIdOverride?: string) {
     try {
       const targetConvId = convIdOverride || selectedConvId || activeConversation?.id;
+      const targetEntity = targetOverride || directPartner;
+      const isGroupHuddle = !targetEntity && Boolean(activeConversation && activeConversation.type !== "direct");
+
+      const checkTarget = targetEntity
+        ? targetEntity
+        : {
+            id: activeConversation?.id || "channel-huddle",
+            name: activeConversation?.title || "Channel Huddle",
+            roleKey: "regional_sales_manager",
+            region: viewerContext.region,
+          };
+
+      const callPerm = canUserCallTarget(viewerContext, checkTarget, callType, moduleSettings, isGroupHuddle);
+      if (!callPerm.allowed) {
+        alert(callPerm.reason);
+        return;
+      }
+
       const receiver = targetOverride
         ? {
             id: targetOverride.id,
@@ -765,6 +957,34 @@ export default function Messages() {
               RSMs
             </button>
           </div>
+
+          {/* Active Directory & Region Visibility Scope Banner */}
+          <div
+            style={{
+              marginTop: 8,
+              padding: "5px 10px",
+              borderRadius: 8,
+              background: effectiveDirectoryScope === "all_regions" ? "#eff6ff" : "#ecfdf5",
+              border: effectiveDirectoryScope === "all_regions" ? "1px solid #bfdbfe" : "1px solid #a7f3d0",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 6,
+              fontSize: 11,
+              color: effectiveDirectoryScope === "all_regions" ? "#1d4ed8" : "#047857",
+              fontWeight: 600,
+            }}
+          >
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              {effectiveDirectoryScope === "all_regions" ? <Globe size={12} /> : <MapPin size={12} />}
+              {effectiveDirectoryScope === "all_regions"
+                ? "Directory: All Regions"
+                : effectiveDirectoryScope === "reporting_line_only"
+                ? "Directory: Reporting Line Only"
+                : `Directory: ${viewerContext.region} Region`}
+            </span>
+            <span style={{ opacity: 0.85 }}>{visibleDirectoryUsers.length} Contacts</span>
+          </div>
         </div>
 
         {/* Conversation List */}
@@ -913,13 +1133,21 @@ export default function Messages() {
                     type="button"
                     className="chat-action-btn call"
                     onClick={() => handleStartCall("audio")}
+                    disabled={!activeVoiceCallPermission.allowed}
                     title={
-                      activeConversation.type === "direct"
-                        ? "Audio Call (Teams / WhatsApp WebRTC)"
-                        : "Start Channel Audio Huddle"
+                      activeVoiceCallPermission.allowed
+                        ? activeConversation.type === "direct"
+                          ? "Audio Call (Teams / WhatsApp WebRTC)"
+                          : "Start Channel Audio Huddle"
+                        : activeVoiceCallPermission.reason
+                    }
+                    style={
+                      !activeVoiceCallPermission.allowed
+                        ? { opacity: 0.55, cursor: "not-allowed", background: "#f1f5f9", color: "#64748b", borderColor: "#cbd5e1" }
+                        : undefined
                     }
                   >
-                    <Phone size={16} />
+                    {activeVoiceCallPermission.allowed ? <Phone size={16} /> : <Lock size={14} />}
                     <span className="btn-label">
                       {activeConversation.type === "direct" ? "Voice Call" : "Voice Huddle"}
                     </span>
@@ -931,13 +1159,21 @@ export default function Messages() {
                     type="button"
                     className="chat-action-btn video"
                     onClick={() => handleStartCall("video")}
+                    disabled={!activeVideoCallPermission.allowed}
                     title={
-                      activeConversation.type === "direct"
-                        ? "Video Call (Teams / WhatsApp WebRTC)"
-                        : "Start Channel Video Huddle"
+                      activeVideoCallPermission.allowed
+                        ? activeConversation.type === "direct"
+                          ? "Video Call (Teams / WhatsApp WebRTC)"
+                          : "Start Channel Video Huddle"
+                        : activeVideoCallPermission.reason
+                    }
+                    style={
+                      !activeVideoCallPermission.allowed
+                        ? { opacity: 0.55, cursor: "not-allowed", background: "#f1f5f9", color: "#64748b", borderColor: "#cbd5e1" }
+                        : undefined
                     }
                   >
-                    <Video size={16} />
+                    {activeVideoCallPermission.allowed ? <Video size={16} /> : <Lock size={14} />}
                     <span className="btn-label">
                       {activeConversation.type === "direct" ? "Video Call" : "Video Huddle"}
                     </span>
@@ -1117,7 +1353,7 @@ export default function Messages() {
                             })}
                           </span>
 
-                          {isMe && (
+                          {isMe && moduleSettings.readReceiptsEnabled && (
                             <span className="msg-delivery-status">
                               <CheckCheck
                                 size={13}
@@ -1156,16 +1392,18 @@ export default function Messages() {
                             )}
                           </div>
 
-                          {/* Delete individual message or call log */}
-                          <button
-                            type="button"
-                            className="msg-reaction-add-btn"
-                            onClick={() => deleteMessage(msg.id)}
-                            title={isCallLog ? "Delete Call Log" : "Delete Message"}
-                            style={{ marginLeft: 2, color: "#94a3b8" }}
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                          {/* Delete individual message or call log (enforcing messageDeletionPolicy) */}
+                          {canUserDeleteMessage(viewerContext, msg, moduleSettings) && (
+                            <button
+                              type="button"
+                              className="msg-reaction-add-btn"
+                              onClick={() => deleteMessage(msg.id)}
+                              title={isCallLog ? "Delete Call Log" : "Delete Message"}
+                              style={{ marginLeft: 2, color: "#94a3b8" }}
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
                         </div>
 
                         {/* Render active reaction chips */}
@@ -1193,7 +1431,7 @@ export default function Messages() {
             </div>
 
             {/* Smart Reply Quick Response Bar (Teams/WhatsApp AI Suggestions) */}
-            {moduleSettings.allowSmartReplies && (
+            {moduleSettings.allowSmartReplies && activeSendPermission.allowed && (
               <div className="chat-smart-replies-bar">
                 <span className="smart-replies-label">
                   <Sparkles size={12} color="#059669" /> Quick Smart Replies:
@@ -1215,210 +1453,281 @@ export default function Messages() {
 
             {/* Composer Container */}
             <div className="chat-composer-wrap">
-              {/* Reply Preview */}
-              {replyTarget && (
-                <div className="composer-reply-banner">
-                  <div>
-                    <strong>Replying to {replyTarget.senderName}</strong>
-                    <p>{replyTarget.content.slice(0, 80)}</p>
-                  </div>
-                  <button type="button" onClick={() => setReplyTarget(null)}>
-                    <X size={14} />
-                  </button>
+              {!activeReceivePermission.allowed && (
+                <div
+                  style={{
+                    padding: "8px 14px",
+                    marginBottom: 8,
+                    borderRadius: 8,
+                    background: "#fffbeb",
+                    border: "1px solid #fde68a",
+                    color: "#92400e",
+                    fontSize: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <Lock size={14} />
+                  <span>{activeReceivePermission.reason}</span>
                 </div>
               )}
 
-              {/* Management Priority Bar */}
-              {isManagement && (
-                <div className="composer-priority-selector">
-                  <span className="priority-label">Message Priority Mode:</span>
-                  <button
-                    type="button"
-                    className={`priority-chip normal ${priorityMode === "normal" ? "active" : ""}`}
-                    onClick={() => setPriorityMode("normal")}
-                  >
-                    Normal
-                  </button>
-                  <button
-                    type="button"
-                    className={`priority-chip urgent ${priorityMode === "urgent" ? "active" : ""}`}
-                    onClick={() => setPriorityMode("urgent")}
-                  >
-                    ⚡ Urgent Push Notice
-                  </button>
-                  <button
-                    type="button"
-                    className={`priority-chip broadcast ${priorityMode === "broadcast" ? "active" : ""}`}
-                    onClick={() => setPriorityMode("broadcast")}
-                  >
-                    📢 Broadcast Directive
-                  </button>
-                </div>
-              )}
-
-              {/* Main Composer Box */}
-              <div className="chat-composer-box">
-                {/* Attachments Trigger */}
-                <div className="composer-attach-wrapper">
-                  <button
-                    type="button"
-                    className="composer-action-btn"
-                    onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
-                    title="Add Attachment"
-                  >
-                    <Paperclip size={18} />
-                  </button>
-
-                  {showAttachmentMenu && (
-                    <div className="composer-attach-popover">
-                      {moduleSettings.allowLocationSharing && (
-                        <button
-                          type="button"
-                          onClick={handleShareLocation}
-                          className="attach-item location"
-                        >
-                          <MapPin size={16} />
-                          <div>
-                            <strong>Current GPS Location</strong>
-                            <span>Pin outlet coordinates</span>
-                          </div>
-                        </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="attach-item file"
-                      >
-                        <FileText size={16} />
-                        <div>
-                          <strong>Document / Invoice</strong>
-                          <span>Upload PDF or spreadsheet</span>
-                        </div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => imageInputRef.current?.click()}
-                        className="attach-item photo"
-                      >
-                        <ImageIcon size={16} />
-                        <div>
-                          <strong>Photo / Shelf Evidence</strong>
-                          <span>Share store image</span>
-                        </div>
-                      </button>
-
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        style={{ display: "none" }}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            handleSendMessage(`📎 Uploaded Document: ${file.name}`, [
-                              {
-                                id: `file-${Date.now()}`,
-                                name: file.name,
-                                type: "document",
-                                url: "#",
-                                size: `${Math.round(file.size / 1024)} KB`,
-                              },
-                            ]);
-                          }
-                        }}
-                      />
-                      <input
-                        ref={imageInputRef}
-                        type="file"
-                        accept="image/*"
-                        style={{ display: "none" }}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            handleSendMessage(`🖼️ Uploaded Photo: ${file.name}`, [
-                              {
-                                id: `img-${Date.now()}`,
-                                name: file.name,
-                                type: "image",
-                                url: "#",
-                                size: `${Math.round(file.size / 1024)} KB`,
-                              },
-                            ]);
-                          }
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {/* Voice Note Recording UI or Textarea */}
-                {isRecordingVoice ? (
-                  <div className="composer-voice-recording-stage">
-                    <span className="voice-pulse-indicator" />
-                    <strong>Recording voice note… ({recordDuration}s)</strong>
-                    <div className="voice-stage-actions">
-                      <button
-                        type="button"
-                        className="voice-cancel-btn"
-                        onClick={handleCancelVoiceRecording}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        className="voice-send-btn"
-                        onClick={handleFinishVoiceRecording}
-                      >
-                        <Send size={14} /> Send Note
-                      </button>
-                    </div>
+              {!activeSendPermission.allowed ? (
+                <div
+                  style={{
+                    padding: "14px 16px",
+                    borderRadius: 10,
+                    background: "#f8fafc",
+                    border: "1px solid #cbd5e1",
+                    color: "#475569",
+                    fontSize: 12.5,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Lock size={15} color="#64748b" />
+                    <span>
+                      <strong>Read-Only Channel / Chat:</strong> {activeSendPermission.reason}
+                    </span>
                   </div>
-                ) : (
-                  <>
-                    <textarea
-                      placeholder={`Message ${
-                        activeConversation.type === "direct" && directPartner
-                          ? directPartner.name
-                          : activeConversation.title
-                      }… (Press Enter to send)`}
-                      value={inputText}
-                      onChange={(e) => setInputText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          void handleSendMessage();
-                        }
-                      }}
-                      rows={1}
-                      className="composer-textarea"
-                    />
-
-                    {/* Voice Recording Button */}
-                    {moduleSettings.allowVoiceNotes && (
-                      <button
-                        type="button"
-                        className="composer-action-btn voice"
-                        onClick={startVoiceRecording}
-                        title="Record Voice Note"
-                      >
-                        <Mic size={18} />
-                      </button>
-                    )}
-
-                    {/* Send Button */}
+                  {isAdmin && (
                     <button
                       type="button"
-                      className="composer-send-btn"
-                      disabled={!inputText.trim()}
-                      onClick={() => void handleSendMessage()}
-                      title="Send Message"
+                      onClick={() => navigate("/settings?tab=communications")}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: 6,
+                        border: "1px solid #cbd5e1",
+                        background: "#ffffff",
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
                     >
-                      <Send size={16} />
+                      Manage Policy
                     </button>
-                  </>
-                )}
-              </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {/* Reply Preview */}
+                  {replyTarget && (
+                    <div className="composer-reply-banner">
+                      <div>
+                        <strong>Replying to {replyTarget.senderName}</strong>
+                        <p>{replyTarget.content.slice(0, 80)}</p>
+                      </div>
+                      <button type="button" onClick={() => setReplyTarget(null)}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Management Priority Bar */}
+                  {isManagement && (
+                    <div className="composer-priority-selector">
+                      <span className="priority-label">Message Priority Mode:</span>
+                      <button
+                        type="button"
+                        className={`priority-chip normal ${priorityMode === "normal" ? "active" : ""}`}
+                        onClick={() => setPriorityMode("normal")}
+                      >
+                        Normal
+                      </button>
+                      <button
+                        type="button"
+                        className={`priority-chip urgent ${priorityMode === "urgent" ? "active" : ""}`}
+                        onClick={() => setPriorityMode("urgent")}
+                      >
+                        ⚡ Urgent Push Notice
+                      </button>
+                      {myRolePermission.canBroadcast && (
+                        <button
+                          type="button"
+                          className={`priority-chip broadcast ${priorityMode === "broadcast" ? "active" : ""}`}
+                          onClick={() => setPriorityMode("broadcast")}
+                        >
+                          📢 Broadcast Directive
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Main Composer Box */}
+                  <div className="chat-composer-box">
+                    {/* Attachments Trigger */}
+                    {myRolePermission.canSendAttachments && (
+                      <div className="composer-attach-wrapper">
+                        <button
+                          type="button"
+                          className="composer-action-btn"
+                          onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
+                          title="Add Attachment"
+                        >
+                          <Paperclip size={18} />
+                        </button>
+
+                        {showAttachmentMenu && (
+                          <div className="composer-attach-popover">
+                            {moduleSettings.allowLocationSharing && (
+                              <button
+                                type="button"
+                                onClick={handleShareLocation}
+                                className="attach-item location"
+                              >
+                                <MapPin size={16} />
+                                <div>
+                                  <strong>Current GPS Location</strong>
+                                  <span>Pin outlet coordinates</span>
+                                </div>
+                              </button>
+                            )}
+
+                            {moduleSettings.allowFileAttachments !== false && (
+                              <button
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                className="attach-item file"
+                              >
+                                <FileText size={16} />
+                                <div>
+                                  <strong>Document / Invoice</strong>
+                                  <span>Upload PDF or spreadsheet</span>
+                                </div>
+                              </button>
+                            )}
+
+                            {moduleSettings.allowPhotoAttachments !== false && (
+                              <button
+                                type="button"
+                                onClick={() => imageInputRef.current?.click()}
+                                className="attach-item photo"
+                              >
+                                <ImageIcon size={16} />
+                                <div>
+                                  <strong>Photo / Shelf Evidence</strong>
+                                  <span>Share store image</span>
+                                </div>
+                              </button>
+                            )}
+
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              style={{ display: "none" }}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  handleSendMessage(`📎 Uploaded Document: ${file.name}`, [
+                                    {
+                                      id: `file-${Date.now()}`,
+                                      name: file.name,
+                                      type: "document",
+                                      url: "#",
+                                      size: `${Math.round(file.size / 1024)} KB`,
+                                    },
+                                  ]);
+                                }
+                              }}
+                            />
+                            <input
+                              ref={imageInputRef}
+                              type="file"
+                              accept="image/*"
+                              style={{ display: "none" }}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  handleSendMessage(`🖼️ Uploaded Photo: ${file.name}`, [
+                                    {
+                                      id: `img-${Date.now()}`,
+                                      name: file.name,
+                                      type: "image",
+                                      url: "#",
+                                      size: `${Math.round(file.size / 1024)} KB`,
+                                    },
+                                  ]);
+                                }
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Voice Note Recording UI or Textarea */}
+                    {isRecordingVoice ? (
+                      <div className="composer-voice-recording-stage">
+                        <span className="voice-pulse-indicator" />
+                        <strong>Recording voice note… ({recordDuration}s)</strong>
+                        <div className="voice-stage-actions">
+                          <button
+                            type="button"
+                            className="voice-cancel-btn"
+                            onClick={handleCancelVoiceRecording}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="voice-send-btn"
+                            onClick={handleFinishVoiceRecording}
+                          >
+                            <Send size={14} /> Send Note
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <textarea
+                          placeholder={`Message ${
+                            activeConversation.type === "direct" && directPartner
+                              ? directPartner.name
+                              : activeConversation.title
+                          }… (Press Enter to send)`}
+                          value={inputText}
+                          onChange={(e) => setInputText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              void handleSendMessage();
+                            }
+                          }}
+                          rows={1}
+                          className="composer-textarea"
+                        />
+
+                        {/* Voice Recording Button */}
+                        {moduleSettings.allowVoiceNotes && myRolePermission.canSendAttachments && (
+                          <button
+                            type="button"
+                            className="composer-action-btn voice"
+                            onClick={startVoiceRecording}
+                            title="Record Voice Note"
+                          >
+                            <Mic size={18} />
+                          </button>
+                        )}
+
+                        {/* Send Button */}
+                        <button
+                          type="button"
+                          className="composer-send-btn"
+                          disabled={!inputText.trim()}
+                          onClick={() => void handleSendMessage()}
+                          title="Send Message"
+                        >
+                          <Send size={16} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </>
         ) : (
@@ -1584,94 +1893,181 @@ export default function Messages() {
             </div>
 
             <div className="comm-dialog-body">
-              <p style={{ margin: "0 0 12px 0", fontSize: 13, color: "#64748b" }}>
-                Select a staff member from the organization directory to open a 1-on-1 chat or start a live call:
-              </p>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  background: effectiveDirectoryScope === "all_regions" ? "#eff6ff" : "#ecfdf5",
+                  border: effectiveDirectoryScope === "all_regions" ? "1px solid #bfdbfe" : "1px solid #a7f3d0",
+                  marginBottom: 12,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: effectiveDirectoryScope === "all_regions" ? "#1d4ed8" : "#047857" }}>
+                  {effectiveDirectoryScope === "all_regions" ? <Globe size={14} /> : <MapPin size={14} />}
+                  <span>
+                    {effectiveDirectoryScope === "all_regions"
+                      ? "Visibility Scope: All Regions (National Directory)"
+                      : effectiveDirectoryScope === "reporting_line_only"
+                      ? "Visibility Scope: Direct Reporting Chain & Peers"
+                      : `Visibility Scope: Assigned Region (${viewerContext.region})`}
+                  </span>
+                </div>
+                <span style={{ fontSize: 11.5, color: "#475569", fontWeight: 600 }}>
+                  {modalFilteredDirectoryUsers.length} Staff Available
+                </span>
+              </div>
+
+              {/* Search & Region Filter inside Directory Modal */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                <div style={{ position: "relative", flex: 1, minWidth: 180 }}>
+                  <Search
+                    size={13}
+                    style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#94a3b8" }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Search staff name, role, or region…"
+                    value={directorySearchQuery}
+                    onChange={(e) => setDirectorySearchQuery(e.target.value)}
+                    style={{
+                      width: "100%",
+                      height: 36,
+                      padding: "0 10px 0 30px",
+                      borderRadius: 8,
+                      border: "1px solid #cbd5e1",
+                      fontSize: 12.5,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+                <select
+                  value={directoryRegionFilter}
+                  onChange={(e) => setDirectoryRegionFilter(e.target.value)}
+                  style={{
+                    height: 36,
+                    borderRadius: 8,
+                    border: "1px solid #cbd5e1",
+                    padding: "0 10px",
+                    fontSize: 12.5,
+                    background: "#ffffff",
+                  }}
+                >
+                  <option value="all">All Allowed Regions</option>
+                  <option value="my_region">Only My Region ({viewerContext.region})</option>
+                  {availableDirectoryRegions.map((reg) => (
+                    <option key={reg} value={reg}>
+                      {reg}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <div className="directory-list-scroll">
-                {(users.filter((u) => u.id !== currentUserId).length > 0
-                  ? users.filter((u) => u.id !== currentUserId)
-                  : users
-                ).map((target) => (
-                  <div
-                    key={target.id}
-                    className="directory-user-card"
-                    onClick={async () => {
-                      const conv = await createDirectConversation(currentUserId, target);
-                      setConversations(getStoredConversations());
-                      setSelectedConvId(conv.id);
-                      setNewChatModalOpen(false);
-                    }}
-                  >
-                    <div className="dir-avatar">
-                      {target.name.slice(0, 2).toUpperCase()}
-                      {target.status === "online" && <span className="online-dot" />}
-                    </div>
-                    <div className="dir-meta">
-                      <strong>{target.name}</strong>
-                      <span className="dir-role">{target.roleName} · {target.region}</span>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      {moduleSettings.allowVoiceCalls && (
-                        <button
-                          type="button"
-                          title={`Voice Call ${target.name}`}
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            const conv = await createDirectConversation(currentUserId, target);
-                            setConversations(getStoredConversations());
-                            setSelectedConvId(conv.id);
-                            setNewChatModalOpen(false);
-                            handleStartCall("audio", target, conv.id);
-                          }}
-                          style={{
-                            width: 30,
-                            height: 30,
-                            borderRadius: 8,
-                            border: "1px solid #a7f3d0",
-                            background: "#f0fdf4",
-                            color: "#059669",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <Phone size={14} />
-                        </button>
-                      )}
-                      {moduleSettings.allowVideoCalls && (
-                        <button
-                          type="button"
-                          title={`Video Call ${target.name}`}
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            const conv = await createDirectConversation(currentUserId, target);
-                            setConversations(getStoredConversations());
-                            setSelectedConvId(conv.id);
-                            setNewChatModalOpen(false);
-                            handleStartCall("video", target, conv.id);
-                          }}
-                          style={{
-                            width: 30,
-                            height: 30,
-                            borderRadius: 8,
-                            border: "1px solid #bfdbfe",
-                            background: "#eff6ff",
-                            color: "#2563eb",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <Video size={14} />
-                        </button>
-                      )}
-                      <ChevronRight size={16} color="#94a3b8" />
-                    </div>
+                {modalFilteredDirectoryUsers.length === 0 ? (
+                  <div style={{ padding: 24, textAlign: "center", color: "#64748b", fontSize: 13 }}>
+                    No staff contacts match your current region visibility scope or filter.
                   </div>
-                ))}
+                ) : (
+                  modalFilteredDirectoryUsers.map((target) => {
+                    const audioPerm = canUserCallTarget(viewerContext, target, "audio", moduleSettings, false);
+                    const videoPerm = canUserCallTarget(viewerContext, target, "video", moduleSettings, false);
+                    return (
+                      <div
+                        key={target.id}
+                        className="directory-user-card"
+                        onClick={async () => {
+                          const conv = await createDirectConversation(currentUserId, target);
+                          setConversations(getStoredConversations());
+                          setSelectedConvId(conv.id);
+                          setNewChatModalOpen(false);
+                        }}
+                      >
+                        <div className="dir-avatar">
+                          {target.name.slice(0, 2).toUpperCase()}
+                          {target.status === "online" && <span className="online-dot" />}
+                        </div>
+                        <div className="dir-meta">
+                          <strong>{target.name}</strong>
+                          <span className="dir-role">{target.roleName} · {target.region}</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          {moduleSettings.allowVoiceCalls && (
+                            <button
+                              type="button"
+                              disabled={!audioPerm.allowed}
+                              title={audioPerm.allowed ? `Voice Call ${target.name}` : audioPerm.reason}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (!audioPerm.allowed) {
+                                  alert(audioPerm.reason);
+                                  return;
+                                }
+                                const conv = await createDirectConversation(currentUserId, target);
+                                setConversations(getStoredConversations());
+                                setSelectedConvId(conv.id);
+                                setNewChatModalOpen(false);
+                                handleStartCall("audio", target, conv.id);
+                              }}
+                              style={{
+                                width: 30,
+                                height: 30,
+                                borderRadius: 8,
+                                border: audioPerm.allowed ? "1px solid #a7f3d0" : "1px solid #e2e8f0",
+                                background: audioPerm.allowed ? "#f0fdf4" : "#f8fafc",
+                                color: audioPerm.allowed ? "#059669" : "#94a3b8",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                cursor: audioPerm.allowed ? "pointer" : "not-allowed",
+                              }}
+                            >
+                              {audioPerm.allowed ? <Phone size={14} /> : <Lock size={13} />}
+                            </button>
+                          )}
+                          {moduleSettings.allowVideoCalls && (
+                            <button
+                              type="button"
+                              disabled={!videoPerm.allowed}
+                              title={videoPerm.allowed ? `Video Call ${target.name}` : videoPerm.reason}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (!videoPerm.allowed) {
+                                  alert(videoPerm.reason);
+                                  return;
+                                }
+                                const conv = await createDirectConversation(currentUserId, target);
+                                setConversations(getStoredConversations());
+                                setSelectedConvId(conv.id);
+                                setNewChatModalOpen(false);
+                                handleStartCall("video", target, conv.id);
+                              }}
+                              style={{
+                                width: 30,
+                                height: 30,
+                                borderRadius: 8,
+                                border: videoPerm.allowed ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
+                                background: videoPerm.allowed ? "#eff6ff" : "#f8fafc",
+                                color: videoPerm.allowed ? "#2563eb" : "#94a3b8",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                cursor: videoPerm.allowed ? "pointer" : "not-allowed",
+                              }}
+                            >
+                              {videoPerm.allowed ? <Video size={14} /> : <Lock size={13} />}
+                            </button>
+                          )}
+                          <ChevronRight size={16} color="#94a3b8" />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>

@@ -13,6 +13,8 @@ import {
   ChevronRight,
   UserCheck,
   Calendar,
+  Search,
+  Tag,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import {
@@ -36,6 +38,10 @@ export function DrinksAndProductsSection() {
   const [error, setError] = useState("");
   const [notification, setNotification] = useState("");
 
+  // Search & Filter State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+
   // Pagination State
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -47,6 +53,7 @@ export function DrinksAndProductsSection() {
   // Form State
   const [name, setName] = useState("");
   const [category, setCategory] = useState("No category");
+  const [customCategory, setCustomCategory] = useState("");
   const [pricePerBottle, setPricePerBottle] = useState<number | "">("");
   const [pricePerCase, setPricePerCase] = useState<number | "">("");
   const [bottlesPerCase, setBottlesPerCase] = useState<number | "">(12);
@@ -75,8 +82,26 @@ export function DrinksAndProductsSection() {
     void loadDrinks();
   }, []);
 
-  // Reset page to 1 if page exceeds total pages after drink removal
-  const totalItems = drinks.length;
+  // Filtered items
+  const filteredDrinks = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return drinks.filter((d) => {
+      if (selectedCategory !== "all") {
+        const dCat = d.category || "Uncategorised";
+        if (dCat !== selectedCategory) return false;
+      }
+      if (q) {
+        return (
+          d.name.toLowerCase().includes(q) ||
+          (d.category || "").toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [drinks, searchQuery, selectedCategory]);
+
+  // Reset page to 1 if page exceeds total pages after drink removal or filter
+  const totalItems = filteredDrinks.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   
   useEffect(() => {
@@ -88,8 +113,18 @@ export function DrinksAndProductsSection() {
   // Paginated items
   const paginatedDrinks = useMemo(() => {
     const start = (page - 1) * pageSize;
-    return drinks.slice(start, start + pageSize);
-  }, [drinks, page, pageSize]);
+    return filteredDrinks.slice(start, start + pageSize);
+  }, [filteredDrinks, page, pageSize]);
+
+  // Category counts for filter pills
+  const categoryStats = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const d of drinks) {
+      const cat = d.category || "Uncategorised";
+      map[cat] = (map[cat] || 0) + 1;
+    }
+    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+  }, [drinks]);
 
   // Derive unique categories from existing drinks plus default options
   const categoryOptions = Array.from(
@@ -108,6 +143,7 @@ export function DrinksAndProductsSection() {
     setEditingDrink(null);
     setName("");
     setCategory("No category");
+    setCustomCategory("");
     setPricePerBottle(0);
     setPricePerCase(0);
     setBottlesPerCase(12);
@@ -119,6 +155,7 @@ export function DrinksAndProductsSection() {
     setEditingDrink(drink);
     setName(drink.name);
     setCategory(drink.category || "No category");
+    setCustomCategory("");
     setPricePerBottle(drink.price_per_bottle ?? 0);
     setPricePerCase(drink.price_per_case ?? 0);
     setBottlesPerCase(drink.bottles_per_case ?? 12);
@@ -141,11 +178,18 @@ export function DrinksAndProductsSection() {
       return;
     }
 
+    const resolvedCategory =
+      category === "__custom__"
+        ? customCategory.trim() || null
+        : category === "No category"
+        ? null
+        : category;
+
     setSubmitting(true);
 
     const inputData: CreateDrinkTypeInput = {
       name: name.trim(),
-      category: category === "No category" ? null : category,
+      category: resolvedCategory,
       price_per_bottle: Number(pricePerBottle) || 0,
       price_per_case: Number(pricePerCase) || 0,
       bottles_per_case: bPerCase,
@@ -340,6 +384,123 @@ export function DrinksAndProductsSection() {
         >
           <AlertCircle size={18} />
           <span>{error}</span>
+        </div>
+      )}
+
+      {/* ── Search & Category Filter Toolbar ── */}
+      {drinks.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "12px",
+            marginBottom: "1rem",
+            background: "#ffffff",
+            padding: "12px 16px",
+            borderRadius: "10px",
+            border: "1px solid #e5e7eb",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedCategory("all");
+                setPage(1);
+              }}
+              style={{
+                padding: "5px 12px",
+                borderRadius: "999px",
+                fontSize: "0.78rem",
+                fontWeight: 600,
+                border: selectedCategory === "all" ? "1px solid #075544" : "1px solid #e5e7eb",
+                background: selectedCategory === "all" ? "#075544" : "#f9fafb",
+                color: selectedCategory === "all" ? "#ffffff" : "#374151",
+                cursor: "pointer",
+              }}
+            >
+              All ({drinks.length})
+            </button>
+            {categoryStats.map(([cat, count]) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => {
+                  setSelectedCategory(cat);
+                  setPage(1);
+                }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  padding: "5px 12px",
+                  borderRadius: "999px",
+                  fontSize: "0.78rem",
+                  fontWeight: 600,
+                  border: selectedCategory === cat ? "1px solid #075544" : "1px solid #e5e7eb",
+                  background: selectedCategory === cat ? "#e6f4f0" : "#f9fafb",
+                  color: selectedCategory === cat ? "#075544" : "#4b5563",
+                  cursor: "pointer",
+                }}
+              >
+                <Tag size={11} />
+                {cat} ({count})
+              </button>
+            ))}
+          </div>
+
+          <div style={{ position: "relative", minWidth: "240px", flex: "0 1 280px" }}>
+            <Search
+              size={15}
+              style={{
+                position: "absolute",
+                left: "11px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: "#9ca3af",
+                pointerEvents: "none",
+              }}
+            />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Search drink name or category..."
+              style={{
+                width: "100%",
+                padding: "7px 28px 7px 32px",
+                borderRadius: "8px",
+                border: "1px solid #d1d5db",
+                fontSize: "0.83rem",
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                style={{
+                  position: "absolute",
+                  right: "8px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "none",
+                  border: "none",
+                  color: "#6b7280",
+                  cursor: "pointer",
+                  padding: 2,
+                }}
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -833,7 +994,27 @@ export function DrinksAndProductsSection() {
                         {opt}
                       </option>
                     ))}
+                    <option value="__custom__">+ Create new category...</option>
                   </select>
+                  {category === "__custom__" && (
+                    <input
+                      type="text"
+                      value={customCategory}
+                      onChange={(e) => setCustomCategory(e.target.value)}
+                      placeholder="Enter new category name (e.g., Cider, Energy Drink)"
+                      style={{
+                        marginTop: "8px",
+                        width: "100%",
+                        padding: "9px 14px",
+                        borderRadius: "8px",
+                        border: "1px solid #075544",
+                        outline: "none",
+                        fontSize: "0.875rem",
+                        background: "#ffffff",
+                        boxSizing: "border-box",
+                      }}
+                    />
+                  )}
                 </div>
 
                 {/* 3. Price per Bottle & Price per Case (Row) */}

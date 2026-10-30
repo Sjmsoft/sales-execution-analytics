@@ -3,7 +3,6 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import {
   BarChart3,
   Bell,
-  CalendarCheck,
   CheckCircle2,
   ChevronRight,
   ClipboardCheck,
@@ -112,7 +111,7 @@ export default function MobileNav({
               items: [
                 { label: "Performance Reports", path: "/reports", icon: BarChart3, badge: null },
                 { label: "Field Team Performance", path: "/reports/field-performance", icon: Users, badge: null },
-                { label: "Sales Execution Tracker", path: "/sales/tracker", icon: Gauge, badge: null },
+                { label: "Team Activity", path: "/visits/activity", icon: Gauge, badge: "Live" },
               ],
             },
             {
@@ -166,44 +165,76 @@ export default function MobileNav({
             <span className="tab-label">{isExecutive ? "Home" : "Sales"}</span>
           </NavLink>
 
-          {/* 2. Tab 2: Unified Check-In & Attendance (All Roles) */}
+          {/* 2. Tab 2: Messages & Calls */}
           <NavLink
-            to="/check-in"
+            to="/messages"
             className={({ isActive }) =>
-              `mobile-nav-tab ${isActive || location.pathname.startsWith("/attendance") ? "active" : ""}`
+              `mobile-nav-tab ${isActive ? "active" : ""}`
             }
-            aria-label="Check-In & Attendance"
+            aria-label="Messages & Calls"
           >
-            <div className="tab-icon-wrap">
-              <CalendarCheck size={20} />
+            <div className="tab-icon-wrap" style={{ position: "relative" }}>
+              <MessageSquare size={20} />
+              {unreadMsgCount > 0 && (
+                <span
+                  style={{
+                    position: "absolute",
+                    top: -4,
+                    right: -6,
+                    minWidth: 16,
+                    height: 16,
+                    padding: "0 4px",
+                    borderRadius: 999,
+                    background: "#ef4444",
+                    color: "#ffffff",
+                    fontSize: 10,
+                    fontWeight: 700,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {unreadMsgCount > 9 ? "9+" : unreadMsgCount}
+                </span>
+              )}
             </div>
-            <span className="tab-label">Check-In</span>
+            <span className="tab-label">Messages</span>
           </NavLink>
 
-          {/* 3. Elevated Center Floating Action Button (Quick Check-In) */}
+          {/* 3. Elevated Center Floating Action Button (Quick Field Action Sheet) */}
           <div className="mobile-nav-fab-container">
-            <Link
-              to="/check-in"
+            <button
+              type="button"
+              onClick={() => {
+                if (isDrawerOpen) onCloseDrawer();
+                setShowQuickActionModal((prev) => !prev);
+              }}
               className={`mobile-nav-fab ${
+                showQuickActionModal ||
                 location.pathname.startsWith("/check-in") ||
                 location.pathname.startsWith("/attendance") ||
                 location.pathname.startsWith("/visits/check-in")
                   ? "active"
                   : ""
               }`}
-              aria-label="Quick Check-In"
+              aria-label="Quick Field Check-In & Actions"
+              style={{ border: "none", cursor: "pointer" }}
             >
               <div className="fab-inner">
                 <MapPinPlus size={22} className="fab-icon" />
               </div>
               <span className="fab-pulse-ring" aria-hidden="true" />
-            </Link>
+            </button>
             <span className="fab-label">Check-In</span>
           </div>
 
           {/* 4. Visits History Tab */}
           <NavLink
             to="/visits"
+            onClick={() => {
+              if (isDrawerOpen) onCloseDrawer();
+              if (showQuickActionModal) setShowQuickActionModal(false);
+            }}
             className={({ isActive }) =>
               `mobile-nav-tab ${isActive ? "active" : ""}`
             }
@@ -221,7 +252,14 @@ export default function MobileNav({
             className={`mobile-nav-tab mobile-nav-more-tab ${
               isDrawerOpen ? "active" : ""
             }`}
-            onClick={onOpenDrawer}
+            onClick={() => {
+              if (showQuickActionModal) setShowQuickActionModal(false);
+              if (isDrawerOpen) {
+                onCloseDrawer();
+              } else {
+                onOpenDrawer();
+              }
+            }}
             aria-label="Open Full Navigation Menu"
             aria-expanded={isDrawerOpen}
           >

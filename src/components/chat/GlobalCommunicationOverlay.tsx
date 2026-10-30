@@ -23,6 +23,8 @@ import {
   toggleCallVideo,
   messagingEvents,
   getMessagingSettings,
+  canUserReceiveCalls,
+  canUserReceiveMessages,
   type MessagingModuleSettings,
   type CallSession,
   type ChatMessage,
@@ -31,8 +33,9 @@ import { useAuth } from "../../context/AuthContext";
 
 export default function GlobalCommunicationOverlay() {
   const navigate = useNavigate();
-  const { staff } = useAuth();
+  const { staff, role } = useAuth();
   const currentUserId = staff?.id || "current-user";
+  const currentUserRole = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "brand_ambassador").toLowerCase();
 
   const [settings, setSettings] = useState<MessagingModuleSettings>(() => getMessagingSettings());
   const [activeCall, setActiveCall] = useState<CallSession | null>(() => getActiveCall());
@@ -54,13 +57,28 @@ export default function GlobalCommunicationOverlay() {
   // Sync active call state & listen to real-time events
   useEffect(() => {
     const unsubCall = messagingEvents.on("call_state_changed", (call: CallSession | null) => {
+      if (
+        call &&
+        call.status === "ringing" &&
+        call.receiverId === currentUserId &&
+        call.callerId !== currentUserId
+      ) {
+        const recvCheck = canUserReceiveCalls({ id: currentUserId, roleKey: currentUserRole });
+        if (!recvCheck.allowed) {
+          endCall(call.id, "declined");
+          return;
+        }
+      }
       setActiveCall(call);
     });
 
     const unsubPush = messagingEvents.on("push_notification", (msg: ChatMessage) => {
-      // Don't toast for self-sent messages
+      // Don't toast for self-sent messages or if user cannot receive messages
       if (msg.senderId !== currentUserId) {
-        setPushToast(msg);
+        const recvCheck = canUserReceiveMessages({ id: currentUserId, roleKey: currentUserRole });
+        if (recvCheck.allowed) {
+          setPushToast(msg);
+        }
       }
     });
 
@@ -68,13 +86,19 @@ export default function GlobalCommunicationOverlay() {
       unsubCall();
       unsubPush();
     };
-  }, [currentUserId]);
+  }, [currentUserId, currentUserRole]);
 
-  // Live call duration timer
+  // Live call duration timer & Max Call Duration enforcement
   useEffect(() => {
     if (activeCall && activeCall.status === "connected") {
       callTimerRef.current = window.setInterval(() => {
-        setCallDuration((d) => d + 1);
+        setCallDuration((d) => {
+          const next = d + 1;
+          if (settings.maxCallDurationMins && settings.maxCallDurationMins > 0 && next >= settings.maxCallDurationMins * 60) {
+            endCall(activeCall.id, "ended");
+          }
+          return next;
+        });
       }, 1000);
     } else {
       setCallDuration(0);
@@ -83,7 +107,7 @@ export default function GlobalCommunicationOverlay() {
     return () => {
       if (callTimerRef.current) clearInterval(callTimerRef.current);
     };
-  }, [activeCall?.status]);
+  }, [activeCall?.id, activeCall?.status, settings.maxCallDurationMins]);
 
   // Call ringing timeout & outgoing auto-connect
   useEffect(() => {

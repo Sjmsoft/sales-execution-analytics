@@ -10,6 +10,9 @@ export interface ChatUser {
   roleKey: string;
   roleName: string;
   region: string;
+  assignedRegions?: string[];
+  reportsToId?: string | null;
+  reportsToName?: string | null;
   avatar?: string | null;
   initials: string;
   status: "online" | "away" | "offline";
@@ -118,6 +121,227 @@ export const SMART_REPLIES: Record<string, string[]> = {
   ],
 };
 
+export type DirectoryVisibilityMode =
+  | "all_regions"
+  | "same_region_only"
+  | "role_tiered"
+  | "reporting_line_only";
+
+export type CallingRoutingPolicy =
+  | "open_directory"
+  | "matrix_controlled"
+  | "hierarchy_and_region"
+  | "management_initiated";
+
+export interface RoleCommunicationPermission {
+  roleKey: string;
+  roleName: string;
+  shortName: string;
+  canInitiateVoiceCalls: boolean;
+  canInitiateVideoCalls: boolean;
+  canReceiveCalls: boolean;
+  canSendMessages: boolean;
+  canReceiveMessages: boolean;
+  canSendAttachments: boolean;
+  canStartGroupHuddles: boolean;
+  canBroadcast: boolean;
+  directoryScopeOverride: "inherit" | "all_regions" | "same_region_only" | "reporting_line_only";
+}
+
+export interface UserCommunicationOverride {
+  userId: string;
+  userName: string;
+  roleKey: string;
+  region: string;
+  canCall: "inherit" | "allow" | "deny";
+  canReceiveCalls: "inherit" | "allow" | "deny";
+  canSendMessages: "inherit" | "allow" | "deny";
+  canReceiveMessages: "inherit" | "allow" | "deny";
+  directoryScope: "inherit" | "all_regions" | "same_region_only";
+  note?: string;
+  updatedAt: string;
+}
+
+export interface CommRoleMeta {
+  key: string;
+  name: string;
+  shortName: string;
+  tier: "national" | "regional" | "field";
+  color: string;
+  bg: string;
+}
+
+export const COMM_ROLE_CATALOG: CommRoleMeta[] = [
+  { key: "administrator", name: "System Administrator", shortName: "Admin", tier: "national", color: "#b91c1c", bg: "#fee2e2" },
+  { key: "hr", name: "Human Resources (HR)", shortName: "HR", tier: "national", color: "#047857", bg: "#d1fae5" },
+  { key: "national_sales_manager", name: "National Sales Manager", shortName: "NSM", tier: "national", color: "#0369a1", bg: "#e0f2fe" },
+  { key: "regional_sales_manager", name: "Regional Sales Manager", shortName: "RSM", tier: "regional", color: "#b45309", bg: "#fef3c7" },
+  { key: "sales_executive", name: "Sales Executive", shortName: "SE", tier: "regional", color: "#4338ca", bg: "#e0e7ff" },
+  { key: "brand_ambassador", name: "Brand Ambassador", shortName: "BA", tier: "field", color: "#059669", bg: "#ecfdf5" },
+  { key: "vsr", name: "Van Sales Rep", shortName: "VSR", tier: "field", color: "#c2410c", bg: "#ffedd5" },
+];
+
+export const ALL_COMM_ROLE_KEYS = COMM_ROLE_CATALOG.map((r) => r.key);
+
+export const CALL_MATRIX_PRESETS: Record<
+  "all_to_all" | "chain_of_command" | "management_top_down" | "peers_and_supervisors",
+  { label: string; description: string; matrix: Record<string, string[]> }
+> = {
+  all_to_all: {
+    label: "Open All-to-All Matrix",
+    description: "Every role can place calls to every other role across the organization.",
+    matrix: {
+      administrator: [...ALL_COMM_ROLE_KEYS],
+      hr: [...ALL_COMM_ROLE_KEYS],
+      national_sales_manager: [...ALL_COMM_ROLE_KEYS],
+      regional_sales_manager: [...ALL_COMM_ROLE_KEYS],
+      sales_executive: [...ALL_COMM_ROLE_KEYS],
+      brand_ambassador: [...ALL_COMM_ROLE_KEYS],
+      vsr: [...ALL_COMM_ROLE_KEYS],
+    },
+  },
+  chain_of_command: {
+    label: "Standard Chain of Command",
+    description: "National & Regional Managers call anyone; Field Reps (BAs/VSRs) call SEs, RSMs, HR, Admin & peers.",
+    matrix: {
+      administrator: [...ALL_COMM_ROLE_KEYS],
+      hr: [...ALL_COMM_ROLE_KEYS],
+      national_sales_manager: [...ALL_COMM_ROLE_KEYS],
+      regional_sales_manager: [...ALL_COMM_ROLE_KEYS],
+      sales_executive: ["administrator", "hr", "regional_sales_manager", "sales_executive", "brand_ambassador", "vsr"],
+      brand_ambassador: ["administrator", "hr", "regional_sales_manager", "sales_executive", "brand_ambassador", "vsr"],
+      vsr: ["administrator", "hr", "regional_sales_manager", "sales_executive", "brand_ambassador", "vsr"],
+    },
+  },
+  management_top_down: {
+    label: "Management & Escalation Only",
+    description: "Managers call all field teams; BAs & VSRs can only call their supervisors (SE/RSM) or HR.",
+    matrix: {
+      administrator: [...ALL_COMM_ROLE_KEYS],
+      hr: [...ALL_COMM_ROLE_KEYS],
+      national_sales_manager: [...ALL_COMM_ROLE_KEYS],
+      regional_sales_manager: ["administrator", "hr", "national_sales_manager", "regional_sales_manager", "sales_executive", "brand_ambassador", "vsr"],
+      sales_executive: ["administrator", "hr", "regional_sales_manager", "sales_executive", "brand_ambassador", "vsr"],
+      brand_ambassador: ["hr", "regional_sales_manager", "sales_executive"],
+      vsr: ["hr", "regional_sales_manager", "sales_executive"],
+    },
+  },
+  peers_and_supervisors: {
+    label: "Adjacent Tier & Peers Only",
+    description: "Each role can only call their immediate tier above, their own peer role, and their immediate tier below.",
+    matrix: {
+      administrator: [...ALL_COMM_ROLE_KEYS],
+      hr: [...ALL_COMM_ROLE_KEYS],
+      national_sales_manager: ["administrator", "hr", "national_sales_manager", "regional_sales_manager"],
+      regional_sales_manager: ["administrator", "hr", "national_sales_manager", "regional_sales_manager", "sales_executive"],
+      sales_executive: ["hr", "regional_sales_manager", "sales_executive", "brand_ambassador", "vsr"],
+      brand_ambassador: ["sales_executive", "brand_ambassador", "vsr"],
+      vsr: ["sales_executive", "brand_ambassador", "vsr"],
+    },
+  },
+};
+
+export const DEFAULT_ROLE_COMM_PERMISSIONS: Record<string, RoleCommunicationPermission> = {
+  administrator: {
+    roleKey: "administrator",
+    roleName: "System Administrator",
+    shortName: "Admin",
+    canInitiateVoiceCalls: true,
+    canInitiateVideoCalls: true,
+    canReceiveCalls: true,
+    canSendMessages: true,
+    canReceiveMessages: true,
+    canSendAttachments: true,
+    canStartGroupHuddles: true,
+    canBroadcast: true,
+    directoryScopeOverride: "all_regions",
+  },
+  hr: {
+    roleKey: "hr",
+    roleName: "Human Resources (HR)",
+    shortName: "HR",
+    canInitiateVoiceCalls: true,
+    canInitiateVideoCalls: true,
+    canReceiveCalls: true,
+    canSendMessages: true,
+    canReceiveMessages: true,
+    canSendAttachments: true,
+    canStartGroupHuddles: true,
+    canBroadcast: true,
+    directoryScopeOverride: "all_regions",
+  },
+  national_sales_manager: {
+    roleKey: "national_sales_manager",
+    roleName: "National Sales Manager",
+    shortName: "NSM",
+    canInitiateVoiceCalls: true,
+    canInitiateVideoCalls: true,
+    canReceiveCalls: true,
+    canSendMessages: true,
+    canReceiveMessages: true,
+    canSendAttachments: true,
+    canStartGroupHuddles: true,
+    canBroadcast: true,
+    directoryScopeOverride: "all_regions",
+  },
+  regional_sales_manager: {
+    roleKey: "regional_sales_manager",
+    roleName: "Regional Sales Manager",
+    shortName: "RSM",
+    canInitiateVoiceCalls: true,
+    canInitiateVideoCalls: true,
+    canReceiveCalls: true,
+    canSendMessages: true,
+    canReceiveMessages: true,
+    canSendAttachments: true,
+    canStartGroupHuddles: true,
+    canBroadcast: true,
+    directoryScopeOverride: "inherit",
+  },
+  sales_executive: {
+    roleKey: "sales_executive",
+    roleName: "Sales Executive",
+    shortName: "SE",
+    canInitiateVoiceCalls: true,
+    canInitiateVideoCalls: true,
+    canReceiveCalls: true,
+    canSendMessages: true,
+    canReceiveMessages: true,
+    canSendAttachments: true,
+    canStartGroupHuddles: true,
+    canBroadcast: true,
+    directoryScopeOverride: "inherit",
+  },
+  brand_ambassador: {
+    roleKey: "brand_ambassador",
+    roleName: "Brand Ambassador",
+    shortName: "BA",
+    canInitiateVoiceCalls: true,
+    canInitiateVideoCalls: true,
+    canReceiveCalls: true,
+    canSendMessages: true,
+    canReceiveMessages: true,
+    canSendAttachments: true,
+    canStartGroupHuddles: false,
+    canBroadcast: false,
+    directoryScopeOverride: "inherit",
+  },
+  vsr: {
+    roleKey: "vsr",
+    roleName: "Van Sales Rep",
+    shortName: "VSR",
+    canInitiateVoiceCalls: true,
+    canInitiateVideoCalls: true,
+    canReceiveCalls: true,
+    canSendMessages: true,
+    canReceiveMessages: true,
+    canSendAttachments: true,
+    canStartGroupHuddles: false,
+    canBroadcast: false,
+    directoryScopeOverride: "inherit",
+  },
+};
+
 export interface MessagingModuleSettings {
   enabled: boolean;
   allowVoiceCalls: boolean;
@@ -134,6 +358,37 @@ export interface MessagingModuleSettings {
   autoDismissToastSecs: number;
   retentionDays: number;
   recordCallLogsInChat: boolean;
+
+  // ── Directory & Contact Visibility Scope ("How users see who to call: from only their regions or all regions") ──
+  directoryVisibilityMode: DirectoryVisibilityMode;
+  alwaysShowNationalLeadership: boolean;
+  alwaysShowDirectSupervisor: boolean;
+  restrictTerritoryHubsToRegion: boolean;
+  showOfflineUsersInDirectory: boolean;
+
+  // ── Call Routing & "Who Can Call Who" Governance ──
+  callingRoutingPolicy: CallingRoutingPolicy;
+  whoCanCallWhoMatrix: Record<string, string[]>;
+  allowCrossRegionCallsForManagement: boolean;
+  allowChannelHuddles: boolean;
+  maxCallDurationMins: number;
+
+  // ── Role-Based Calling, Messaging & Visibility Permissions ──
+  rolePermissions: Record<string, RoleCommunicationPermission>;
+
+  // ── Individual Staff Overrides & Access Controls ──
+  userOverrides: Record<string, UserCommunicationOverride>;
+
+  // ── Enterprise Compliance, Attachments & Quiet Hours ──
+  allowFileAttachments: boolean;
+  allowPhotoAttachments: boolean;
+  readReceiptsEnabled: boolean;
+  messageDeletionPolicy: "everyone" | "sender_and_admin" | "admin_only";
+  announcementPostingPolicy: "broadcast_roles_only" | "management_only" | "everyone";
+  quietHoursEnabled: boolean;
+  quietHoursStart: string;
+  quietHoursEnd: string;
+  allowUrgentBypassQuietHours: boolean;
 }
 
 export const DEFAULT_MESSAGING_SETTINGS: MessagingModuleSettings = {
@@ -170,6 +425,37 @@ export const DEFAULT_MESSAGING_SETTINGS: MessagingModuleSettings = {
   autoDismissToastSecs: 7,
   retentionDays: 90,
   recordCallLogsInChat: true,
+
+  // Directory & Region Visibility Defaults
+  directoryVisibilityMode: "role_tiered",
+  alwaysShowNationalLeadership: true,
+  alwaysShowDirectSupervisor: true,
+  restrictTerritoryHubsToRegion: false,
+  showOfflineUsersInDirectory: true,
+
+  // Calling Routing & Who Can Call Who Defaults
+  callingRoutingPolicy: "matrix_controlled",
+  whoCanCallWhoMatrix: { ...CALL_MATRIX_PRESETS.all_to_all.matrix },
+  allowCrossRegionCallsForManagement: true,
+  allowChannelHuddles: true,
+  maxCallDurationMins: 0,
+
+  // Role Permissions Defaults
+  rolePermissions: { ...DEFAULT_ROLE_COMM_PERMISSIONS },
+
+  // Individual User Overrides Defaults
+  userOverrides: {},
+
+  // Enterprise Compliance & Quiet Hours Defaults
+  allowFileAttachments: true,
+  allowPhotoAttachments: true,
+  readReceiptsEnabled: true,
+  messageDeletionPolicy: "sender_and_admin",
+  announcementPostingPolicy: "broadcast_roles_only",
+  quietHoursEnabled: false,
+  quietHoursStart: "21:00",
+  quietHoursEnd: "06:30",
+  allowUrgentBypassQuietHours: true,
 };
 
 const STORAGE_KEY_SETTINGS = "penedge_messaging_settings_v1";
@@ -182,12 +468,40 @@ export function getMessagingSettings(): MessagingModuleSettings {
     const raw = localStorage.getItem(STORAGE_KEY_SETTINGS);
     if (raw) {
       const parsed = JSON.parse(raw);
-      return { ...DEFAULT_MESSAGING_SETTINGS, ...parsed };
+      const mergedRolePerms: Record<string, RoleCommunicationPermission> = {
+        ...DEFAULT_ROLE_COMM_PERMISSIONS,
+      };
+      if (parsed.rolePermissions && typeof parsed.rolePermissions === "object") {
+        for (const key of Object.keys(DEFAULT_ROLE_COMM_PERMISSIONS)) {
+          if (parsed.rolePermissions[key]) {
+            mergedRolePerms[key] = {
+              ...DEFAULT_ROLE_COMM_PERMISSIONS[key],
+              ...parsed.rolePermissions[key],
+            };
+          }
+        }
+      }
+      const mergedMatrix: Record<string, string[]> = {
+        ...CALL_MATRIX_PRESETS.all_to_all.matrix,
+        ...(parsed.whoCanCallWhoMatrix || {}),
+      };
+      return {
+        ...DEFAULT_MESSAGING_SETTINGS,
+        ...parsed,
+        rolePermissions: mergedRolePerms,
+        whoCanCallWhoMatrix: mergedMatrix,
+        userOverrides: parsed.userOverrides || {},
+      };
     }
   } catch (e) {
     console.warn("Failed to load messaging settings:", e);
   }
-  return { ...DEFAULT_MESSAGING_SETTINGS };
+  return {
+    ...DEFAULT_MESSAGING_SETTINGS,
+    rolePermissions: { ...DEFAULT_ROLE_COMM_PERMISSIONS },
+    whoCanCallWhoMatrix: { ...CALL_MATRIX_PRESETS.all_to_all.matrix },
+    userOverrides: {},
+  };
 }
 
 export function saveMessagingSettings(updates: Partial<MessagingModuleSettings>): MessagingModuleSettings {
@@ -199,6 +513,7 @@ export function saveMessagingSettings(updates: Partial<MessagingModuleSettings>)
     console.error("Failed to save messaging settings:", e);
   }
   messagingEvents.emit("settings_updated", merged);
+  broadcastRealtimeEvent("settings_updated", { settings: merged });
   return merged;
 }
 
@@ -206,8 +521,530 @@ export function resetMessagingSettingsToDefault(): MessagingModuleSettings {
   try {
     localStorage.removeItem(STORAGE_KEY_SETTINGS);
   } catch {}
-  messagingEvents.emit("settings_updated", { ...DEFAULT_MESSAGING_SETTINGS });
-  return { ...DEFAULT_MESSAGING_SETTINGS };
+  const fresh = getMessagingSettings();
+  messagingEvents.emit("settings_updated", fresh);
+  broadcastRealtimeEvent("settings_updated", { settings: fresh });
+  return fresh;
+}
+
+// ── Policy & Permission Evaluation Engine ───────────────────────────────────
+
+export function normalizeCommRoleKey(rawRole?: string | null): string {
+  const clean = (rawRole || "").trim().toLowerCase();
+  if (!clean) return "brand_ambassador";
+  if (clean === "admin" || clean === "administrator" || clean === "a0000000-0000-4000-8000-000000000001") {
+    return "administrator";
+  }
+  if (clean === "hr" || clean.includes("human_resource") || clean === "a0000000-0000-4000-8000-000000000002") {
+    return "hr";
+  }
+  if (clean === "nsm" || clean === "national_sales_manager" || clean === "a0000000-0000-4000-8000-000000000003") {
+    return "national_sales_manager";
+  }
+  if (clean === "rsm" || clean === "regional_sales_manager" || clean === "a0000000-0000-4000-8000-000000000005") {
+    return "regional_sales_manager";
+  }
+  if (clean === "se" || clean === "sales_executive" || clean === "a0000000-0000-4000-8000-000000000004") {
+    return "sales_executive";
+  }
+  if (clean === "ba" || clean === "brand_ambassador" || clean === "a0000000-0000-4000-8000-000000000006") {
+    return "brand_ambassador";
+  }
+  if (clean === "vsr" || clean === "van_sales_rep" || clean === "a0000000-0000-4000-8000-000000000007") {
+    return "vsr";
+  }
+  return clean;
+}
+
+export function isNationalLeadershipRole(roleKey?: string | null): boolean {
+  const norm = normalizeCommRoleKey(roleKey);
+  return norm === "administrator" || norm === "hr" || norm === "national_sales_manager";
+}
+
+export function isManagementCommRole(roleKey?: string | null): boolean {
+  const norm = normalizeCommRoleKey(roleKey);
+  return (
+    norm === "administrator" ||
+    norm === "hr" ||
+    norm === "national_sales_manager" ||
+    norm === "regional_sales_manager" ||
+    norm === "sales_executive"
+  );
+}
+
+export function getEffectiveRolePermission(
+  roleKey: string,
+  settings: MessagingModuleSettings = getMessagingSettings(),
+): RoleCommunicationPermission {
+  const norm = normalizeCommRoleKey(roleKey);
+  return (
+    settings.rolePermissions?.[norm] ||
+    DEFAULT_ROLE_COMM_PERMISSIONS[norm] ||
+    DEFAULT_ROLE_COMM_PERMISSIONS.brand_ambassador
+  );
+}
+
+export function getEffectiveDirectoryScopeForUser(
+  viewer: { id?: string; roleKey: string },
+  settings: MessagingModuleSettings = getMessagingSettings(),
+): "all_regions" | "same_region_only" | "reporting_line_only" {
+  // 1. Check individual user override first
+  if (viewer.id && settings.userOverrides?.[viewer.id]) {
+    const uOverride = settings.userOverrides[viewer.id].directoryScope;
+    if (uOverride === "all_regions" || uOverride === "same_region_only") {
+      return uOverride;
+    }
+  }
+
+  // 2. Check role-specific override
+  const normRole = normalizeCommRoleKey(viewer.roleKey);
+  const rolePerm = getEffectiveRolePermission(normRole, settings);
+  if (rolePerm.directoryScopeOverride && rolePerm.directoryScopeOverride !== "inherit") {
+    return rolePerm.directoryScopeOverride;
+  }
+
+  // 3. Evaluate global directoryVisibilityMode
+  const globalMode = settings.directoryVisibilityMode || "role_tiered";
+  if (globalMode === "all_regions") return "all_regions";
+  if (globalMode === "same_region_only") return "same_region_only";
+  if (globalMode === "reporting_line_only") return "reporting_line_only";
+
+  // "role_tiered": National roles see all regions; Regional & Field roles see their assigned region(s)
+  if (isNationalLeadershipRole(normRole)) {
+    return "all_regions";
+  }
+  return "same_region_only";
+}
+
+export function collectUserRegions(user: { region?: string | null; assignedRegions?: string[] | null }): string[] {
+  const list: string[] = [];
+  if (user.region && user.region.trim() && user.region.trim().toLowerCase() !== "national") {
+    list.push(user.region.trim().toLowerCase());
+  }
+  if (Array.isArray(user.assignedRegions)) {
+    for (const r of user.assignedRegions) {
+      if (r && r.trim() && r.trim().toLowerCase() !== "national") {
+        const lower = r.trim().toLowerCase();
+        if (!list.includes(lower)) list.push(lower);
+      }
+    }
+  }
+  return list;
+}
+
+export function doRegionsOverlap(
+  userA: { region?: string | null; assignedRegions?: string[] | null },
+  userB: { region?: string | null; assignedRegions?: string[] | null },
+): boolean {
+  const regsA = collectUserRegions(userA);
+  const regsB = collectUserRegions(userB);
+  if (regsA.length === 0 || regsB.length === 0) return false;
+  return regsA.some((ra) =>
+    regsB.some((rb) => ra === rb || ra.includes(rb) || rb.includes(ra)),
+  );
+}
+
+export function isWithinQuietHours(settings: MessagingModuleSettings = getMessagingSettings()): boolean {
+  if (!settings.quietHoursEnabled) return false;
+  try {
+    const now = new Date();
+    const curMins = now.getHours() * 60 + now.getMinutes();
+    const [sh, sm] = (settings.quietHoursStart || "21:00").split(":").map(Number);
+    const [eh, em] = (settings.quietHoursEnd || "06:30").split(":").map(Number);
+    const startMins = (sh || 0) * 60 + (sm || 0);
+    const endMins = (eh || 0) * 60 + (em || 0);
+    if (startMins <= endMins) {
+      return curMins >= startMins && curMins <= endMins;
+    } else {
+      // Crosses midnight (e.g. 21:00 to 06:30)
+      return curMins >= startMins || curMins <= endMins;
+    }
+  } catch {
+    return false;
+  }
+}
+
+export function canUserSeeContact(
+  viewer: {
+    id: string;
+    roleKey: string;
+    region?: string | null;
+    assignedRegions?: string[] | null;
+    reportsToId?: string | null;
+  },
+  target: ChatUser,
+  settings: MessagingModuleSettings = getMessagingSettings(),
+): { visible: boolean; reason: string } {
+  if (viewer.id === target.id) {
+    return { visible: true, reason: "Self profile" };
+  }
+
+  // Offline filter if disabled by admin
+  if (!settings.showOfflineUsersInDirectory && target.status === "offline") {
+    return { visible: false, reason: "Offline users are hidden by directory settings" };
+  }
+
+  const viewerRole = normalizeCommRoleKey(viewer.roleKey);
+  const targetRole = normalizeCommRoleKey(target.roleKey);
+
+  // Admin always sees everyone
+  if (viewerRole === "administrator") {
+    return { visible: true, reason: "Administrator has unrestricted national directory visibility" };
+  }
+
+  // Check if target is National Leadership and alwaysShowNationalLeadership is enabled
+  if (settings.alwaysShowNationalLeadership && isNationalLeadershipRole(targetRole)) {
+    return { visible: true, reason: "National Leadership & Support roles are visible across all regions" };
+  }
+
+  // Check direct reporting line (supervisor or subordinate)
+  const isDirectSupervisorOrReport =
+    Boolean(viewer.reportsToId && viewer.reportsToId === target.id) ||
+    Boolean(target.reportsToId && target.reportsToId === viewer.id);
+  if (settings.alwaysShowDirectSupervisor && isDirectSupervisorOrReport) {
+    return { visible: true, reason: "Direct reporting chain supervisor/subordinate" };
+  }
+
+  const effectiveScope = getEffectiveDirectoryScopeForUser(viewer, settings);
+
+  if (effectiveScope === "all_regions") {
+    return { visible: true, reason: "All Regions directory scope enabled for your role" };
+  }
+
+  if (effectiveScope === "reporting_line_only") {
+    if (isDirectSupervisorOrReport) {
+      return { visible: true, reason: "Direct reporting line match" };
+    }
+    if (doRegionsOverlap(viewer, target) && viewerRole === targetRole) {
+      return { visible: true, reason: "Same region & peer role" };
+    }
+    return {
+      visible: false,
+      reason: `Restricted to direct reporting line only (${target.name} is outside your reporting chain)`,
+    };
+  }
+
+  // effectiveScope === "same_region_only"
+  const viewerRegs = collectUserRegions(viewer);
+  if (viewerRegs.length === 0) {
+    // If viewer has no specific region assigned (e.g. National), allow visibility
+    return { visible: true, reason: "Viewer has national/unassigned territory scope" };
+  }
+
+  if (doRegionsOverlap(viewer, target)) {
+    return { visible: true, reason: `Shared territory (${target.region})` };
+  }
+
+  return {
+    visible: false,
+    reason: `Restricted to your assigned region(s) only (${viewer.region || viewerRegs.join(", ")}) — ${target.name} is in ${target.region}`,
+  };
+}
+
+export function filterDirectoryUsersForViewer(
+  allUsers: ChatUser[],
+  viewer: {
+    id: string;
+    roleKey: string;
+    region?: string | null;
+    assignedRegions?: string[] | null;
+    reportsToId?: string | null;
+  },
+  settings: MessagingModuleSettings = getMessagingSettings(),
+): ChatUser[] {
+  return allUsers.filter((target) => canUserSeeContact(viewer, target, settings).visible);
+}
+
+export function canUserReceiveCalls(
+  user: { id?: string; roleKey: string },
+  settings: MessagingModuleSettings = getMessagingSettings(),
+): { allowed: boolean; reason: string } {
+  if (!settings.enabled) {
+    return { allowed: false, reason: "Communications system is globally disabled" };
+  }
+  if (user.id && settings.userOverrides?.[user.id]) {
+    const ov = settings.userOverrides[user.id].canReceiveCalls;
+    if (ov === "deny") {
+      return { allowed: false, reason: "User is blocked from receiving calls by an individual Admin override" };
+    }
+    if (ov === "allow") {
+      return { allowed: true, reason: "Explicitly allowed by individual Admin override" };
+    }
+  }
+  const rolePerm = getEffectiveRolePermission(user.roleKey, settings);
+  if (!rolePerm.canReceiveCalls) {
+    return { allowed: false, reason: `${rolePerm.roleName} role is configured to not receive incoming calls` };
+  }
+  return { allowed: true, reason: `${rolePerm.roleName} can receive calls` };
+}
+
+export function canUserCallTarget(
+  caller: {
+    id: string;
+    roleKey: string;
+    region?: string | null;
+    assignedRegions?: string[] | null;
+    reportsToId?: string | null;
+  },
+  target: {
+    id: string;
+    name?: string;
+    roleKey: string;
+    region?: string | null;
+    assignedRegions?: string[] | null;
+    reportsToId?: string | null;
+  },
+  callType: "audio" | "video" = "audio",
+  settings: MessagingModuleSettings = getMessagingSettings(),
+  isGroupHuddle = false,
+): { allowed: boolean; reason: string } {
+  if (!settings.enabled) {
+    return { allowed: false, reason: "Communications & Calling system is currently disabled by Administrator." };
+  }
+  if (callType === "audio" && !settings.allowVoiceCalls) {
+    return { allowed: false, reason: "Voice calling is disabled globally in Communications Settings." };
+  }
+  if (callType === "video" && !settings.allowVideoCalls) {
+    return { allowed: false, reason: "Video calling is disabled globally in Communications Settings." };
+  }
+
+  const callerRole = normalizeCommRoleKey(caller.roleKey);
+  const targetRole = normalizeCommRoleKey(target.roleKey);
+  const callerPerm = getEffectiveRolePermission(callerRole, settings);
+  const targetPerm = getEffectiveRolePermission(targetRole, settings);
+
+  // Quiet Hours check
+  if (settings.quietHoursEnabled && isWithinQuietHours(settings) && callerRole !== "administrator") {
+    if (!settings.allowUrgentBypassQuietHours) {
+      return {
+        allowed: false,
+        reason: `Quiet Hours are active (${settings.quietHoursStart} – ${settings.quietHoursEnd}). Outgoing calls are paused.`,
+      };
+    }
+  }
+
+  // Individual caller override
+  const callerOverride = caller.id ? settings.userOverrides?.[caller.id] : undefined;
+  if (callerOverride?.canCall === "deny") {
+    return {
+      allowed: false,
+      reason: "Your calling privilege has been restricted by an Administrator override.",
+    };
+  }
+
+  // Role-level caller check (unless individual override explicitly allows)
+  if (callerOverride?.canCall !== "allow") {
+    if (callType === "audio" && !callerPerm.canInitiateVoiceCalls) {
+      return {
+        allowed: false,
+        reason: `Your role (${callerPerm.roleName}) is not permitted to initiate voice calls.`,
+      };
+    }
+    if (callType === "video" && !callerPerm.canInitiateVideoCalls) {
+      return {
+        allowed: false,
+        reason: `Your role (${callerPerm.roleName}) is not permitted to initiate video calls.`,
+      };
+    }
+  }
+
+  // Group Huddle check
+  if (isGroupHuddle) {
+    if (!settings.allowChannelHuddles) {
+      return { allowed: false, reason: "Channel & Bulletin group huddles are disabled by Administrator." };
+    }
+    if (!callerPerm.canStartGroupHuddles && callerOverride?.canCall !== "allow") {
+      return {
+        allowed: false,
+        reason: `Your role (${callerPerm.roleName}) is not authorized to start group channel huddles.`,
+      };
+    }
+    return { allowed: true, reason: "Authorized to start group channel huddle" };
+  }
+
+  // Target receive calls check
+  const targetRecvCheck = canUserReceiveCalls({ id: target.id, roleKey: targetRole }, settings);
+  if (!targetRecvCheck.allowed) {
+    return {
+      allowed: false,
+      reason: target.name
+        ? `${target.name} cannot receive calls (${targetRecvCheck.reason}).`
+        : targetRecvCheck.reason,
+    };
+  }
+
+  // Administrator can always call anyone who can receive calls
+  if (callerRole === "administrator") {
+    return { allowed: true, reason: "Administrator has full calling authority" };
+  }
+
+  // Routing Policy 1: Management Initiated Only
+  if (settings.callingRoutingPolicy === "management_initiated") {
+    const isDirectSupervisor = Boolean(caller.reportsToId && caller.reportsToId === target.id);
+    if (!isManagementCommRole(callerRole) && !isDirectSupervisor && callerOverride?.canCall !== "allow") {
+      return {
+        allowed: false,
+        reason: "Calling policy is set to Management-Initiated Only (Field reps may only call their direct supervisor).",
+      };
+    }
+  }
+
+  // Check "Who Can Call Who" Role-to-Role Matrix (applies in matrix_controlled, hierarchy_and_region, management_initiated)
+  if (settings.callingRoutingPolicy !== "open_directory") {
+    const allowedTargets = settings.whoCanCallWhoMatrix?.[callerRole] || [];
+    if (!allowedTargets.includes(targetRole) && callerOverride?.canCall !== "allow") {
+      return {
+        allowed: false,
+        reason: `Call Matrix Policy: ${callerPerm.roleName} is not permitted to call ${targetPerm.roleName}.`,
+      };
+    }
+  }
+
+  // Check Region / Hierarchy Scope
+  const isDirectReportingChain =
+    Boolean(caller.reportsToId && caller.reportsToId === target.id) ||
+    Boolean(target.reportsToId && target.reportsToId === caller.id);
+  const isTargetNational = isNationalLeadershipRole(targetRole) && settings.alwaysShowNationalLeadership;
+  const isCallerNational = isNationalLeadershipRole(callerRole);
+
+  if (settings.callingRoutingPolicy === "hierarchy_and_region") {
+    const sameReg = doRegionsOverlap(caller, target);
+    const mgmtCrossRegionAllowed = settings.allowCrossRegionCallsForManagement && isManagementCommRole(callerRole);
+    if (!sameReg && !isDirectReportingChain && !isTargetNational && !isCallerNational && !mgmtCrossRegionAllowed) {
+      return {
+        allowed: false,
+        reason: `Hierarchy & Region Policy: You can only call staff within your assigned region (${caller.region || "Territory"}) or reporting line.`,
+      };
+    }
+  } else {
+    // Also respect the caller's Directory Visibility Scope unless management cross-region calling is enabled
+    const callerScope = getEffectiveDirectoryScopeForUser(caller, settings);
+    if (callerScope === "same_region_only") {
+      const sameReg = doRegionsOverlap(caller, target) || collectUserRegions(caller).length === 0;
+      const mgmtCrossRegionAllowed = settings.allowCrossRegionCallsForManagement && isManagementCommRole(callerRole);
+      if (
+        !sameReg &&
+        !(settings.alwaysShowDirectSupervisor && isDirectReportingChain) &&
+        !isTargetNational &&
+        !mgmtCrossRegionAllowed
+      ) {
+        return {
+          allowed: false,
+          reason: `Region Scope Policy: Calling is restricted to contacts in your region (${caller.region || "Assigned Region"}).`,
+        };
+      }
+    }
+  }
+
+  return {
+    allowed: true,
+    reason: `${callerPerm.shortName} → ${targetPerm.shortName} calling permitted`,
+  };
+}
+
+export function canUserReceiveMessages(
+  user: { id?: string; roleKey: string },
+  settings: MessagingModuleSettings = getMessagingSettings(),
+): { allowed: boolean; reason: string } {
+  if (!settings.enabled) {
+    return { allowed: false, reason: "Communications system is globally disabled" };
+  }
+  if (user.id && settings.userOverrides?.[user.id]) {
+    const ov = settings.userOverrides[user.id].canReceiveMessages;
+    if (ov === "deny") {
+      return { allowed: false, reason: "User is restricted from receiving messages by an Administrator override" };
+    }
+    if (ov === "allow") {
+      return { allowed: true, reason: "Explicitly allowed by individual Admin override" };
+    }
+  }
+  const rolePerm = getEffectiveRolePermission(user.roleKey, settings);
+  if (!rolePerm.canReceiveMessages) {
+    return { allowed: false, reason: `${rolePerm.roleName} role is configured to not receive messages` };
+  }
+  return { allowed: true, reason: `${rolePerm.roleName} can receive messages` };
+}
+
+export function canUserSendMessage(
+  sender: { id: string; roleKey: string },
+  conversation?: Conversation | null,
+  targetPartner?: ChatUser | null,
+  settings: MessagingModuleSettings = getMessagingSettings(),
+): { allowed: boolean; reason: string } {
+  if (!settings.enabled) {
+    return { allowed: false, reason: "Communications & Messaging system is disabled by Administrator." };
+  }
+
+  const senderRole = normalizeCommRoleKey(sender.roleKey);
+  const senderPerm = getEffectiveRolePermission(senderRole, settings);
+  const senderOverride = sender.id ? settings.userOverrides?.[sender.id] : undefined;
+
+  if (senderOverride?.canSendMessages === "deny") {
+    return {
+      allowed: false,
+      reason: "Your messaging access is currently set to Read-Only by an Administrator override.",
+    };
+  }
+
+  if (senderOverride?.canSendMessages !== "allow" && !senderPerm.canSendMessages) {
+    return {
+      allowed: false,
+      reason: `Your role (${senderPerm.roleName}) is configured as Read-Only and cannot send messages.`,
+    };
+  }
+
+  // If posting to an Announcement channel, check announcementPostingPolicy
+  if (conversation?.type === "announcement") {
+    const policy = settings.announcementPostingPolicy || "broadcast_roles_only";
+    if (policy === "broadcast_roles_only") {
+      const canBroadcast =
+        senderPerm.canBroadcast ||
+        settings.broadcastRolesAllowed.includes(senderRole) ||
+        settings.broadcastRolesAllowed.includes(sender.roleKey);
+      if (!canBroadcast && senderRole !== "administrator") {
+        return {
+          allowed: false,
+          reason: "Only roles with Broadcast Directive permission can post in the All-Hands Bulletin channel.",
+        };
+      }
+    } else if (policy === "management_only") {
+      if (!isManagementCommRole(senderRole)) {
+        return {
+          allowed: false,
+          reason: "Only Management roles can post in the All-Hands Bulletin channel.",
+        };
+      }
+    }
+  }
+
+  // If direct message, check if target partner is allowed to receive messages
+  if ((!conversation || conversation.type === "direct") && targetPartner) {
+    const recvCheck = canUserReceiveMessages(
+      { id: targetPartner.id, roleKey: targetPartner.roleKey },
+      settings,
+    );
+    if (!recvCheck.allowed) {
+      return {
+        allowed: false,
+        reason: `${targetPartner.name} cannot receive direct messages (${recvCheck.reason}).`,
+      };
+    }
+  }
+
+  return { allowed: true, reason: `${senderPerm.roleName} is authorized to send messages` };
+}
+
+export function canUserDeleteMessage(
+  user: { id: string; roleKey: string },
+  message: ChatMessage,
+  settings: MessagingModuleSettings = getMessagingSettings(),
+): boolean {
+  const roleNorm = normalizeCommRoleKey(user.roleKey);
+  if (roleNorm === "administrator") return true;
+  const policy = settings.messageDeletionPolicy || "sender_and_admin";
+  if (policy === "admin_only") return false;
+  if (policy === "sender_and_admin") return message.senderId === user.id;
+  return true; // "everyone"
 }
 
 type EventCallback<T = any> = (data: T) => void;
@@ -311,6 +1148,13 @@ function ensureRealtimeSync() {
         if (Array.isArray(payload.conversations)) {
           localStorage.setItem(STORAGE_KEY_CONVERSATIONS, JSON.stringify(payload.conversations));
           messagingEvents.emit("conversations_updated", payload.conversations);
+        }
+      })
+      .on("broadcast", { event: "settings_updated" }, ({ payload }) => {
+        if (!payload || payload._origin === CLIENT_INSTANCE_ID) return;
+        if (payload.settings) {
+          localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(payload.settings));
+          messagingEvents.emit("settings_updated", getMessagingSettings());
         }
       })
       .subscribe();
@@ -472,6 +1316,9 @@ export async function getDirectoryUsers(_currentUserId?: string): Promise<ChatUs
       roleKey: u.role_key,
       roleName: formatRoleName(u.role_key),
       region: u.region || "National",
+      assignedRegions: Array.isArray(u.assigned_regions) ? u.assigned_regions : u.region ? [u.region] : [],
+      reportsToId: u.reports_to_id || null,
+      reportsToName: u.reports_to_name || null,
       avatar: u.avatar_url || null,
       initials: generateInitials(u.name),
       status: idx % 3 === 0 ? "online" : idx % 3 === 1 ? "away" : "offline",

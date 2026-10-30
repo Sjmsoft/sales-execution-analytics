@@ -325,7 +325,6 @@ export default function Sidebar({
               <div key={group.id} className="sidebar-group">
                 <div className="sidebar-group-title">
                   <span>{group.title}</span>
-                  <span style={{ fontSize: "9px", opacity: 0.6 }}>{group.items.length}</span>
                 </div>
 
                 <ul className="sidebar-group-items">

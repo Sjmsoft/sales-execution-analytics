@@ -14,9 +14,6 @@ import {
   Eye,
   EyeOff,
   Loader2,
-  Tag,
-  Plus,
-  Pencil,
   Trash2,
   X,
   Users,
@@ -39,6 +36,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  LogOut,
 } from "lucide-react";
 import { useAppearance, THEME_COLOR_OPTIONS } from "../hooks/useAppearance";
 import { useAuth } from "../context/AuthContext";
@@ -53,8 +51,6 @@ import { VisitOutcomesSection } from "./settings/VisitOutcomesSection";
 import { GeofencingSection } from "./settings/GeofencingSection";
 import { CommunicationsSection } from "./settings/CommunicationsSection";
 import { SettingsSkeleton } from "../components/ui/Skeleton";
-import LogoLoader from "../components/brand/LogoLoader";
-import { useMinimumLoading } from "../hooks/useMinimumLoading";
 import {
   getNotifications,
   getUnreadNotificationsCount,
@@ -75,7 +71,6 @@ type TabId =
   | "appearance"
   | "regional"
   | "privacy"
-  | "drinkCategories"
   | "drinksAndProducts"
   | "users"
   | "roles"
@@ -86,7 +81,7 @@ type TabId =
   | "geofencing"
   | "communications";
 
-type SaveState = "idle" | "saving" | "saved" | "error";
+type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
 /* ─── Sub-components ─────────────────────────────── */
 
@@ -121,7 +116,6 @@ const TAB_LABELS: Record<TabId, string> = {
   regional: "Regional & Language",
   privacy: "Privacy & Security",
   drinksAndProducts: "Drinks & Products",
-  drinkCategories: "Drink Categories",
   outletTypes: "Outlet Types",
   paymentMethods: "Payment Methods",
   visitOutcomes: "Visit Outcomes",
@@ -187,298 +181,60 @@ function SettingRow({
 
 function SaveBar({
   state,
+  dirty = false,
+  saveLabel = "Save changes",
   onSave,
   onReset,
 }: {
   state: SaveState;
+  dirty?: boolean;
+  saveLabel?: string;
   onSave: () => void;
   onReset: () => void;
 }) {
-  if (state === "idle") return null;
+  const isActionable = dirty || state === "dirty" || state === "saving" || state === "error";
 
   return (
-    <div className="settings-savebar">
-      {state === "error" && (
-        <span className="settings-savebar-error">
-          <AlertCircle size={15} /> Something went wrong. Try again.
-        </span>
-      )}
-      {state === "saved" && (
-        <span className="settings-savebar-ok">
-          <Check size={15} /> Saved successfully.
-        </span>
-      )}
-      <div className="settings-savebar-actions">
+    <div className="settings-savebar" style={{ marginTop: "1.25rem" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {state === "error" && (
+          <span className="settings-savebar-error">
+            <AlertCircle size={15} /> Something went wrong. Try again.
+          </span>
+        )}
+        {state === "saved" && (
+          <span className="settings-savebar-ok">
+            <Check size={15} /> Saved successfully.
+          </span>
+        )}
+        {state !== "error" && state !== "saved" && (
+          <span style={{ fontSize: "0.8rem", color: isActionable ? "#0f766e" : "#64748b", fontWeight: isActionable ? 600 : 400 }}>
+            {isActionable ? "You have unsaved changes." : "All changes are up to date."}
+          </span>
+        )}
+      </div>
+      <div className="settings-savebar-actions" style={{ marginLeft: "auto" }}>
         <button
+          type="button"
           className="btn-ghost-sm"
           onClick={onReset}
-          disabled={state === "saving"}
+          disabled={!isActionable || state === "saving"}
         >
           Discard
         </button>
         <button
+          type="button"
           className="btn-primary-sm"
           onClick={onSave}
-          disabled={state === "saving"}
+          disabled={!isActionable || state === "saving"}
         >
           {state === "saving" ? (
             <>
               <Loader2 size={14} className="spin" /> Saving…
             </>
           ) : (
-            "Save changes"
+            saveLabel
           )}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Drink Categories Section ────────────────────── */
-
-type DrinkCategory = {
-  name: string;            // category string from drink_types table
-  drinkCount: number;      // how many drink_types use this category
-};
-
-function DrinkCategoriesSection() {
-  const [categories, setCategories] = useState<DrinkCategory[]>([]);
-  const [loading, setLoading] = useState(true);
-  const visibleLoading = useMinimumLoading(loading, 600);
-  const [error, setError] = useState("");
-
-  // add-new
-  const [newName, setNewName] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [addError, setAddError] = useState("");
-
-  // inline edit
-  const [editingName, setEditingName] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState("");
-  const [editSaving, setEditSaving] = useState(false);
-  const [editError, setEditError] = useState("");
-
-  // delete confirmation
-  const [deletingName, setDeletingName] = useState<string | null>(null);
-
-  async function load() {
-    setLoading(true);
-    setError("");
-    try {
-      const { data, error: err } = await supabase
-        .from("drink_types")
-        .select("category");
-      if (err) throw err;
-
-      const counts: Record<string, number> = {};
-      for (const row of data ?? []) {
-        const cat = (row.category ?? "Uncategorised") as string;
-        counts[cat] = (counts[cat] ?? 0) + 1;
-      }
-      setCategories(
-        Object.entries(counts)
-          .map(([name, drinkCount]) => ({ name, drinkCount }))
-          .sort((a, b) => a.name.localeCompare(b.name))
-      );
-    } catch {
-      setError("Failed to load categories.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async load; state updates occur only after awaits
-    load();
-  }, []);
-
-  async function handleAdd() {
-    const trimmed = newName.trim();
-    if (!trimmed) { setAddError("Category name is required."); return; }
-    if (categories.some(c => c.name.toLowerCase() === trimmed.toLowerCase())) {
-      setAddError("A category with that name already exists.");
-      return;
-    }
-    setAdding(true);
-    setAddError("");
-    try {
-      // Insert a placeholder drink_type row so the category exists — or just
-      // track categories as a separate concept. Here we add a sentinel row with
-      // a distinctive name the user can later populate properly. Alternatively
-      // we can create a `drink_categories` table; for now we use a virtual row.
-      //
-      // Better approach: just record the name in a dedicated table. Since the
-      // schema only has drink_types, we'll add it there as a "category only" row
-      // (name = trimmed, category = trimmed, price fields = 0).
-      const { error: err } = await supabase.from("drink_types").insert({
-        name: `[${trimmed}]`,
-        category: trimmed,
-        bottles_per_case: 0,
-        price_per_bottle: 0,
-        price_per_case: 0,
-      });
-      if (err) throw err;
-      setNewName("");
-      await load();
-    } catch (e: unknown) {
-      setAddError(e instanceof Error ? e.message : "Failed to add category.");
-    } finally {
-      setAdding(false);
-    }
-  }
-
-  function startEdit(cat: DrinkCategory) {
-    setEditingName(cat.name);
-    setEditValue(cat.name);
-    setEditError("");
-  }
-
-  async function saveEdit() {
-    const trimmed = editValue.trim();
-    if (!trimmed) { setEditError("Name cannot be empty."); return; }
-    if (trimmed === editingName) { setEditingName(null); return; }
-    if (categories.some(c => c.name.toLowerCase() === trimmed.toLowerCase())) {
-      setEditError("That name is already used by another category.");
-      return;
-    }
-    setEditSaving(true);
-    setEditError("");
-    try {
-      const { error: err } = await supabase
-        .from("drink_types")
-        .update({ category: trimmed })
-        .eq("category", editingName);
-      if (err) throw err;
-      setEditingName(null);
-      await load();
-    } catch (e: unknown) {
-      setEditError(e instanceof Error ? e.message : "Failed to rename category.");
-    } finally {
-      setEditSaving(false);
-    }
-  }
-
-  async function confirmDelete(name: string) {
-    try {
-      // Nullify category on all drink_types with this category
-      const { error: err } = await supabase
-        .from("drink_types")
-        .update({ category: null })
-        .eq("category", name);
-      if (err) throw err;
-      setDeletingName(null);
-      await load();
-    } catch {
-      setError("Failed to delete category.");
-      setDeletingName(null);
-    }
-  }
-
-  return (
-    <div className="settings-form">
-      {/* Error banner */}
-      {error && (
-        <p className="settings-pw-error">
-          <AlertCircle size={14} /> {error}
-        </p>
-      )}
-
-      {/* Category table */}
-      {visibleLoading ? (
-        <LogoLoader variant="section" message="Loading drink categories" />
-      ) : (
-        <div className="dc-table-wrap">
-          <table className="dc-table">
-            <thead>
-              <tr>
-                <th>Category Name</th>
-                <th className="dc-th-count">Drink Types</th>
-                <th className="dc-th-actions">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {categories.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="dc-empty">No categories yet.</td>
-                </tr>
-              )}
-              {categories.map((cat) => (
-                <tr key={cat.name} className={deletingName === cat.name ? "dc-row-deleting" : ""}>
-                  <td>
-                    {editingName === cat.name ? (
-                      <div className="dc-edit-inline">
-                        <input
-                          className="dc-edit-input"
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") setEditingName(null); }}
-                          autoFocus
-                        />
-                        {editError && <span className="dc-edit-error">{editError}</span>}
-                      </div>
-                    ) : (
-                      <span className="dc-cat-name">
-                        <Tag size={13} className="dc-cat-icon" />
-                        {cat.name}
-                      </span>
-                    )}
-                  </td>
-                  <td className="dc-td-count">
-                    <span className="dc-badge">{cat.drinkCount}</span>
-                  </td>
-                  <td className="dc-td-actions">
-                    {deletingName === cat.name ? (
-                      <div className="dc-confirm-row">
-                        <span className="dc-confirm-label">Delete? This unassigns {cat.drinkCount} drink type{cat.drinkCount !== 1 ? "s" : ""}.</span>
-                        <button className="dc-btn-danger" onClick={() => confirmDelete(cat.name)} type="button">Yes, delete</button>
-                        <button className="dc-btn-ghost" onClick={() => setDeletingName(null)} type="button"><X size={13} /></button>
-                      </div>
-                    ) : editingName === cat.name ? (
-                      <div className="dc-action-btns">
-                        <button className="dc-btn-save" onClick={saveEdit} disabled={editSaving} type="button">
-                          {editSaving ? <Loader2 size={13} className="spin" /> : <Check size={13} />} Save
-                        </button>
-                        <button className="dc-btn-ghost" onClick={() => setEditingName(null)} type="button"><X size={13} /></button>
-                      </div>
-                    ) : (
-                      <div className="dc-action-btns">
-                        <button className="dc-btn-edit" onClick={() => startEdit(cat)} type="button" title="Rename">
-                          <Pencil size={13} />
-                        </button>
-                        <button className="dc-btn-delete" onClick={() => setDeletingName(cat.name)} type="button" title="Delete">
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Add new category */}
-      <div className="dc-add-row">
-        <div className="dc-add-input-wrap">
-          <input
-            className="dc-add-input"
-            type="text"
-            placeholder="New category name…"
-            value={newName}
-            onChange={(e) => { setNewName(e.target.value); setAddError(""); }}
-            onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
-          />
-          {addError && <span className="dc-add-error">{addError}</span>}
-        </div>
-        <button
-          className="dc-btn-add"
-          onClick={handleAdd}
-          disabled={adding || !newName.trim()}
-          type="button"
-        >
-          {adding ? <Loader2 size={14} className="spin" /> : <Plus size={14} />}
-          Add Category
         </button>
       </div>
     </div>
@@ -488,7 +244,7 @@ function DrinkCategoriesSection() {
 /* ─── Main Page ───────────────────────────────────── */
 
 export default function Settings() {
-  const { user, staff, role, loading: authLoading, refreshStaff } = useAuth();
+  const { user, staff, role, loading: authLoading, refreshStaff, signOut } = useAuth();
   const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
   const isAdmin =
     roleKey === "administrator" ||
@@ -497,22 +253,35 @@ export default function Settings() {
     role?.hierarchy_level === 1;
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = (searchParams.get("tab") as TabId) || "profile";
+  const rawParamTab = searchParams.get("tab");
+  const initialTab: TabId =
+    rawParamTab === "drinkCategories"
+      ? "drinksAndProducts"
+      : rawParamTab && rawParamTab in TAB_LABELS
+      ? (rawParamTab as TabId)
+      : "profile";
 
   /* tab state */
   const [activeTab, setActiveTabState] = useState<TabId>(initialTab);
 
   // Sync activeTab when URL query param ?tab=... changes
   useEffect(() => {
-    const paramTab = searchParams.get("tab") as TabId | null;
+    const paramTab = searchParams.get("tab");
+    if (paramTab === "drinkCategories") {
+      setActiveTabState("drinksAndProducts");
+      return;
+    }
     if (paramTab && paramTab in TAB_LABELS && paramTab !== activeTab) {
-      setActiveTabState(paramTab);
+      setActiveTabState(paramTab as TabId);
     }
   }, [searchParams, activeTab]);
 
   const setActiveTab = (tab: TabId) => {
     setActiveTabState(tab);
     setSearchParams({ tab }, { replace: true });
+    if (typeof window !== "undefined" && window.innerWidth <= 900) {
+      setMenuSidebarCollapsed(true);
+    }
   };
 
   /* settings menu sidebar collapse state */
@@ -560,7 +329,7 @@ export default function Settings() {
 
   useEffect(() => {
     const group1 = ["profile", "security", "notifications", "appearance", "regional", "privacy"];
-    const group2 = ["drinksAndProducts", "drinkCategories", "outletTypes", "paymentMethods", "visitOutcomes", "regions"];
+    const group2 = ["drinksAndProducts", "outletTypes", "paymentMethods", "visitOutcomes", "regions"];
     const group3 = ["geofencing", "communications"];
     const group4 = ["users", "roles"];
 
@@ -589,6 +358,11 @@ export default function Settings() {
     setProfilePhone(staff?.phone ?? "");
     setProfileEmail(user?.email ?? "");
   }, [staff, user]);
+
+  const isProfileDirty =
+    profileName.trim() !== (staff?.name ?? "").trim() ||
+    (profilePhone ?? "").trim() !== (staff?.phone ?? "").trim() ||
+    profileEmail.trim() !== (user?.email ?? "").trim();
 
   async function saveProfile() {
     setProfileSave("saving");
@@ -623,8 +397,11 @@ export default function Settings() {
   const [confirmPw, setConfirmPw] = useState("");
   const [showCurrentPw, setShowCurrentPw] = useState(false);
   const [showNewPw, setShowNewPw] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [securitySave, setSecuritySave] = useState<SaveState>("idle");
   const [pwError, setPwError] = useState("");
+
+  const isSecurityDirty = Boolean(currentPw || newPw || confirmPw);
 
   async function savePassword() {
     setPwError("");
@@ -653,10 +430,55 @@ export default function Settings() {
   }
 
   /* ── Notifications section ── */
-  const [notifSaleAlert, setNotifSaleAlert] = useState(true);
-  const [notifTargetAlert, setNotifTargetAlert] = useState(true);
-  const [notifWeeklyReport, setNotifWeeklyReport] = useState(false);
-  const [notifSystemUpdate, setNotifSystemUpdate] = useState(true);
+  const [notifSaleAlert, setNotifSaleAlert] = useState<boolean>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("sea_notif_prefs_v1") || "{}");
+      return saved.notifSaleAlert ?? true;
+    } catch {
+      return true;
+    }
+  });
+  const [notifTargetAlert, setNotifTargetAlert] = useState<boolean>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("sea_notif_prefs_v1") || "{}");
+      return saved.notifTargetAlert ?? true;
+    } catch {
+      return true;
+    }
+  });
+  const [notifWeeklyReport, setNotifWeeklyReport] = useState<boolean>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("sea_notif_prefs_v1") || "{}");
+      return saved.notifWeeklyReport ?? false;
+    } catch {
+      return false;
+    }
+  });
+  const [notifSystemUpdate, setNotifSystemUpdate] = useState<boolean>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("sea_notif_prefs_v1") || "{}");
+      return saved.notifSystemUpdate ?? true;
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "sea_notif_prefs_v1",
+        JSON.stringify({
+          notifSaleAlert,
+          notifTargetAlert,
+          notifWeeklyReport,
+          notifSystemUpdate,
+        })
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [notifSaleAlert, notifTargetAlert, notifWeeklyReport, notifSystemUpdate]);
+
   const [settingsNotifs, setSettingsNotifs] = useState<NotificationItem[]>(() => getNotifications());
   const [settingsUnreadCount, setSettingsUnreadCount] = useState<number>(() => getUnreadNotificationsCount());
 
@@ -683,15 +505,72 @@ export default function Settings() {
   } = useAppearance();
 
   /* ── Regional section ── */
-  const [currency, setCurrency] = useState("NGN");
-  const [dateFormat, setDateFormat] = useState("DD/MM/YYYY");
-  const [timezone, setTimezone] = useState(
-    Intl.DateTimeFormat().resolvedOptions().timeZone
-  );
+  const defaultTz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Africa/Lagos";
+  const [currency, setCurrency] = useState<string>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("sea_regional_prefs_v1") || "{}").currency || "NGN";
+    } catch {
+      return "NGN";
+    }
+  });
+  const [dateFormat, setDateFormat] = useState<string>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("sea_regional_prefs_v1") || "{}").dateFormat || "DD/MM/YYYY";
+    } catch {
+      return "DD/MM/YYYY";
+    }
+  });
+  const [timezone, setTimezone] = useState<string>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("sea_regional_prefs_v1") || "{}").timezone || defaultTz;
+    } catch {
+      return defaultTz;
+    }
+  });
+  const [regionalSave, setRegionalSave] = useState<SaveState>("idle");
+
+  function saveRegionalPreferences() {
+    setRegionalSave("saving");
+    try {
+      localStorage.setItem(
+        "sea_regional_prefs_v1",
+        JSON.stringify({ currency, dateFormat, timezone })
+      );
+      setRegionalSave("saved");
+      setTimeout(() => setRegionalSave("idle"), 3000);
+    } catch {
+      setRegionalSave("error");
+    }
+  }
 
   /* ── Privacy section ── */
-  const [shareAnalytics, setShareAnalytics] = useState(true);
-  const [sessionTimeout, setSessionTimeout] = useState("60");
+  const [shareAnalytics, setShareAnalytics] = useState<boolean>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("sea_privacy_prefs_v1") || "{}");
+      return saved.shareAnalytics ?? true;
+    } catch {
+      return true;
+    }
+  });
+  const [sessionTimeout, setSessionTimeout] = useState<string>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("sea_privacy_prefs_v1") || "{}");
+      return saved.sessionTimeout ?? "60";
+    } catch {
+      return "60";
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "sea_privacy_prefs_v1",
+        JSON.stringify({ shareAnalytics, sessionTimeout })
+      );
+    } catch {
+      // ignore
+    }
+  }, [shareAnalytics, sessionTimeout]);
 
   if (authLoading) {
     return (
@@ -752,7 +631,11 @@ export default function Settings() {
           aria-label="Settings Navigation"
         >
           {/* Top Collapse/Expand Toggle Header */}
-          <div className={`settings-sidebar-header${menuSidebarCollapsed ? " settings-sidebar-header--collapsed" : ""}`}>
+          <div
+            className={`settings-sidebar-header${menuSidebarCollapsed ? " settings-sidebar-header--collapsed" : ""}`}
+            onClick={menuSidebarCollapsed ? toggleMenuSidebar : undefined}
+            style={{ cursor: menuSidebarCollapsed ? "pointer" : "default" }}
+          >
             {!menuSidebarCollapsed ? (
               <div style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
                 <span className="settings-sidebar-header-title">Settings Navigation</span>
@@ -765,7 +648,10 @@ export default function Settings() {
             <button
               type="button"
               className="settings-sidebar-collapse-btn"
-              onClick={toggleMenuSidebar}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleMenuSidebar();
+              }}
               title={menuSidebarCollapsed ? "Expand settings menu" : "Collapse settings menu"}
               aria-label={menuSidebarCollapsed ? "Expand settings menu" : "Collapse settings menu"}
             >
@@ -824,7 +710,6 @@ export default function Settings() {
             {(!collapsedGroups.catalog || menuSidebarCollapsed) && (
               <div className="settings-sidebar-group-items">
                 <SubnavButton id="drinksAndProducts" icon={Wine} label="Drinks & Products" active={activeTab === "drinksAndProducts"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
-                <SubnavButton id="drinkCategories" icon={Tag} label="Drink Categories" active={activeTab === "drinkCategories"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
                 <SubnavButton id="outletTypes" icon={Building2} label="Outlet Types" active={activeTab === "outletTypes"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
                 <SubnavButton id="paymentMethods" icon={CreditCard} label="Payment Methods" active={activeTab === "paymentMethods"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
                 <SubnavButton id="visitOutcomes" icon={CheckCircle2} label="Visit Outcomes" active={activeTab === "visitOutcomes"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
@@ -963,6 +848,8 @@ export default function Settings() {
           </div>
           <SaveBar
             state={profileSave}
+            dirty={isProfileDirty}
+            saveLabel="Save profile changes"
             onSave={saveProfile}
             onReset={() => {
               setProfileName(staff?.name ?? "");
@@ -983,7 +870,7 @@ export default function Settings() {
               </div>
           <div className="settings-form">
             <p className="settings-section-note">
-              Leave the fields empty if you don't want to change your password.
+              Enter a new password (minimum 8 characters) to update your account credentials.
             </p>
             <div className="settings-form-grid">
               <div className="settings-field settings-field--full settings-field--pw">
@@ -1013,8 +900,11 @@ export default function Settings() {
                     id="sett-new-pw"
                     type={showNewPw ? "text" : "password"}
                     value={newPw}
-                    onChange={(e) => setNewPw(e.target.value)}
-                    placeholder="••••••••"
+                    onChange={(e) => {
+                      setNewPw(e.target.value);
+                      if (pwError) setPwError("");
+                    }}
+                    placeholder="Minimum 8 characters"
                   />
                   <button
                     type="button"
@@ -1026,15 +916,28 @@ export default function Settings() {
                   </button>
                 </div>
               </div>
-              <div className="settings-field">
+              <div className="settings-field settings-field--pw">
                 <label htmlFor="sett-conf-pw">Confirm new password</label>
-                <input
-                  id="sett-conf-pw"
-                  type="password"
-                  value={confirmPw}
-                  onChange={(e) => setConfirmPw(e.target.value)}
-                  placeholder="••••••••"
-                />
+                <div className="settings-pw-wrap">
+                  <input
+                    id="sett-conf-pw"
+                    type={showConfirmPw ? "text" : "password"}
+                    value={confirmPw}
+                    onChange={(e) => {
+                      setConfirmPw(e.target.value);
+                      if (pwError) setPwError("");
+                    }}
+                    placeholder="Re-enter new password"
+                  />
+                  <button
+                    type="button"
+                    className="settings-pw-eye"
+                    onClick={() => setShowConfirmPw((v) => !v)}
+                    aria-label={showConfirmPw ? "Hide" : "Show"}
+                  >
+                    {showConfirmPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
             </div>
             {pwError && (
@@ -1045,6 +948,8 @@ export default function Settings() {
           </div>
           <SaveBar
             state={securitySave}
+            dirty={isSecurityDirty}
+            saveLabel="Update password"
             onSave={savePassword}
             onReset={() => {
               setCurrentPw("");
@@ -1760,7 +1665,10 @@ export default function Settings() {
                 <select
                   id="sett-currency"
                   value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
+                  onChange={(e) => {
+                    setCurrency(e.target.value);
+                    setRegionalSave("dirty");
+                  }}
                 >
                   <option value="NGN">Nigerian Naira (₦)</option>
                   <option value="USD">US Dollar ($)</option>
@@ -1773,7 +1681,10 @@ export default function Settings() {
                 <select
                   id="sett-date-fmt"
                   value={dateFormat}
-                  onChange={(e) => setDateFormat(e.target.value)}
+                  onChange={(e) => {
+                    setDateFormat(e.target.value);
+                    setRegionalSave("dirty");
+                  }}
                 >
                   <option value="DD/MM/YYYY">DD/MM/YYYY</option>
                   <option value="MM/DD/YYYY">MM/DD/YYYY</option>
@@ -1786,12 +1697,27 @@ export default function Settings() {
                   id="sett-tz"
                   type="text"
                   value={timezone}
-                  onChange={(e) => setTimezone(e.target.value)}
+                  onChange={(e) => {
+                    setTimezone(e.target.value);
+                    setRegionalSave("dirty");
+                  }}
                   placeholder="Africa/Lagos"
                 />
               </div>
             </div>
           </div>
+          <SaveBar
+            state={regionalSave}
+            dirty={regionalSave === "dirty"}
+            saveLabel="Save regional preferences"
+            onSave={saveRegionalPreferences}
+            onReset={() => {
+              setCurrency("NGN");
+              setDateFormat("DD/MM/YYYY");
+              setTimezone(defaultTz);
+              setRegionalSave("idle");
+            }}
+          />
           </div>
           )}
 
@@ -1832,23 +1758,21 @@ export default function Settings() {
             </SettingRow>
 
             <div className="settings-danger-zone">
-              <p className="settings-danger-label">Danger zone</p>
-              <button className="btn-danger-outline" type="button">
+              <p className="settings-danger-label">Session Security</p>
+              <p style={{ margin: "0 0 12px 0", fontSize: "0.82rem", color: "#64748b" }}>
+                Immediately end your active session and require re-authentication.
+              </p>
+              <button
+                className="btn-danger-outline"
+                type="button"
+                onClick={() => void signOut()}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+              >
+                <LogOut size={14} />
                 Sign out of all devices
               </button>
             </div>
           </div>
-          </div>
-          )}
-
-          {/* ── Drink Categories ── */}
-          {activeTab === "drinkCategories" && (
-            <div className="settings-section-content">
-              <div className="settings-section-titles" style={{ marginBottom: '1.5rem' }}>
-                <h3 className="settings-section-title">Drink Categories</h3>
-                <p className="settings-section-subtitle">Manage the category labels used to group drink types</p>
-              </div>
-          <DrinkCategoriesSection />
           </div>
           )}
 

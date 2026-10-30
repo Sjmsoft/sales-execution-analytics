@@ -9,6 +9,9 @@ import {
   Search,
   ChevronDown,
   ArrowRight,
+  Download,
+  RotateCcw,
+  MessageSquare,
 } from "lucide-react";
 import "../team-activity.css";
 import LogoLoader from "../components/brand/LogoLoader";
@@ -48,6 +51,7 @@ export default function Staff() {
   const [search, setSearch] = useState("");
   const [selectedRole, setSelectedRole] = useState("All roles");
   const [selectedRegion, setSelectedRegion] = useState("All regions");
+  const [sortBy, setSortBy] = useState<"revenue" | "sales" | "name" | "region">("revenue");
 
   // Pure Supabase data state
   const [members, setMembers] = useState<TeamDirectoryMember[]>([]);
@@ -144,7 +148,7 @@ export default function Staff() {
           return {
             id: u.id,
             name: u.name || "Staff Member",
-            email: u.email || `${u.id}@penedge.com`,
+            email: u.email || "—",
             role: u.role_key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
             region: u.region || "All Region",
             salesCount: sStats.count,
@@ -193,9 +197,14 @@ export default function Staff() {
     return set.size || (members.length > 0 ? 1 : 0);
   }, [members]);
 
-  // Filtered members list
+  const hasActiveFilters =
+    Boolean(search.trim()) ||
+    selectedRole !== "All roles" ||
+    selectedRegion !== "All regions";
+
+  // Filtered & sorted members list
   const filteredMembers = useMemo(() => {
-    return members.filter((m) => {
+    const filtered = members.filter((m) => {
       if (selectedRole !== "All roles" && m.role !== selectedRole) return false;
       if (selectedRegion !== "All regions" && m.region !== selectedRegion) return false;
       if (search.trim()) {
@@ -209,7 +218,36 @@ export default function Staff() {
       }
       return true;
     });
-  }, [members, selectedRole, selectedRegion, search]);
+
+    return [...filtered].sort((a, b) => {
+      if (sortBy === "revenue") return b.revenue - a.revenue || a.name.localeCompare(b.name);
+      if (sortBy === "sales") return b.salesCount - a.salesCount || a.name.localeCompare(b.name);
+      if (sortBy === "region") return a.region.localeCompare(b.region) || a.name.localeCompare(b.name);
+      return a.name.localeCompare(b.name);
+    });
+  }, [members, selectedRole, selectedRegion, search, sortBy]);
+
+  function handleExportCsv() {
+    const headers = ["Name", "Email", "Role", "Region", "Sales Count", "Revenue (NGN)", "Last Activity", "Status"];
+    const rows = filteredMembers.map((m) => [
+      `"${m.name.replace(/"/g, '""')}"`,
+      `"${m.email.replace(/"/g, '""')}"`,
+      `"${m.role.replace(/"/g, '""')}"`,
+      `"${m.region.replace(/"/g, '""')}"`,
+      m.salesCount,
+      m.revenue,
+      `"${m.lastActivity}"`,
+      m.isActive ? "Active" : "Inactive",
+    ]);
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pen-edge-team-directory-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="team-activity-container">
@@ -314,11 +352,57 @@ export default function Staff() {
 
       {/* ── 3. TEAM DIRECTORY SECTION ── */}
       <div className="ta-content-card">
-        {/* Directory Title */}
-        <div style={{ paddingBottom: "4px" }}>
-          <h3 className="team-directory-title">
-            Team directory
-          </h3>
+        {/* Directory Title & Actions */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "10px",
+            paddingBottom: "4px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <h3 className="team-directory-title" style={{ margin: 0 }}>
+              Team directory
+            </h3>
+            <span
+              style={{
+                fontSize: "12px",
+                fontWeight: 600,
+                padding: "2px 9px",
+                borderRadius: "999px",
+                background: "#ecfdf5",
+                color: "#065f46",
+                border: "1px solid #a7f3d0",
+              }}
+            >
+              {filteredMembers.length} {filteredMembers.length === 1 ? "member" : "members"}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            disabled={filteredMembers.length === 0}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "7px 13px",
+              borderRadius: "8px",
+              border: "1px solid #d1d5db",
+              background: "#ffffff",
+              color: "#334155",
+              fontSize: "12.5px",
+              fontWeight: 600,
+              cursor: filteredMembers.length === 0 ? "not-allowed" : "pointer",
+            }}
+          >
+            <Download size={14} />
+            <span>Export CSV</span>
+          </button>
         </div>
 
         {/* Search and Filters Bar */}
@@ -331,7 +415,7 @@ export default function Staff() {
           }}
         >
           {/* Search bar */}
-          <div style={{ flex: "1 1 300px", position: "relative", display: "flex", alignItems: "center" }}>
+          <div style={{ flex: "1 1 280px", position: "relative", display: "flex", alignItems: "center" }}>
             <Search size={15} style={{ position: "absolute", left: "12px", color: "#94a3b8" }} />
             <input
               type="text"
@@ -374,6 +458,49 @@ export default function Staff() {
             </select>
             <ChevronDown size={14} className="ta-select-chevron" />
           </div>
+
+          {/* Sort By */}
+          <div className="ta-filter-select-wrapper">
+            <select
+              className="ta-filter-select"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as "revenue" | "sales" | "name" | "region")}
+              aria-label="Sort team members"
+            >
+              <option value="revenue">Sort: Top Revenue</option>
+              <option value="sales">Sort: Most Sales</option>
+              <option value="name">Sort: Name (A–Z)</option>
+              <option value="region">Sort: Region</option>
+            </select>
+            <ChevronDown size={14} className="ta-select-chevron" />
+          </div>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setSelectedRole("All roles");
+                setSelectedRegion("All regions");
+              }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                padding: "8px 12px",
+                borderRadius: "8px",
+                border: "1px solid #cbd5e1",
+                background: "#f8fafc",
+                color: "#475569",
+                fontSize: "12.5px",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              <RotateCcw size={13} />
+              <span>Reset</span>
+            </button>
+          )}
         </div>
 
         {/* Directory Table */}
@@ -381,18 +508,19 @@ export default function Staff() {
           <table className="ta-table">
             <thead>
               <tr>
-                <th style={{ width: "32%" }}>Member</th>
-                <th style={{ width: "18%" }}>Role</th>
-                <th style={{ width: "20%" }}>Region</th>
+                <th style={{ width: "28%" }}>Member</th>
+                <th style={{ width: "16%" }}>Role</th>
+                <th style={{ width: "16%" }}>Region</th>
                 <th style={{ width: "8%", textAlign: "right" }}>Sales</th>
                 <th style={{ width: "12%", textAlign: "right" }}>Revenue</th>
                 <th style={{ width: "10%", textAlign: "right" }}>Last activity</th>
+                <th style={{ width: "10%", textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {visibleLoading ? (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: "center", padding: "40px" }}>
+                  <td colSpan={7} style={{ textAlign: "center", padding: "40px" }}>
                     <LogoLoader
                       variant="section"
                       message="Loading team directory"
@@ -402,8 +530,8 @@ export default function Staff() {
                 </tr>
               ) : filteredMembers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: "center", padding: "40px", color: "#64748b" }}>
-                    No team members found in the database.
+                  <td colSpan={7} style={{ textAlign: "center", padding: "40px", color: "#64748b" }}>
+                    No team members match your current filters.
                   </td>
                 </tr>
               ) : (
@@ -456,6 +584,31 @@ export default function Staff() {
                     {/* Last activity */}
                     <td style={{ textAlign: "right", fontSize: "12.5px" }}>
                       <span className="ta-member-last-act">{member.lastActivity}</span>
+                    </td>
+
+                    {/* Quick Actions */}
+                    <td style={{ textAlign: "right" }}>
+                      <button
+                        type="button"
+                        onClick={() => navigate("/messages")}
+                        title={`Message or call ${member.name}`}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          padding: "5px 10px",
+                          borderRadius: "6px",
+                          border: "1px solid #cbd5e1",
+                          background: "#ffffff",
+                          color: "#092c1f",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <MessageSquare size={12} />
+                        <span>Message</span>
+                      </button>
                     </td>
                   </tr>
                 ))
