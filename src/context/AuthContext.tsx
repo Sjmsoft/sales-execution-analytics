@@ -53,7 +53,10 @@ const STORAGE_KEY_CACHED_USER = "penedge_cached_user_v1";
 
 function getCachedStaff(): Staff | null {
   try {
-    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY_CACHED_STAFF) : null;
+    const raw =
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem(STORAGE_KEY_CACHED_STAFF)
+        : null;
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -62,7 +65,10 @@ function getCachedStaff(): Staff | null {
 
 function getCachedUser(): User | null {
   try {
-    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY_CACHED_USER) : null;
+    const raw =
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem(STORAGE_KEY_CACHED_USER)
+        : null;
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -104,9 +110,9 @@ export function AuthProvider({
     try {
       setLoading(true);
 
-      // Check local session first without forcing remote network request
       const { data: sessionData } = await supabase.auth.getSession();
-      const localUser = sessionData?.session?.user ?? getCachedUser();
+      const cachedUser = getCachedUser();
+      const localUser = sessionData?.session?.user ?? cachedUser;
 
       if (navigator.onLine) {
         try {
@@ -114,36 +120,44 @@ export function AuthProvider({
             data: { user: remoteUser },
           } = await supabase.auth.getUser();
 
-          if (remoteUser) {
+          if (
+            remoteUser &&
+            (!cachedUser ||
+              remoteUser.email?.toLowerCase() ===
+                cachedUser.email?.toLowerCase())
+          ) {
             setUser(remoteUser);
             setCachedUser(remoteUser);
 
-            const currentStaff = await getCurrentStaff();
+            const currentStaff = await getCurrentStaff(remoteUser);
             setStaff(currentStaff as Staff | null);
             setCachedStaff(currentStaff as Staff | null);
             return;
           }
         } catch (networkErr) {
-          console.warn("Remote auth check notice (falling back to offline cached session):", networkErr);
+          console.warn(
+            "Remote auth check notice (falling back to cached session):",
+            networkErr
+          );
         }
       }
 
-      // Offline / network fallback: preserve local session & cached staff profile
       if (localUser) {
         setUser(localUser);
         setCachedUser(localUser);
 
-        const cachedStaff = getCachedStaff();
-        if (cachedStaff) {
-          setStaff(cachedStaff);
-        } else {
-          try {
-            const currentStaff = await getCurrentStaff();
-            if (currentStaff) {
-              setStaff(currentStaff as Staff | null);
-              setCachedStaff(currentStaff as Staff | null);
-            }
-          } catch {}
+        try {
+          const currentStaff = await getCurrentStaff(localUser);
+          if (currentStaff) {
+            setStaff(currentStaff as Staff | null);
+            setCachedStaff(currentStaff as Staff | null);
+          } else {
+            const cachedStaff = getCachedStaff();
+            if (cachedStaff) setStaff(cachedStaff);
+          }
+        } catch {
+          const cachedStaff = getCachedStaff();
+          if (cachedStaff) setStaff(cachedStaff);
         }
       } else {
         setUser(null);
@@ -169,38 +183,65 @@ export function AuthProvider({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- async load; state updates occur only after awaits
     loadUser();
 
+    function handleCustomAuthUpdate(e: Event) {
+      const customEvent = e as CustomEvent<{
+        user: User | null;
+        staff: Staff | null;
+      }>;
+      if (customEvent.detail !== undefined) {
+        setUser(customEvent.detail.user);
+        setStaff(customEvent.detail.staff);
+        setLoading(false);
+      }
+    }
+
+    window.addEventListener("penedge:auth-updated", handleCustomAuthUpdate);
+
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        const currentUser = session?.user ?? null;
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const currentUser = session?.user ?? null;
+
+      if (currentUser) {
         setUser(currentUser);
         setCachedUser(currentUser);
 
-        if (currentUser) {
-          try {
-            const currentStaff = await getCurrentStaff();
-            setStaff(currentStaff as Staff | null);
-            setCachedStaff(currentStaff as Staff | null);
-          } catch (error) {
-            console.error(
-              "Unable to load staff after authentication notice:",
-              error
-            );
-            const cached = getCachedStaff();
-            if (cached) setStaff(cached);
-          }
-        } else if (_event === "SIGNED_OUT") {
-          setStaff(null);
-          setCachedStaff(null);
-          setCachedUser(null);
+        try {
+          const currentStaff = await getCurrentStaff(currentUser);
+          setStaff(currentStaff as Staff | null);
+          setCachedStaff(currentStaff as Staff | null);
+        } catch (error) {
+          console.error(
+            "Unable to load staff after authentication notice:",
+            error
+          );
+          const cached = getCachedStaff();
+          if (cached) setStaff(cached);
         }
-
-        setLoading(false);
+      } else if (_event === "SIGNED_OUT") {
+        const activeCachedUser = getCachedUser();
+        if (!activeCachedUser) {
+          setUser(null);
+          setStaff(null);
+        }
+      } else {
+        // INITIAL_SESSION with no Supabase session: preserve verified staff session if present
+        const activeCachedUser = getCachedUser();
+        if (activeCachedUser) {
+          setUser(activeCachedUser);
+          const cached = getCachedStaff();
+          if (cached) setStaff(cached);
+        }
       }
-    );
+
+      setLoading(false);
+    });
 
     return () => {
+      window.removeEventListener(
+        "penedge:auth-updated",
+        handleCustomAuthUpdate
+      );
       subscription.unsubscribe();
     };
   }, []);
@@ -221,12 +262,16 @@ export function AuthProvider({
 
   async function refreshStaff() {
     try {
+      const cachedUser = getCachedUser();
       if (navigator.onLine) {
-        const { data: { user: currentUser } } = await supabase.auth.getUser();
-        setUser(currentUser);
-        setCachedUser(currentUser);
-        if (currentUser) {
-          const currentStaff = await getCurrentStaff();
+        const {
+          data: { user: remoteUser },
+        } = await supabase.auth.getUser();
+        const effectiveUser = remoteUser ?? cachedUser;
+        if (effectiveUser) {
+          setUser(effectiveUser);
+          setCachedUser(effectiveUser);
+          const currentStaff = await getCurrentStaff(effectiveUser);
           setStaff(currentStaff as Staff | null);
           setCachedStaff(currentStaff as Staff | null);
         } else {
@@ -265,9 +310,7 @@ export function useAuth() {
   const context = useContext(AuthContext);
 
   if (!context) {
-    throw new Error(
-      "useAuth must be used inside AuthProvider"
-    );
+    throw new Error("useAuth must be used inside AuthProvider");
   }
 
   return context;

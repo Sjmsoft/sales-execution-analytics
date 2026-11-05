@@ -48,7 +48,7 @@ import { supabase } from "../lib/supabase";
 import {
   sendPasswordResetEmail,
   getPasswordResetRecord,
-  clearPasswordResetRequirement,
+  changeUserPassword,
 } from "../services/userManagementService";
 import { UserManagementSection } from "./settings/UserManagementSection";
 import { DrinksAndProductsSection } from "./settings/DrinksAndProductsSection";
@@ -476,44 +476,43 @@ export default function Settings() {
 
   async function savePassword() {
     setPwError("");
-    if (!newPw || newPw.length < 8) {
-      setPwError("New password must be at least 8 characters.");
+    if (!newPw || newPw.trim().length < 6) {
+      setPwError("New password must be at least 6 characters.");
       return;
     }
     if (newPw !== confirmPw) {
       setPwError("New password and confirmation do not match.");
       return;
     }
+    const targetEmail = user?.email || staff?.email;
+    if (!targetEmail) {
+      setPwError("Could not determine your staff email address.");
+      return;
+    }
+
     setSecuritySave("saving");
     try {
-      // Optional current password verification when user provides their current password
-      if (currentPw.trim() && user?.email) {
-        const { error: verifyErr } = await supabase.auth.signInWithPassword({
-          email: user.email,
-          password: currentPw,
-        });
-        if (verifyErr) {
-          setPwError("Current password is incorrect. Leave it blank if using a recovery session, or request a reset link below.");
-          setSecuritySave("error");
-          return;
-        }
+      const res = await changeUserPassword({
+        email: targetEmail,
+        newPassword: newPw,
+        currentPassword: currentPw.trim() ? currentPw : undefined,
+        userId: staff?.id,
+      });
+
+      if (!res.success) {
+        setPwError(res.message);
+        setSecuritySave("error");
+        return;
       }
 
-      const { error } = await supabase.auth.updateUser({
-        password: newPw,
-      });
-      if (error) {
-        setPwError(error.message);
-        throw error;
-      }
-      await clearPasswordResetRequirement(user?.email || staff?.email);
-      setPwResetRecord(getPasswordResetRecord(user?.email));
+      setPwResetRecord(getPasswordResetRecord(targetEmail));
       setCurrentPw("");
       setNewPw("");
       setConfirmPw("");
       setSecuritySave("saved");
       setTimeout(() => setSecuritySave("idle"), 3500);
-    } catch {
+    } catch (err: any) {
+      setPwError(err?.message || "Failed to update password.");
       setSecuritySave("error");
     }
   }

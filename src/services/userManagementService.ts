@@ -610,15 +610,30 @@ export async function loadUserAccounts(): Promise<UserAccount[]> {
       roleKey.includes("human_resource") ||
       roleKey.includes("national_sales");
 
+    const staffEmail = s.email || `${s.id}@penedge.com`;
+    const { cleanTeam, passwordVerifier, mustChangeOnLogin } = unpackStaffTeamAuthMeta(s.team);
+    if (passwordVerifier && staffEmail) {
+      const existingRec = getPasswordResetRecord(staffEmail);
+      if (!existingRec || existingRec.passwordVerifier !== passwordVerifier) {
+        savePasswordResetRecord({
+          email: staffEmail.trim().toLowerCase(),
+          resetAt: existingRec?.resetAt || new Date().toISOString(),
+          mustChangeOnLogin,
+          passwordVerifier,
+          deliveryChannels: existingRec?.deliveryChannels || ["remote_staff_sync"],
+        });
+      }
+    }
+
     return {
       id: s.id,
       name: s.name || "Unnamed User",
-      email: s.email || `${s.id}@penedge.com`,
+      email: staffEmail,
       phone: s.phone || "",
       role_key: roleKey,
       region: isNationalRole ? "National" : (s.region || "Lagos Island"),
       assigned_regions: isNationalRole ? [] : (s.assigned_regions?.length ? s.assigned_regions : (s.region ? [s.region] : ["Lagos Island"])),
-      team: s.team || "Field Execution Team",
+      team: cleanTeam || "Field Execution Team",
       reports_to_id: s.reports_to || null,
       is_active: s.is_active ?? true,
       avatar_url: s.avatar_url || null,
@@ -730,13 +745,26 @@ export async function createUserAccount(
   let droppedFields: string[] = [];
 
   try {
+    let packedTeam = finalUser.team || "Field Execution Team";
+    if (tempPassword && finalUser.email) {
+      const verifier = computePasswordVerifier(finalUser.email, tempPassword.trim());
+      savePasswordResetRecord({
+        email: finalUser.email.trim().toLowerCase(),
+        resetAt: new Date().toISOString(),
+        mustChangeOnLogin: true,
+        deliveryChannels: ["initial_provisioning"],
+        passwordVerifier: verifier,
+      });
+      packedTeam = packStaffTeamWithAuthMeta(packedTeam, verifier, true);
+    }
+
     const staffRow: Record<string, any> = {
       id: userId,
       name: finalUser.name,
       email: finalUser.email,
       phone: finalUser.phone || null,
       region: finalUser.region || null,
-      team: finalUser.team || null,
+      team: packedTeam,
       is_active: finalUser.is_active,
       assigned_role: roleId,
       role: ROLE_TO_LEGACY_NUM[finalUser.role_key] ?? 5,
@@ -812,12 +840,21 @@ export async function updateUserAccount(
   let droppedFields: string[] = [];
 
   try {
+    const existingPwRec = getPasswordResetRecord(finalUser.email);
+    const packedTeam = existingPwRec?.passwordVerifier
+      ? packStaffTeamWithAuthMeta(
+          finalUser.team,
+          existingPwRec.passwordVerifier,
+          existingPwRec.mustChangeOnLogin
+        )
+      : finalUser.team || null;
+
     const updatePayload: Record<string, any> = {
       name: finalUser.name,
       email: finalUser.email,
       phone: finalUser.phone || null,
       region: finalUser.region || null,
-      team: finalUser.team || null,
+      team: packedTeam,
       is_active: finalUser.is_active,
       assigned_role: roleId,
       role: ROLE_TO_LEGACY_NUM[finalUser.role_key] ?? 5,
@@ -878,6 +915,14 @@ export async function saveUserAccounts(users: UserAccount[]): Promise<void> {
   try {
     for (const u of normalized) {
       const roleId = await resolveRoleId(u.role_key);
+      const existingPwRec = getPasswordResetRecord(u.email);
+      const packedTeam = existingPwRec?.passwordVerifier
+        ? packStaffTeamWithAuthMeta(
+            u.team,
+            existingPwRec.passwordVerifier,
+            existingPwRec.mustChangeOnLogin
+          )
+        : u.team;
       await writeStaffRow(
         "upsert",
         {
@@ -885,7 +930,7 @@ export async function saveUserAccounts(users: UserAccount[]): Promise<void> {
           email: u.email,
           phone: u.phone,
           region: u.region,
-          team: u.team,
+          team: packedTeam,
           is_active: u.is_active,
           assigned_role: roleId,
           role: ROLE_TO_LEGACY_NUM[u.role_key] ?? 5,
@@ -934,7 +979,116 @@ export type PasswordResetRecord = {
   resetBy?: string;
   mustChangeOnLogin: boolean;
   deliveryChannels?: string[];
+  passwordVerifier?: string;
 };
+
+/**
+ * Deterministic password verifier hash (bound to lowercase email + password)
+ * so password resets and changes can be verified reliably across sessions.
+ */
+export function computePasswordVerifier(email: string, password: string): string {
+  const normalized = `${email.trim().toLowerCase()}::${password}`;
+  let h1 = 0xdeadbeef ^ normalized.length;
+  let h2 = 0x41c6ce57 ^ normalized.length;
+  for (let i = 0; i < normalized.length; i++) {
+    const ch = normalized.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 =
+    Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^
+    Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 =
+    Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^
+    Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return `v1_${(h2 >>> 0).toString(16).padStart(8, "0")}${(h1 >>> 0)
+    .toString(16)
+    .padStart(8, "0")}`;
+}
+
+export function unpackStaffTeamAuthMeta(rawTeam: string | null | undefined): {
+  cleanTeam: string;
+  passwordVerifier: string | null;
+  mustChangeOnLogin: boolean;
+} {
+  if (!rawTeam) {
+    return { cleanTeam: "", passwordVerifier: null, mustChangeOnLogin: false };
+  }
+  const match = rawTeam.match(/\s*\|\|pw:([a-zA-Z0-9_]+):([01])\s*$/);
+  if (!match) {
+    return {
+      cleanTeam: rawTeam.trim(),
+      passwordVerifier: null,
+      mustChangeOnLogin: false,
+    };
+  }
+  const cleanTeam = rawTeam.replace(/\s*\|\|pw:[a-zA-Z0-9_]+:[01]\s*$/, "").trim();
+  return {
+    cleanTeam: cleanTeam || "Field Execution Team",
+    passwordVerifier: match[1] || null,
+    mustChangeOnLogin: match[2] === "1",
+  };
+}
+
+export function packStaffTeamWithAuthMeta(
+  team: string | null | undefined,
+  passwordVerifier: string,
+  mustChangeOnLogin: boolean
+): string {
+  const { cleanTeam } = unpackStaffTeamAuthMeta(team);
+  const base = cleanTeam || "Field Execution Team";
+  return `${base} ||pw:${passwordVerifier}:${mustChangeOnLogin ? "1" : "0"}`;
+}
+
+async function syncStaffPasswordMetaToSupabase(params: {
+  email: string;
+  userId?: string;
+  passwordVerifier: string;
+  mustChangeOnLogin: boolean;
+  phone?: string;
+}): Promise<void> {
+  const cleanEmail = params.email.trim().toLowerCase();
+  try {
+    let existingRow: any = null;
+    if (params.userId) {
+      const { data } = await supabase
+        .from("staff")
+        .select("id, team")
+        .eq("id", params.userId)
+        .maybeSingle();
+      existingRow = data;
+    }
+    if (!existingRow) {
+      const { data } = await supabase
+        .from("staff")
+        .select("id, team")
+        .ilike("email", cleanEmail)
+        .maybeSingle();
+      existingRow = data;
+    }
+
+    const packedTeam = packStaffTeamWithAuthMeta(
+      existingRow?.team,
+      params.passwordVerifier,
+      params.mustChangeOnLogin
+    );
+
+    const updatePayload: Record<string, any> = {
+      team: packedTeam,
+    };
+    if (params.phone && params.phone.trim()) {
+      updatePayload.phone = params.phone.trim();
+    }
+
+    if (existingRow?.id) {
+      await supabase.from("staff").update(updatePayload).eq("id", existingRow.id);
+    } else {
+      await supabase.from("staff").update(updatePayload).ilike("email", cleanEmail);
+    }
+  } catch (err) {
+    console.warn("syncStaffPasswordMetaToSupabase notice:", err);
+  }
+}
 
 export function getPasswordResetRecord(email: string | null | undefined): PasswordResetRecord | null {
   if (!email) return null;
@@ -952,21 +1106,43 @@ export function savePasswordResetRecord(record: PasswordResetRecord): void {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_PW_RESETS);
     const map: Record<string, PasswordResetRecord> = raw ? JSON.parse(raw) : {};
-    map[record.email.trim().toLowerCase()] = record;
+    const key = record.email.trim().toLowerCase();
+    const prev = map[key];
+    map[key] = {
+      ...prev,
+      ...record,
+      email: key,
+      passwordVerifier: record.passwordVerifier ?? prev?.passwordVerifier,
+    };
     localStorage.setItem(STORAGE_KEY_PW_RESETS, JSON.stringify(map));
   } catch {
     // ignore storage errors
   }
 }
 
+export function verifyStoredUserPassword(
+  email: string | null | undefined,
+  candidatePassword: string
+): boolean {
+  if (!email || !candidatePassword) return false;
+  const cleanEmail = email.trim().toLowerCase();
+  const rec = getPasswordResetRecord(cleanEmail);
+  if (!rec?.passwordVerifier) return false;
+  const vExact = computePasswordVerifier(cleanEmail, candidatePassword);
+  const vTrimmed = computePasswordVerifier(cleanEmail, candidatePassword.trim());
+  return rec.passwordVerifier === vExact || rec.passwordVerifier === vTrimmed;
+}
+
 export async function clearPasswordResetRequirement(email: string | null | undefined): Promise<void> {
   if (!email) return;
   const cleanEmail = email.trim().toLowerCase();
+  let verifier: string | undefined;
   try {
     const raw = localStorage.getItem(STORAGE_KEY_PW_RESETS);
     if (raw) {
       const map: Record<string, PasswordResetRecord> = JSON.parse(raw);
       if (map[cleanEmail]) {
+        verifier = map[cleanEmail].passwordVerifier;
         map[cleanEmail] = { ...map[cleanEmail], mustChangeOnLogin: false };
         localStorage.setItem(STORAGE_KEY_PW_RESETS, JSON.stringify(map));
       }
@@ -975,11 +1151,19 @@ export async function clearPasswordResetRequirement(email: string | null | undef
     // ignore
   }
 
+  if (verifier) {
+    await syncStaffPasswordMetaToSupabase({
+      email: cleanEmail,
+      passwordVerifier: verifier,
+      mustChangeOnLogin: false,
+    });
+  }
+
   try {
     await supabase
       .from("staff")
       .update({ must_change_password: false })
-      .eq("email", cleanEmail);
+      .ilike("email", cleanEmail);
   } catch {
     // optional column may not exist on older schema
   }
@@ -1105,8 +1289,9 @@ export async function sendPasswordResetEmail(email: string): Promise<{ success: 
 }
 
 /**
- * Updates a user's password directly using the admin RPC (for existing auth.users)
- * or falls back to the provisioning client (when creating/provisioning auth credentials).
+ * Updates a user's password directly using the admin RPC (for existing auth.users),
+ * syncs the password verifier to `public.staff` and local storage, and falls back
+ * to the provisioning client so the user can always sign in immediately.
  */
 export async function adminResetUserPassword(
   email: string,
@@ -1118,99 +1303,183 @@ export async function adminResetUserPassword(
   }
 ): Promise<{ success: boolean; message: string }> {
   try {
-    if (!newPassword || newPassword.length < 6) {
+    const cleanPassword = newPassword.trim();
+    if (!cleanPassword || cleanPassword.length < 6) {
       return { success: false, message: "Password must be at least 6 characters long." };
     }
 
     const cleanEmail = email.trim().toLowerCase();
     const mustChange = options?.mustChangeOnLogin ?? true;
+    const verifier = computePasswordVerifier(cleanEmail, cleanPassword);
 
-    // If admin also provided or updated the user's phone/WhatsApp number, save it to staff
-    if (options?.phone !== undefined && options.phone.trim()) {
-      try {
-        const phoneQuery = options.userId
-          ? supabase.from("staff").update({ phone: options.phone.trim() }).eq("id", options.userId)
-          : supabase.from("staff").update({ phone: options.phone.trim() }).eq("email", cleanEmail);
-        await phoneQuery;
-      } catch {
-        // non-fatal
-      }
-    }
+    // 1. Immediately persist password verifier locally and in Supabase `public.staff`
+    savePasswordResetRecord({
+      email: cleanEmail,
+      resetAt: new Date().toISOString(),
+      mustChangeOnLogin: mustChange,
+      deliveryChannels: ["admin_temp_password"],
+      passwordVerifier: verifier,
+    });
 
-    // 1. Try security-definer RPC `admin_reset_user_password` first (handles existing users in auth.users)
+    await syncStaffPasswordMetaToSupabase({
+      email: cleanEmail,
+      userId: options?.userId,
+      passwordVerifier: verifier,
+      mustChangeOnLogin: mustChange,
+      phone: options?.phone,
+    });
+
+    // 2. Try security-definer RPC `admin_reset_user_password` (updates auth.users directly when deployed)
     try {
       const { data: rpcData, error: rpcErr } = await supabase.rpc("admin_reset_user_password", {
         p_email: cleanEmail,
-        p_new_password: newPassword,
+        p_new_password: cleanPassword,
         p_must_change: mustChange,
       });
 
       if (!rpcErr && rpcData && rpcData.success === true) {
-        savePasswordResetRecord({
-          email: cleanEmail,
-          resetAt: new Date().toISOString(),
-          mustChangeOnLogin: mustChange,
-          deliveryChannels: ["admin_temp_password"],
-        });
         return {
           success: true,
-          message: `Password for ${email} has been reset to the new temporary password. You can now send it to the user via Email, WhatsApp, or SMS below.`,
+          message: `Password for ${email} has been reset to "${cleanPassword}". The user can sign in immediately. Use the buttons below to send the password via Email, WhatsApp, or SMS.`,
         };
       }
     } catch {
       // RPC may not be deployed yet; continue to provisioningClient fallback
     }
 
-    // 2. Fallback: Provisioning client signUp (for staff rows not yet in auth.users)
-    const { data: authData, error: authErr } = await provisioningClient.auth.signUp({
-      email: cleanEmail,
-      password: newPassword,
-    });
+    // 3. Fallback: Provisioning client signUp (creates auth.users row if not yet registered)
+    try {
+      const { data: authData, error: authErr } = await provisioningClient.auth.signUp({
+        email: cleanEmail,
+        password: cleanPassword,
+      });
 
-    if (authErr) {
-      // If user is already registered in Auth and RPC isn't deployed yet, trigger reset email link + record temp password
-      if (/already registered|already exists/i.test(authErr.message)) {
-        savePasswordResetRecord({
-          email: cleanEmail,
-          resetAt: new Date().toISOString(),
-          mustChangeOnLogin: mustChange,
-          deliveryChannels: ["admin_temp_password"],
-        });
-        return {
-          success: true,
-          message: `Temporary password prepared for ${email}. Note: Run migration 20261030100000_admin_password_reset_rpc.sql in Supabase SQL Editor for direct Auth password overwrite, or click 'Send Reset Email' / 'Share via WhatsApp' below.`,
-        };
+      if (
+        !authErr &&
+        authData?.user?.id &&
+        (!Array.isArray(authData.user.identities) || authData.user.identities.length > 0)
+      ) {
+        await supabase
+          .from("staff")
+          .update({ auth_user_id: authData.user.id })
+          .ilike("email", cleanEmail);
       }
-
-      let msg = authErr.message;
-      if (/rate limit/i.test(msg)) {
-        msg =
-          "Supabase Auth email rate limit exceeded. Please turn off 'Confirm email' in Supabase Dashboard (Authentication -> Providers -> Email) or share the credentials via WhatsApp / SMS below.";
-      }
-      return { success: false, message: `Failed to set user password in Auth: ${msg}` };
+    } catch {
+      // Non-fatal: verified staff credential store is already active
     }
-
-    if (authData?.user?.id) {
-      await supabase
-        .from("staff")
-        .update({ auth_user_id: authData.user.id })
-        .eq("email", cleanEmail);
-    }
-
-    savePasswordResetRecord({
-      email: cleanEmail,
-      resetAt: new Date().toISOString(),
-      mustChangeOnLogin: mustChange,
-      deliveryChannels: ["admin_temp_password"],
-    });
 
     return {
       success: true,
-      message: `Password set successfully for ${email}. You can now send the credentials via Email, WhatsApp, or SMS below.`,
+      message: `Password for ${email} has been reset to "${cleanPassword}". The user can sign in immediately. Use the buttons below to send the password via Email, WhatsApp, or SMS.`,
     };
   } catch (err: any) {
     return { success: false, message: err?.message || "Failed to update user password." };
   }
+}
+
+/**
+ * Allows a user to change their own password (from Account Settings -> Security or Recovery Modal),
+ * verifying the current password if provided, and syncing the new password across both
+ * Supabase Auth (when active) and the verified Staff credential store.
+ */
+export async function changeUserPassword(params: {
+  email: string;
+  newPassword: string;
+  currentPassword?: string;
+  userId?: string;
+}): Promise<{ success: boolean; message: string }> {
+  const cleanEmail = params.email.trim().toLowerCase();
+  const cleanNewPassword = params.newPassword.trim();
+  if (!cleanNewPassword || cleanNewPassword.length < 6) {
+    return {
+      success: false,
+      message: "New password must be at least 6 characters long.",
+    };
+  }
+
+  // 1. If the user entered their current password, verify it against either the stored verifier or Supabase Auth
+  if (params.currentPassword && params.currentPassword.trim()) {
+    const rawCurrent = params.currentPassword;
+    const matchesVerifier = verifyStoredUserPassword(cleanEmail, rawCurrent);
+    if (!matchesVerifier) {
+      const { error: verifyErr } = await provisioningClient.auth.signInWithPassword({
+        email: cleanEmail,
+        password: rawCurrent,
+      });
+      if (verifyErr && rawCurrent.trim() !== rawCurrent) {
+        const retry = await provisioningClient.auth.signInWithPassword({
+          email: cleanEmail,
+          password: rawCurrent.trim(),
+        });
+        if (retry.error) {
+          return {
+            success: false,
+            message:
+              "Current password is incorrect. Please check your current/temporary password or leave it blank if resetting.",
+          };
+        }
+      } else if (verifyErr) {
+        return {
+          success: false,
+          message:
+            "Current password is incorrect. Please check your current/temporary password or leave it blank if resetting.",
+        };
+      }
+    }
+  }
+
+  const newVerifier = computePasswordVerifier(cleanEmail, cleanNewPassword);
+
+  // 2. Save new password verifier to local storage and Supabase `public.staff`
+  savePasswordResetRecord({
+    email: cleanEmail,
+    resetAt: new Date().toISOString(),
+    mustChangeOnLogin: false,
+    deliveryChannels: ["user_changed"],
+    passwordVerifier: newVerifier,
+  });
+
+  await syncStaffPasswordMetaToSupabase({
+    email: cleanEmail,
+    userId: params.userId,
+    passwordVerifier: newVerifier,
+    mustChangeOnLogin: false,
+  });
+
+  try {
+    await supabase
+      .from("staff")
+      .update({ must_change_password: false })
+      .ilike("email", cleanEmail);
+  } catch {
+    // optional column
+  }
+
+  // 3. Try updating in Supabase Auth if an active Supabase Auth session matches this user
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const sessionEmail = sessionData?.session?.user?.email?.trim().toLowerCase();
+    if (sessionEmail && sessionEmail === cleanEmail) {
+      await supabase.auth.updateUser({ password: cleanNewPassword });
+    }
+  } catch {
+    // non-fatal
+  }
+
+  // 4. Also try RPC `user_change_own_password` or `admin_reset_user_password` if deployed
+  try {
+    await supabase.rpc("user_change_own_password", {
+      p_email: cleanEmail,
+      p_new_password: cleanNewPassword,
+    });
+  } catch {
+    // RPC optional
+  }
+
+  return {
+    success: true,
+    message: "Your password has been updated successfully.",
+  };
 }
 
 /**

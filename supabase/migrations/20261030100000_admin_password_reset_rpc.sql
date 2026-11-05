@@ -1,10 +1,12 @@
 -- Migration: Admin Password Reset & User Password Change RPCs
 -- Description:
 -- 1. Enables pgcrypto extension if not already enabled.
--- 2. Creates security-definer RPC `public.admin_reset_user_password(p_email, p_new_password)`
+-- 2. Creates security-definer RPC `public.admin_reset_user_password(p_email, p_new_password, p_must_change)`
 --    allowing administrators (verified via public.is_admin(auth.uid())) to directly reset
---    any existing user's password in `auth.users`.
--- 3. Adds optional `must_change_password` and `password_reset_at` tracking columns on `public.staff`.
+--    any existing user's password in `auth.users` and confirm their email.
+-- 3. Creates security-definer RPC `public.user_change_own_password(p_email, p_new_password)`
+--    allowing users to update their password in `auth.users`.
+-- 4. Adds optional `must_change_password` and `password_reset_at` tracking columns on `public.staff`.
 
 create extension if not exists pgcrypto with schema extensions;
 
@@ -35,7 +37,7 @@ begin
     return jsonb_build_object('success', false, 'message', 'Only administrators can reset user passwords.');
   end if;
 
-  if p_new_password is null or length(p_new_password) < 6 then
+  if p_new_password is null or length(trim(p_new_password)) < 6 then
     return jsonb_build_object('success', false, 'message', 'Password must be at least 6 characters long.');
   end if;
 
@@ -53,7 +55,7 @@ begin
   end if;
 
   update auth.users
-  set encrypted_password = extensions.crypt(p_new_password, extensions.gen_salt('bf')),
+  set encrypted_password = extensions.crypt(trim(p_new_password), extensions.gen_salt('bf')),
       email_confirmed_at = coalesce(email_confirmed_at, now()),
       updated_at = now()
   where id = v_target_uid;
@@ -74,3 +76,46 @@ $$;
 
 grant execute on function public.admin_reset_user_password(text, text, boolean) to authenticated;
 
+create or replace function public.user_change_own_password(
+  p_email text,
+  p_new_password text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_clean_email text := lower(trim(p_email));
+  v_target_uid uuid;
+begin
+  if p_new_password is null or length(trim(p_new_password)) < 6 then
+    return jsonb_build_object('success', false, 'message', 'Password must be at least 6 characters long.');
+  end if;
+
+  select id into v_target_uid
+  from auth.users
+  where lower(email) = v_clean_email
+  limit 1;
+
+  if v_target_uid is not null then
+    update auth.users
+    set encrypted_password = extensions.crypt(trim(p_new_password), extensions.gen_salt('bf')),
+        email_confirmed_at = coalesce(email_confirmed_at, now()),
+        updated_at = now()
+    where id = v_target_uid;
+  end if;
+
+  update public.staff
+  set must_change_password = false,
+      password_reset_at = now()
+  where lower(email) = v_clean_email;
+
+  return jsonb_build_object(
+    'success', true,
+    'message', 'Password updated successfully.'
+  );
+end;
+$$;
+
+grant execute on function public.user_change_own_password(text, text) to authenticated, anon;

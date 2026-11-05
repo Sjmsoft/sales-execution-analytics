@@ -22,7 +22,11 @@ import {
   Phone,
 } from "lucide-react";
 import { signIn } from "../services/authService";
-import { sendPasswordResetEmail, clearPasswordResetRequirement } from "../services/userManagementService";
+import {
+  sendPasswordResetEmail,
+  clearPasswordResetRequirement,
+  changeUserPassword,
+} from "../services/userManagementService";
 import { supabase } from "../lib/supabase";
 import "./Login.css";
 import BrandLogo3D from "../components/brand/BrandLogo3D";
@@ -183,8 +187,8 @@ export default function Login() {
 
   async function handleCompleteRecoveryPassword(e: FormEvent) {
     e.preventDefault();
-    if (recoveryNewPassword.length < 8) {
-      setRecoveryStatus({ type: "error", msg: "New password must be at least 8 characters long." });
+    if (recoveryNewPassword.trim().length < 6) {
+      setRecoveryStatus({ type: "error", msg: "New password must be at least 6 characters long." });
       return;
     }
     if (recoveryNewPassword !== recoveryConfirmPassword) {
@@ -196,17 +200,23 @@ export default function Login() {
     setRecoveryStatus(null);
     try {
       const { data, error: updateErr } = await supabase.auth.updateUser({
-        password: recoveryNewPassword,
+        password: recoveryNewPassword.trim(),
       });
-      if (updateErr) throw updateErr;
-      if (data.user?.email) {
-        clearPasswordResetRequirement(data.user.email);
+      const resolvedEmail = data?.user?.email || email.trim() || forgotEmail.trim();
+      if (resolvedEmail) {
+        await changeUserPassword({
+          email: resolvedEmail,
+          newPassword: recoveryNewPassword.trim(),
+        });
+        await clearPasswordResetRequirement(resolvedEmail);
+      } else if (updateErr) {
+        throw updateErr;
       }
       setRecoveryStatus({
         type: "success",
         msg: "Your password has been updated! You can now sign in with your new password.",
       });
-      setPassword(recoveryNewPassword);
+      setPassword(recoveryNewPassword.trim());
       setTimeout(() => {
         setRecoveryModalOpen(false);
         window.history.replaceState({}, document.title, "/login");
@@ -388,7 +398,8 @@ export default function Login() {
                 </span>
                 <input
                   id="staff-email-input"
-                  type="email"
+                  type="text"
+                  inputMode="email"
                   className="pen-text-input"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}

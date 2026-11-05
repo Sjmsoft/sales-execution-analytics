@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { getCurrentStaff } from "./staffService";
 
 export type Sale = {
   id: string;
@@ -374,28 +375,20 @@ export async function createMultipleSales(input: CreateMultipleSalesInput) {
     throw new Error("Please add at least one sale item.");
   }
 
-  // Get authenticated user
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  // Get authenticated staff profile (supports both Supabase Auth and verified password-reset sessions)
   let authenticatedStaffId: string | null = null;
   let staffName: string = "Sales Rep";
   let staffRegion: string = "National";
 
-  if (user) {
-    const { data: currentStaff } = await supabase
-      .from("staff")
-      .select("id, name, region")
-      .eq("auth_user_id", user.id)
-      .eq("is_active", true)
-      .maybeSingle();
-
+  try {
+    const currentStaff = await getCurrentStaff();
     if (currentStaff) {
       authenticatedStaffId = currentStaff.id;
-      staffName = currentStaff.name;
+      staffName = currentStaff.name || "Sales Rep";
       staffRegion = currentStaff.region || "National";
     }
+  } catch (e) {
+    console.warn("getCurrentStaff in createMultipleSales notice:", e);
   }
 
   // Look up outlet name
