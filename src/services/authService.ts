@@ -89,21 +89,27 @@ export async function signIn(emailOrId: string, password: string) {
   const resolvedEmail = (staffRow?.email || rawIdentifier).trim().toLowerCase();
 
   // Sync any password verifier stored in `public.staff.team` metadata
+  let remoteVerifier: string | null = null;
+  let remoteMustChange = false;
+  let remoteTempHint: string | null = null;
   if (staffRow?.team) {
-    const { passwordVerifier, mustChangeOnLogin } = unpackStaffTeamAuthMeta(
-      staffRow.team
-    );
-    if (passwordVerifier) {
+    const unpacked = unpackStaffTeamAuthMeta(staffRow.team);
+    remoteVerifier = unpacked.passwordVerifier;
+    remoteMustChange = unpacked.mustChangeOnLogin;
+    remoteTempHint = unpacked.tempPasswordHint;
+    if (remoteVerifier) {
       const existingLocal = getPasswordResetRecord(resolvedEmail);
       if (
         !existingLocal ||
-        existingLocal.passwordVerifier !== passwordVerifier
+        existingLocal.passwordVerifier !== remoteVerifier ||
+        (remoteTempHint && existingLocal.tempPasswordHint !== remoteTempHint)
       ) {
         savePasswordResetRecord({
           email: resolvedEmail,
           resetAt: existingLocal?.resetAt || new Date().toISOString(),
-          mustChangeOnLogin,
-          passwordVerifier,
+          mustChangeOnLogin: remoteMustChange,
+          passwordVerifier: remoteVerifier,
+          tempPasswordHint: remoteTempHint || existingLocal?.tempPasswordHint,
           deliveryChannels: existingLocal?.deliveryChannels || [
             "remote_staff_sync",
           ],
@@ -113,68 +119,67 @@ export async function signIn(emailOrId: string, password: string) {
   }
 
   const resetRecord = getPasswordResetRecord(resolvedEmail);
+  const activeVerifier = remoteVerifier || resetRecord?.passwordVerifier || null;
+  const activeMustChange =
+    remoteVerifier !== null
+      ? remoteMustChange
+      : (resetRecord?.mustChangeOnLogin ?? false);
+
   const exactVerifier = computePasswordVerifier(resolvedEmail, rawPassword);
   const trimmedVerifier = computePasswordVerifier(
     resolvedEmail,
     trimmedPassword
   );
 
-  const hasStoredVerifier = Boolean(resetRecord?.passwordVerifier);
+  const hasStoredVerifier = Boolean(activeVerifier);
   const matchesStoredVerifier =
     hasStoredVerifier &&
-    (resetRecord?.passwordVerifier === exactVerifier ||
-      resetRecord?.passwordVerifier === trimmedVerifier);
+    (activeVerifier === exactVerifier ||
+      activeVerifier === trimmedVerifier ||
+      (resetRecord?.passwordVerifier &&
+        (resetRecord.passwordVerifier === exactVerifier ||
+          resetRecord.passwordVerifier === trimmedVerifier)));
 
   // Support legacy reset records created right before `passwordVerifier` was added
   const isLegacyUnboundReset =
     Boolean(resetRecord) &&
-    !resetRecord?.passwordVerifier &&
+    !activeVerifier &&
     Boolean(resetRecord?.resetAt) &&
     Boolean(staffRow) &&
     trimmedPassword.length >= 6;
 
   // 2. Try standard Supabase Auth `signInWithPassword`
-  // Note: If the user's password was explicitly reset/changed (hasStoredVerifier is true)
-  // and the entered password does NOT match the new verifier (unless reset via email link),
-  // reject the old superseded password so old credentials cannot be reused after a reset.
-  const isEmailLinkReset = Boolean(
-    resetRecord?.deliveryChannels?.includes("email_link")
-  );
-  const shouldRejectSupersededPassword =
-    hasStoredVerifier && !matchesStoredVerifier && !isEmailLinkReset;
+  let authRes = await supabase.auth.signInWithPassword({
+    email: resolvedEmail,
+    password: rawPassword,
+  });
 
-  if (!shouldRejectSupersededPassword) {
-    let authRes = await supabase.auth.signInWithPassword({
+  if (authRes.error && trimmedPassword !== rawPassword) {
+    authRes = await supabase.auth.signInWithPassword({
       email: resolvedEmail,
-      password: rawPassword,
+      password: trimmedPassword,
     });
-
-    if (authRes.error && trimmedPassword !== rawPassword) {
-      authRes = await supabase.auth.signInWithPassword({
-        email: resolvedEmail,
-        password: trimmedPassword,
-      });
-    }
-
-    if (!authRes.error && authRes.data?.user) {
-      // Lock in the working password verifier so future checks stay in sync
-      savePasswordResetRecord({
-        email: resolvedEmail,
-        resetAt: resetRecord?.resetAt || new Date().toISOString(),
-        mustChangeOnLogin: resetRecord?.mustChangeOnLogin ?? false,
-        passwordVerifier: trimmedVerifier,
-        deliveryChannels: resetRecord?.deliveryChannels || ["supabase_auth"],
-      });
-
-      const staffProfile = await getCurrentStaff(authRes.data.user);
-      persistAuthSessionCache(authRes.data.user, staffProfile);
-      return authRes.data;
-    }
   }
 
-  // 3. Fallback: If Supabase Auth rejected the password (e.g., because `auth.users` still
-  // holds the previous password when the admin reset RPC migration hasn't been executed yet,
-  // or email confirmation is pending), verify against the active Reset / Changed password record!
+  if (!authRes.error && authRes.data?.user) {
+    savePasswordResetRecord({
+      email: resolvedEmail,
+      resetAt: resetRecord?.resetAt || new Date().toISOString(),
+      mustChangeOnLogin: activeMustChange,
+      passwordVerifier: trimmedVerifier,
+      tempPasswordHint: activeMustChange
+        ? remoteTempHint || resetRecord?.tempPasswordHint || trimmedPassword
+        : undefined,
+      deliveryChannels: resetRecord?.deliveryChannels || ["supabase_auth"],
+    });
+
+    const staffProfile = await getCurrentStaff(authRes.data.user);
+    persistAuthSessionCache(authRes.data.user, staffProfile);
+    return authRes.data;
+  }
+
+  // 3. Fallback: If `auth.users` was out of sync with a reset/changed password in `public.staff`,
+  // sync the verified password directly into `auth.users` in Supabase via RPC and sign in!
   if (matchesStoredVerifier || isLegacyUnboundReset) {
     if (isLegacyUnboundReset) {
       savePasswordResetRecord({
@@ -182,6 +187,7 @@ export async function signIn(emailOrId: string, password: string) {
         resetAt: resetRecord?.resetAt || new Date().toISOString(),
         mustChangeOnLogin: resetRecord?.mustChangeOnLogin ?? true,
         passwordVerifier: trimmedVerifier,
+        tempPasswordHint: trimmedPassword,
         deliveryChannels: resetRecord?.deliveryChannels || [
           "admin_temp_password",
         ],
@@ -191,7 +197,8 @@ export async function signIn(emailOrId: string, password: string) {
           const packedTeam = packStaffTeamWithAuthMeta(
             staffRow.team,
             trimmedVerifier,
-            resetRecord?.mustChangeOnLogin ?? true
+            resetRecord?.mustChangeOnLogin ?? true,
+            trimmedPassword
           );
           await supabase
             .from("staff")
@@ -203,22 +210,26 @@ export async function signIn(emailOrId: string, password: string) {
       }
     }
 
-    // Attempt to sign up in Supabase Auth in case the user never had an auth.users record
+    // Sync the verified password to `auth.users` in Supabase DB and obtain a real JWT session
     try {
-      const signUpRes = await supabase.auth.signUp({
+      await supabase.rpc("admin_reset_user_password", {
+        p_email: resolvedEmail,
+        p_new_password: trimmedPassword,
+        p_must_change: activeMustChange,
+      });
+
+      const retryAuth = await supabase.auth.signInWithPassword({
         email: resolvedEmail,
         password: trimmedPassword,
       });
-      if (!signUpRes.error && signUpRes.data?.session?.user) {
-        const staffProfile = await getCurrentStaff(signUpRes.data.session.user);
-        persistAuthSessionCache(signUpRes.data.session.user, staffProfile);
-        return {
-          user: signUpRes.data.session.user,
-          session: signUpRes.data.session,
-        };
+
+      if (!retryAuth.error && retryAuth.data?.user) {
+        const staffProfile = await getCurrentStaff(retryAuth.data.user);
+        persistAuthSessionCache(retryAuth.data.user, staffProfile);
+        return retryAuth.data;
       }
     } catch {
-      // Continue to verified staff session below
+      // Continue to verified staff session below if RPC is unavailable
     }
 
     // Construct verified authenticated User session backed by the staff record

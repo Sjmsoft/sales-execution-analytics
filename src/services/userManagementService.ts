@@ -611,15 +611,21 @@ export async function loadUserAccounts(): Promise<UserAccount[]> {
       roleKey.includes("national_sales");
 
     const staffEmail = s.email || `${s.id}@penedge.com`;
-    const { cleanTeam, passwordVerifier, mustChangeOnLogin } = unpackStaffTeamAuthMeta(s.team);
+    const { cleanTeam, passwordVerifier, mustChangeOnLogin, tempPasswordHint } =
+      unpackStaffTeamAuthMeta(s.team);
     if (passwordVerifier && staffEmail) {
       const existingRec = getPasswordResetRecord(staffEmail);
-      if (!existingRec || existingRec.passwordVerifier !== passwordVerifier) {
+      if (
+        !existingRec ||
+        existingRec.passwordVerifier !== passwordVerifier ||
+        (tempPasswordHint && existingRec.tempPasswordHint !== tempPasswordHint)
+      ) {
         savePasswordResetRecord({
           email: staffEmail.trim().toLowerCase(),
           resetAt: existingRec?.resetAt || new Date().toISOString(),
           mustChangeOnLogin,
           passwordVerifier,
+          tempPasswordHint: tempPasswordHint || existingRec?.tempPasswordHint,
           deliveryChannels: existingRec?.deliveryChannels || ["remote_staff_sync"],
         });
       }
@@ -747,15 +753,31 @@ export async function createUserAccount(
   try {
     let packedTeam = finalUser.team || "Field Execution Team";
     if (tempPassword && finalUser.email) {
-      const verifier = computePasswordVerifier(finalUser.email, tempPassword.trim());
+      const cleanPw = tempPassword.trim();
+      const verifier = computePasswordVerifier(finalUser.email, cleanPw);
       savePasswordResetRecord({
         email: finalUser.email.trim().toLowerCase(),
         resetAt: new Date().toISOString(),
         mustChangeOnLogin: true,
         deliveryChannels: ["initial_provisioning"],
         passwordVerifier: verifier,
+        tempPasswordHint: cleanPw,
       });
-      packedTeam = packStaffTeamWithAuthMeta(packedTeam, verifier, true);
+      packedTeam = packStaffTeamWithAuthMeta(packedTeam, verifier, true, cleanPw);
+
+      // Also ensure auth.users row is created and confirmed in Supabase database via RPC
+      try {
+        const { data: rpcData } = await supabase.rpc("admin_reset_user_password", {
+          p_email: finalUser.email.trim().toLowerCase(),
+          p_new_password: cleanPw,
+          p_must_change: true,
+        });
+        if (rpcData?.user_id && !authUserId) {
+          authUserId = rpcData.user_id;
+        }
+      } catch {
+        // Ignore if RPC not yet applied
+      }
     }
 
     const staffRow: Record<string, any> = {
@@ -845,7 +867,8 @@ export async function updateUserAccount(
       ? packStaffTeamWithAuthMeta(
           finalUser.team,
           existingPwRec.passwordVerifier,
-          existingPwRec.mustChangeOnLogin
+          existingPwRec.mustChangeOnLogin,
+          existingPwRec.tempPasswordHint
         )
       : finalUser.team || null;
 
@@ -920,7 +943,8 @@ export async function saveUserAccounts(users: UserAccount[]): Promise<void> {
         ? packStaffTeamWithAuthMeta(
             u.team,
             existingPwRec.passwordVerifier,
-            existingPwRec.mustChangeOnLogin
+            existingPwRec.mustChangeOnLogin,
+            existingPwRec.tempPasswordHint
           )
         : u.team;
       await writeStaffRow(
@@ -980,7 +1004,30 @@ export type PasswordResetRecord = {
   mustChangeOnLogin: boolean;
   deliveryChannels?: string[];
   passwordVerifier?: string;
+  tempPasswordHint?: string;
 };
+
+function encodeTempPasswordHint(plain: string | undefined | null): string {
+  if (!plain) return "";
+  try {
+    return typeof btoa === "function"
+      ? btoa(encodeURIComponent(plain)).replace(/=+$/, "")
+      : "";
+  } catch {
+    return "";
+  }
+}
+
+function decodeTempPasswordHint(encoded: string | undefined | null): string | null {
+  if (!encoded) return null;
+  try {
+    if (typeof atob !== "function") return null;
+    const pad = encoded.length % 4 === 0 ? "" : "=".repeat(4 - (encoded.length % 4));
+    return decodeURIComponent(atob(encoded + pad));
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Deterministic password verifier hash (bound to lowercase email + password)
@@ -1010,34 +1057,50 @@ export function unpackStaffTeamAuthMeta(rawTeam: string | null | undefined): {
   cleanTeam: string;
   passwordVerifier: string | null;
   mustChangeOnLogin: boolean;
+  tempPasswordHint: string | null;
 } {
   if (!rawTeam) {
-    return { cleanTeam: "", passwordVerifier: null, mustChangeOnLogin: false };
+    return {
+      cleanTeam: "",
+      passwordVerifier: null,
+      mustChangeOnLogin: false,
+      tempPasswordHint: null,
+    };
   }
-  const match = rawTeam.match(/\s*\|\|pw:([a-zA-Z0-9_]+):([01])\s*$/);
+  const match = rawTeam.match(
+    /\s*\|\|pw:([a-zA-Z0-9_]+):([01])(?::([a-zA-Z0-9+/=_-]+))?\s*$/
+  );
   if (!match) {
     return {
       cleanTeam: rawTeam.trim(),
       passwordVerifier: null,
       mustChangeOnLogin: false,
+      tempPasswordHint: null,
     };
   }
-  const cleanTeam = rawTeam.replace(/\s*\|\|pw:[a-zA-Z0-9_]+:[01]\s*$/, "").trim();
+  const cleanTeam = rawTeam
+    .replace(/\s*\|\|pw:[a-zA-Z0-9_]+:[01](?::[a-zA-Z0-9+/=_-]+)?\s*$/, "")
+    .trim();
   return {
     cleanTeam: cleanTeam || "Field Execution Team",
     passwordVerifier: match[1] || null,
     mustChangeOnLogin: match[2] === "1",
+    tempPasswordHint: decodeTempPasswordHint(match[3]),
   };
 }
 
 export function packStaffTeamWithAuthMeta(
   team: string | null | undefined,
   passwordVerifier: string,
-  mustChangeOnLogin: boolean
+  mustChangeOnLogin: boolean,
+  tempPasswordHint?: string | null
 ): string {
   const { cleanTeam } = unpackStaffTeamAuthMeta(team);
   const base = cleanTeam || "Field Execution Team";
-  return `${base} ||pw:${passwordVerifier}:${mustChangeOnLogin ? "1" : "0"}`;
+  const encodedHint = encodeTempPasswordHint(tempPasswordHint);
+  return encodedHint
+    ? `${base} ||pw:${passwordVerifier}:${mustChangeOnLogin ? "1" : "0"}:${encodedHint}`
+    : `${base} ||pw:${passwordVerifier}:${mustChangeOnLogin ? "1" : "0"}`;
 }
 
 async function syncStaffPasswordMetaToSupabase(params: {
@@ -1046,6 +1109,7 @@ async function syncStaffPasswordMetaToSupabase(params: {
   passwordVerifier: string;
   mustChangeOnLogin: boolean;
   phone?: string;
+  tempPasswordHint?: string | null;
 }): Promise<void> {
   const cleanEmail = params.email.trim().toLowerCase();
   try {
@@ -1070,8 +1134,21 @@ async function syncStaffPasswordMetaToSupabase(params: {
     const packedTeam = packStaffTeamWithAuthMeta(
       existingRow?.team,
       params.passwordVerifier,
-      params.mustChangeOnLogin
+      params.mustChangeOnLogin,
+      params.tempPasswordHint
     );
+
+    // 1. Call security-definer RPC so update succeeds even if RLS restricts direct update
+    try {
+      await supabase.rpc("sync_staff_password_meta", {
+        p_email: cleanEmail,
+        p_team: packedTeam,
+        p_phone: params.phone?.trim() || null,
+        p_must_change: params.mustChangeOnLogin,
+      });
+    } catch {
+      // Fallback to direct update below
+    }
 
     const updatePayload: Record<string, any> = {
       team: packedTeam,
@@ -1088,6 +1165,60 @@ async function syncStaffPasswordMetaToSupabase(params: {
   } catch (err) {
     console.warn("syncStaffPasswordMetaToSupabase notice:", err);
   }
+}
+
+/**
+ * Fetches the active temporary password for a user from Supabase `public.staff` or local cache
+ * so ResetPasswordDialog always displays the exact active temporary password if one exists.
+ */
+export async function getActiveTempPasswordForUser(
+  email: string,
+  userId?: string
+): Promise<{ tempPassword: string | null; mustChangeOnLogin: boolean }> {
+  const cleanEmail = email.trim().toLowerCase();
+  try {
+    let row: any = null;
+    if (userId) {
+      const { data } = await supabase
+        .from("staff")
+        .select("team, must_change_password")
+        .eq("id", userId)
+        .maybeSingle();
+      row = data;
+    }
+    if (!row) {
+      const { data } = await supabase
+        .from("staff")
+        .select("team, must_change_password")
+        .ilike("email", cleanEmail)
+        .maybeSingle();
+      row = data;
+    }
+    if (row?.team) {
+      const { passwordVerifier, mustChangeOnLogin, tempPasswordHint } =
+        unpackStaffTeamAuthMeta(row.team);
+      if (tempPasswordHint && passwordVerifier) {
+        savePasswordResetRecord({
+          email: cleanEmail,
+          resetAt: new Date().toISOString(),
+          mustChangeOnLogin,
+          passwordVerifier,
+          tempPasswordHint,
+        });
+        return { tempPassword: tempPasswordHint, mustChangeOnLogin };
+      }
+    }
+  } catch {
+    // fallback to local record
+  }
+  const localRec = getPasswordResetRecord(cleanEmail);
+  if (localRec?.tempPasswordHint) {
+    return {
+      tempPassword: localRec.tempPasswordHint,
+      mustChangeOnLogin: localRec.mustChangeOnLogin,
+    };
+  }
+  return { tempPassword: null, mustChangeOnLogin: true };
 }
 
 export function getPasswordResetRecord(email: string | null | undefined): PasswordResetRecord | null {
@@ -1319,6 +1450,7 @@ export async function adminResetUserPassword(
       mustChangeOnLogin: mustChange,
       deliveryChannels: ["admin_temp_password"],
       passwordVerifier: verifier,
+      tempPasswordHint: cleanPassword,
     });
 
     await syncStaffPasswordMetaToSupabase({
@@ -1327,9 +1459,10 @@ export async function adminResetUserPassword(
       passwordVerifier: verifier,
       mustChangeOnLogin: mustChange,
       phone: options?.phone,
+      tempPasswordHint: cleanPassword,
     });
 
-    // 2. Try security-definer RPC `admin_reset_user_password` (updates auth.users directly when deployed)
+    // 2. Execute security-definer RPC `admin_reset_user_password` (updates auth.users directly in Supabase DB)
     try {
       const { data: rpcData, error: rpcErr } = await supabase.rpc("admin_reset_user_password", {
         p_email: cleanEmail,
@@ -1340,7 +1473,7 @@ export async function adminResetUserPassword(
       if (!rpcErr && rpcData && rpcData.success === true) {
         return {
           success: true,
-          message: `Password for ${email} has been reset to "${cleanPassword}". The user can sign in immediately. Use the buttons below to send the password via Email, WhatsApp, or SMS.`,
+          message: `Password for ${email} has been reset to "${cleanPassword}" and authenticated in the Supabase database. Use the buttons below to send the password via Email, WhatsApp, or SMS.`,
         };
       }
     } catch {

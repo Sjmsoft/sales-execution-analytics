@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   X,
   Key,
@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import {
   adminResetUserPassword,
+  getActiveTempPasswordForUser,
+  getPasswordResetRecord,
   sendPasswordResetEmail,
   buildPasswordResetShareLinks,
   formatWhatsAppPhone,
@@ -31,19 +33,56 @@ type ResetPasswordDialogProps = {
 };
 
 export function ResetPasswordDialog({ user, onClose }: ResetPasswordDialogProps) {
+  const existingLocalRec = useMemo(() => getPasswordResetRecord(user.email), [user.email]);
   const [activeTab, setActiveTab] = useState<"temp" | "email">("temp");
   const [tempPassword, setTempPassword] = useState(
-    () => "PenEdge" + Math.floor(1000 + Math.random() * 9000) + "!"
+    () =>
+      existingLocalRec?.tempPasswordHint ||
+      "PenEdge" + Math.floor(1000 + Math.random() * 9000) + "!"
   );
   const [phoneInput, setPhoneInput] = useState(user.phone || "");
-  const [mustChangeOnLogin, setMustChangeOnLogin] = useState(true);
+  const [mustChangeOnLogin, setMustChangeOnLogin] = useState(
+    () => existingLocalRec?.mustChangeOnLogin ?? true
+  );
   const [showPassword, setShowPassword] = useState(true);
   const [copiedPw, setCopiedPw] = useState(false);
   const [copiedCard, setCopiedCard] = useState(false);
   const [loading, setLoading] = useState(false);
   const [emailLinkSending, setEmailLinkSending] = useState(false);
-  const [passwordWasReset, setPasswordWasReset] = useState(false);
+  const [passwordWasReset, setPasswordWasReset] = useState(
+    () => Boolean(existingLocalRec?.tempPasswordHint)
+  );
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // On mount, check if an active temporary password already exists in Supabase;
+  // otherwise immediately authenticate & persist the initial generated password in Supabase.
+  useEffect(() => {
+    let cancelled = false;
+    async function syncInitialTempPassword() {
+      const remote = await getActiveTempPasswordForUser(user.email, user.id);
+      if (cancelled) return;
+      if (remote.tempPassword) {
+        setTempPassword(remote.tempPassword);
+        setMustChangeOnLogin(remote.mustChangeOnLogin);
+        setPasswordWasReset(true);
+      } else {
+        // Persist the initial generated password to Supabase so it works immediately
+        const res = await adminResetUserPassword(user.email, tempPassword, {
+          mustChangeOnLogin,
+          phone: phoneInput,
+          userId: user.id,
+        });
+        if (!cancelled && res.success) {
+          setPasswordWasReset(true);
+        }
+      }
+    }
+    void syncInitialTempPassword();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user.id, user.email]);
 
   const roleDef = useMemo(
     () => SYSTEM_ROLES.find((r) => r.key === user.role_key),
@@ -78,6 +117,28 @@ export function ResetPasswordDialog({ user, onClose }: ResetPasswordDialogProps)
 
   const formattedWhatsappDigits = useMemo(() => formatWhatsAppPhone(phoneInput), [phoneInput]);
 
+  async function ensurePasswordSavedInSupabase(pwToSave: string) {
+    const cleanPw = pwToSave.trim();
+    if (!cleanPw || cleanPw.length < 6) return;
+    setLoading(true);
+    try {
+      const res = await adminResetUserPassword(user.email, cleanPw, {
+        mustChangeOnLogin,
+        phone: phoneInput,
+        userId: user.id,
+      });
+      if (res.success) {
+        setPasswordWasReset(true);
+        setStatusMsg({
+          type: "success",
+          text: res.message,
+        });
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function handleGeneratePassword() {
     const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
     const lower = "abcdefghijkmnopqrstuvwxyz";
@@ -93,18 +154,25 @@ export function ResetPasswordDialog({ user, onClose }: ResetPasswordDialogProps)
     pass += syms.charAt(Math.floor(Math.random() * syms.length));
     setTempPassword(pass);
     setPasswordWasReset(false);
+    void ensurePasswordSavedInSupabase(pass);
   }
 
   function handleCopyPassword() {
     void navigator.clipboard.writeText(tempPassword);
     setCopiedPw(true);
     setTimeout(() => setCopiedPw(false), 2500);
+    if (!passwordWasReset) {
+      void ensurePasswordSavedInSupabase(tempPassword);
+    }
   }
 
   function handleCopyFullInstructions() {
     void navigator.clipboard.writeText(shareLinks.plainTextMessage);
     setCopiedCard(true);
     setTimeout(() => setCopiedCard(false), 2500);
+    if (!passwordWasReset) {
+      void ensurePasswordSavedInSupabase(tempPassword);
+    }
   }
 
   async function handleSetPasswordSubmit(e: React.FormEvent) {
@@ -165,14 +233,23 @@ export function ResetPasswordDialog({ user, onClose }: ResetPasswordDialogProps)
   }
 
   function handleOpenWhatsApp() {
+    if (activeTab === "temp" && !passwordWasReset) {
+      void ensurePasswordSavedInSupabase(tempPassword);
+    }
     window.open(shareLinks.whatsappUrl, "_blank", "noopener,noreferrer");
   }
 
   function handleOpenSms() {
+    if (activeTab === "temp" && !passwordWasReset) {
+      void ensurePasswordSavedInSupabase(tempPassword);
+    }
     window.location.href = shareLinks.smsUrl;
   }
 
   function handleOpenMailClient() {
+    if (activeTab === "temp" && !passwordWasReset) {
+      void ensurePasswordSavedInSupabase(tempPassword);
+    }
     window.location.href = shareLinks.mailtoUrl;
   }
 
