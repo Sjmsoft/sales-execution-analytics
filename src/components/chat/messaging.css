@@ -34,12 +34,12 @@ body.compact-mode .messages-hub-container {
 }
 
 .messages-sidebar-header {
-  padding: 12px 14px 10px 14px;
+  padding: 12px 14px;
   border-bottom: 1px solid #f1f5f9;
   background: #ffffff;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
@@ -48,7 +48,31 @@ body.compact-mode .messages-hub-container {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  flex-wrap: wrap;
+}
+
+.messages-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.messages-sidebar-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.messages-unread-total-pill {
+  background: #059669;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 9999px;
 }
 
 .messages-user-profile {
@@ -106,26 +130,25 @@ body.compact-mode .messages-hub-container {
 .messages-header-actions {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   flex-shrink: 0;
-  flex-wrap: wrap;
 }
 
 .msg-hdr-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 5px 8px;
+  gap: 5px;
+  padding: 6px 11px;
   border-radius: 8px;
   border: 1px solid #e2e8f0;
   background: #f8fafc;
   color: #334155;
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
 .msg-hdr-btn:hover {
@@ -133,14 +156,102 @@ body.compact-mode .messages-hub-container {
   border-color: #cbd5e1;
 }
 
-.msg-hdr-btn.broadcast {
-  background: #fef3c7;
-  border-color: #fde68a;
-  color: #92400e;
+.msg-hdr-btn.primary-new {
+  background: #059669;
+  color: #ffffff;
+  border-color: #047857;
+  box-shadow: 0 2px 6px rgba(5, 150, 105, 0.2);
 }
 
-.msg-hdr-btn.broadcast:hover {
-  background: #fde68a;
+.msg-hdr-btn.primary-new:hover {
+  background: #047857;
+}
+
+.msg-dropdown-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.msg-icon-menu-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #475569;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.msg-icon-menu-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.msg-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 190px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.14);
+  padding: 5px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.msg-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #1e293b;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.msg-dropdown-item:hover {
+  background: #f1f5f9;
+}
+
+.messages-filter-dropdowns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.messages-compact-select {
+  width: 100%;
+  height: 33px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.messages-compact-select:focus {
+  border-color: #059669;
+  background: #ffffff;
 }
 
 .messages-search-wrap {
@@ -2074,6 +2185,133 @@ body.compact-mode .messages-hub-container {
 .dir-role {
   font-size: 11.5px;
   color: #64748b;
+}
+
+.dir-call-icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dir-call-icon-btn.audio:not(:disabled) {
+  border-color: #a7f3d0;
+  background: #f0fdf4;
+  color: #059669;
+}
+
+.dir-call-icon-btn.video:not(:disabled) {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.dir-call-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.composer-priority-select {
+  height: 30px;
+  padding: 0 6px;
+  border-radius: 7px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #475569;
+  font-size: 11.5px;
+  font-weight: 700;
+  outline: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.composer-priority-select.urgent {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.composer-priority-select.broadcast {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #d97706;
+}
+
+.composer-notice-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.composer-notice-bar.warning {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+
+.composer-notice-bar.readonly {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+}
+
+.clear-history-option-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #1e293b;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.clear-history-option-btn:hover {
+  background: #f1f5f9;
+}
+
+.clear-history-option-btn strong {
+  display: block;
+  font-size: 13px;
+}
+
+.clear-history-option-btn span {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+.clear-history-option-btn.danger-soft {
+  border-color: #fecdd3;
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.clear-history-option-btn.danger-soft span {
+  color: #e11d48;
+}
+
+.clear-history-option-btn.danger {
+  border-color: #f43f5e;
+  background: #e11d48;
+  color: #ffffff;
+}
+
+.clear-history-option-btn.danger span {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 /* ── Desktop Default for Mobile Back Button ────────────────────────────────── */

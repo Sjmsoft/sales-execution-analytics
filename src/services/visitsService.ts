@@ -784,20 +784,21 @@ export async function createVisit(input: {
 }
 
 export async function uploadVisitSignOutPhoto(visitId: string, file: File): Promise<string> {
-  // 1. Compress image for mobile web
+  // 1. Ensure image is compressed before uploading to storage
   const compressed = await compressImage(file, {
-    maxWidth: 1600,
-    maxHeight: 1600,
-    quality: 0.8,
+    maxWidth: 1280,
+    maxHeight: 1280,
+    quality: 0.75,
+    maxSizeMB: 0.45,
   });
 
-  // 2. Prepare compact base64 data URL as persistent fallback
+  // 2. Prepare compact base64 data URL from the already-compressed image as persistent fallback
   let fallbackDataUrl = "";
   try {
-    const { dataUrl } = await compressImageToDataUrl(file, {
+    const { dataUrl } = await compressImageToDataUrl(compressed, {
       maxWidth: 800,
       maxHeight: 800,
-      quality: 0.75,
+      quality: 0.72,
     });
     fallbackDataUrl = dataUrl;
   } catch {}

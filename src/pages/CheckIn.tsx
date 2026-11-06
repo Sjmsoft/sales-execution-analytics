@@ -20,6 +20,7 @@ import {
   Search,
   ShieldCheck,
   Store,
+  Upload,
   UserRound,
   X,
 } from "lucide-react";
@@ -454,6 +455,7 @@ export default function CheckIn() {
   const [checkoutOutcome, setCheckoutOutcome] = useState("");
   const [checkoutNotes, setCheckoutNotes] = useState("");
   const [checkoutPhoto, setCheckoutPhoto] = useState<File | null>(null);
+  const [photoSource, setPhotoSource] = useState<"camera" | "upload" | null>(null);
   const [isCompressingPhoto, setIsCompressingPhoto] = useState(false);
   const [photoCompressionStats, setPhotoCompressionStats] = useState<{
     original: string;
@@ -462,29 +464,30 @@ export default function CheckIn() {
   } | null>(null);
   const photoPreview = useFilePreview(checkoutPhoto);
 
-  async function handlePhotoCapture(file: File | null) {
+  async function handlePhotoCapture(file: File | null, source: "camera" | "upload" = "camera") {
     if (!file) {
       setCheckoutPhoto(null);
+      setPhotoSource(null);
       setPhotoCompressionStats(null);
       return;
     }
 
     setIsCompressingPhoto(true);
+    setPhotoSource(source);
     setPhotoCompressionStats(null);
     try {
       const result = await compressImageWithStats(file, {
-        maxWidth: 1600,
-        maxHeight: 1600,
-        quality: 0.8,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        quality: 0.75,
+        maxSizeMB: 0.45,
       });
       setCheckoutPhoto(result.file);
-      if (result.savingsPercent > 0) {
-        setPhotoCompressionStats({
-          original: formatBytes(result.originalSize),
-          compressed: formatBytes(result.compressedSize),
-          savings: `${result.savingsPercent}% saved`,
-        });
-      }
+      setPhotoCompressionStats({
+        original: formatBytes(result.originalSize),
+        compressed: formatBytes(result.compressedSize),
+        savings: result.savingsPercent > 0 ? `${result.savingsPercent}% saved` : "Optimized",
+      });
     } catch (err) {
       console.warn("Photo compression fallback to original:", err);
       setCheckoutPhoto(file);
@@ -953,7 +956,7 @@ export default function CheckIn() {
     }
 
     if (!checkoutPhoto) {
-      setActionError("Please capture an evidence photo using your camera before checking out.");
+      setActionError("Please capture or upload an evidence photo before checking out.");
       return;
     }
 
@@ -1017,6 +1020,7 @@ export default function CheckIn() {
       setPageStatus("checked-out");
       setCheckInState(null);
       setCheckoutPhoto(null);
+      setPhotoSource(null);
       setPhotoCompressionStats(null);
       setCheckoutNotes("");
       setGpsStatus("idle");
@@ -1333,32 +1337,62 @@ export default function CheckIn() {
             <div className="checkin-field-group">
               <div className="checkin-field-label">
                 <span>Sign-Off Evidence Photo <span className="req">*</span></span>
+                <span style={{ fontSize: 11.5, fontWeight: 500, color: "#64748b" }}>
+                  Auto-compressed before upload
+                </span>
               </div>
               <div className="checkin-photo-capture-box">
-                <label className="checkin-photo-btn">
-                  <Camera size={16} />
-                  <span>
-                    {isCompressingPhoto
-                      ? "Compressing Photo..."
-                      : checkoutPhoto
-                        ? "Change Evidence Photo"
-                        : "Capture Photo (Camera)"}
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    style={{ display: "none" }}
-                    disabled={isCompressingPhoto}
-                    onChange={(e) => {
-                      if (e.target.files?.[0]) handlePhotoCapture(e.target.files[0]);
-                    }}
-                  />
-                </label>
+                <div className="checkin-photo-actions-row">
+                  <label className={`checkin-photo-btn ${photoSource === "camera" && checkoutPhoto ? "active-source" : ""}`}>
+                    <Camera size={16} />
+                    <span>
+                      {isCompressingPhoto && photoSource === "camera"
+                        ? "Compressing..."
+                        : checkoutPhoto && photoSource === "camera"
+                          ? "Retake Photo"
+                          : "Capture Photo (Camera)"}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      style={{ display: "none" }}
+                      disabled={isCompressingPhoto}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void handlePhotoCapture(file, "camera");
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+
+                  <label className={`checkin-photo-btn checkin-photo-btn-upload ${photoSource === "upload" && checkoutPhoto ? "active-source" : ""}`}>
+                    <Upload size={16} />
+                    <span>
+                      {isCompressingPhoto && photoSource === "upload"
+                        ? "Compressing..."
+                        : checkoutPhoto && photoSource === "upload"
+                          ? "Change Uploaded Photo"
+                          : "Upload Photo"}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      disabled={isCompressingPhoto}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void handlePhotoCapture(file, "upload");
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+
                 {isCompressingPhoto && (
                   <div className="checkin-photo-compressing-indicator">
                     <span className="checkin-compressing-spinner" />
-                    <span>Compressing & optimizing for fast upload…</span>
+                    <span>Compressing &amp; optimizing photo before upload…</span>
                   </div>
                 )}
                 {!isCompressingPhoto && photoPreview && (
@@ -1366,7 +1400,10 @@ export default function CheckIn() {
                     <img src={photoPreview} alt="Checkout Preview" className="checkin-photo-preview-thumb" />
                     <div className="checkin-photo-preview-info">
                       <span style={{ fontSize: 13, color: "#059669", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
-                        <Check size={14} /> Photo Captured & Compressed
+                        <Check size={14} />
+                        {photoSource === "upload"
+                          ? "Photo Uploaded & Compressed"
+                          : "Photo Captured & Compressed"}
                       </span>
                       {photoCompressionStats ? (
                         <span className="checkin-photo-compression-pill">
@@ -1374,10 +1411,19 @@ export default function CheckIn() {
                         </span>
                       ) : (
                         <span style={{ fontSize: 11, color: "#64748b" }}>
-                          Ready for sign-off verification
+                          Compressed &amp; ready for sign-off upload
                         </span>
                       )}
                     </div>
+                    <button
+                      type="button"
+                      className="checkin-photo-remove-btn"
+                      onClick={() => void handlePhotoCapture(null)}
+                      title="Remove photo"
+                      aria-label="Remove photo"
+                    >
+                      <X size={14} />
+                    </button>
                   </div>
                 )}
               </div>

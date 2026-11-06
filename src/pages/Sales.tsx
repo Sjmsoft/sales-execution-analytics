@@ -11,6 +11,7 @@ import {
   filterStaffByScope,
 } from "../services/dataScopeService";
 import { NewSaleDialog } from "./sales/NewSaleDialog";
+import { PenEdgeInvoiceModal, type InvoiceOutletInfo } from "./sales/PenEdgeInvoiceModal";
 import { TableSkeleton } from "../components/ui/Skeleton";
 import { useMinimumLoading } from "../hooks/useMinimumLoading";
 import "../sales-tracker.css";
@@ -36,7 +37,6 @@ import {
   Pencil,
   PieChart,
   Plus,
-  Printer,
   RefreshCw,
   RotateCcw,
   Search,
@@ -128,9 +128,7 @@ export default function Sales() {
   const [error, setError] = useState("");
 
   // Reference lists for filter options
-  const [outletsList, setOutletsList] = useState<
-    { id: string; name: string; region_id?: string | null; state?: string | null }[]
-  >([]);
+  const [outletsList, setOutletsList] = useState<InvoiceOutletInfo[]>([]);
   const [staffList, setStaffList] = useState<
     { id: string; name: string; role_key?: string; role_name?: string; region?: string }[]
   >([]);
@@ -304,8 +302,12 @@ export default function Sales() {
           scopedOutlets.map((o) => ({
             id: o.id,
             name: o.name,
+            address: o.address,
+            lga: o.lga,
             region_id: o.region_id,
             state: o.state,
+            contact_person_name: o.contact_person_name,
+            contact_person_phone: o.contact_person_phone,
           }))
         );
       })
@@ -2020,173 +2022,15 @@ export default function Sales() {
 
       {/* ── 6. TRANSACTION INVOICE / RECEIPT MODAL DRAWER ── */}
       {selectedSaleDetail && (
-        <div
-          className="receipt-modal-backdrop"
-          onClick={() => setSelectedSaleDetail(null)}
-          role="presentation"
-        >
-          <div
-            className="receipt-modal-card"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="receipt-title"
-          >
-            <div className="receipt-header">
-              <div className="receipt-brand">
-                <div className="receipt-logo-mark">PE</div>
-                <div>
-                  <h3 id="receipt-title">Pen Edge Commercial Invoicing</h3>
-                  <span>Official Sales Execution Receipt Slip</span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="receipt-close-btn"
-                onClick={() => setSelectedSaleDetail(null)}
-                aria-label="Close receipt"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="receipt-body">
-              {/* Receipt Reference Bar */}
-              <div className="receipt-meta-grid">
-                <div className="receipt-meta-item">
-                  <span className="receipt-meta-label">Reference ID:</span>
-                  <strong className="receipt-meta-val">
-                    {selectedSaleDetail.reference || selectedSaleDetail.id}
-                  </strong>
-                </div>
-                <div className="receipt-meta-item">
-                  <span className="receipt-meta-label">Posting Date:</span>
-                  <strong className="receipt-meta-val">
-                    {formatDate(selectedSaleDetail.sale_date || selectedSaleDetail.created_at || null)}
-                  </strong>
-                </div>
-                <div className="receipt-meta-item">
-                  <span className="receipt-meta-label">Retail Account:</span>
-                  <strong className="receipt-meta-val">{selectedSaleDetail.outlet || "Direct Store"}</strong>
-                </div>
-                <div className="receipt-meta-item">
-                  <span className="receipt-meta-label">Sales Representative:</span>
-                  <strong className="receipt-meta-val">{selectedSaleDetail.staff || "Sales Representative"}</strong>
-                </div>
-              </div>
-
-              {/* Itemized Table */}
-              <table className="receipt-items-table">
-                <thead>
-                  <tr>
-                    <th>Description</th>
-                    <th>Package Unit</th>
-                    <th style={{ textAlign: "center" }}>Qty</th>
-                    <th style={{ textAlign: "right" }}>Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>
-                      <strong>{selectedSaleDetail.drink_type || "Beverage Product"}</strong>
-                    </td>
-                    <td>{getUnitLabel(selectedSaleDetail.unit_type)}</td>
-                    <td style={{ textAlign: "center" }}>{selectedSaleDetail.quantity}</td>
-                    <td style={{ textAlign: "right" }}>
-                      <strong>{formatCurrency(Number(selectedSaleDetail.total_amount ?? 0))}</strong>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-
-              {/* Settlement Summary */}
-              <div className="receipt-financial-box">
-                <div className="receipt-fin-row">
-                  <span>Gross Order Amount:</span>
-                  <strong>{formatCurrency(Number(selectedSaleDetail.total_amount ?? 0))}</strong>
-                </div>
-                <div className="receipt-fin-row">
-                  <span>Amount Settled / Paid:</span>
-                  <strong className="paid-text">
-                    {formatCurrency(Number(selectedSaleDetail.amount_paid ?? 0))}
-                  </strong>
-                </div>
-                <div className="receipt-fin-row total-row">
-                  <span>Remaining Balance Due:</span>
-                  <strong className={Number(selectedSaleDetail.balance ?? 0) > 0 ? "balance-due-text" : "balance-zero-text"}>
-                    {formatCurrency(Number(selectedSaleDetail.balance ?? 0))}
-                  </strong>
-                </div>
-                <div className="receipt-fin-row" style={{ marginTop: 6, paddingTop: 6, borderTop: "1px dashed #e2e8f0" }}>
-                  <span>Settlement Status:</span>
-                  <span className="receipt-status-pill">
-                    {getPaymentStatusLabel(selectedSaleDetail.payment_status)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="receipt-footer">
-              <button
-                type="button"
-                className="receipt-btn receipt-print-btn"
-                onClick={() => window.print()}
-              >
-                <Printer size={15} />
-                <span>Print Invoice</span>
-              </button>
-
-              {isAdmin && (
-                <button
-                  type="button"
-                  className="receipt-btn"
-                  style={{
-                    background: "#eff6ff",
-                    border: "1px solid #bfdbfe",
-                    color: "#1d4ed8",
-                  }}
-                  onClick={() => {
-                    const toEdit = selectedSaleDetail;
-                    setSelectedSaleDetail(null);
-                    handleOpenEditSale(toEdit);
-                  }}
-                  title="Edit sale transaction"
-                >
-                  <Pencil size={14} />
-                  <span>Edit</span>
-                </button>
-              )}
-
-              {isAdmin && (
-                <button
-                  type="button"
-                  className="receipt-btn"
-                  style={{
-                    background: "#fef2f2",
-                    border: "1px solid #fecaca",
-                    color: "#dc2626",
-                  }}
-                  onClick={() => {
-                    void handleDeleteSale(selectedSaleDetail);
-                  }}
-                  title="Delete sale transaction"
-                >
-                  <Trash2 size={14} />
-                  <span>Delete</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                className="receipt-btn receipt-done-btn"
-                onClick={() => setSelectedSaleDetail(null)}
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
+        <PenEdgeInvoiceModal
+          sale={selectedSaleDetail}
+          allSales={sales}
+          outletsList={outletsList}
+          isAdmin={isAdmin}
+          onClose={() => setSelectedSaleDetail(null)}
+          onEditSale={(toEdit) => handleOpenEditSale(toEdit)}
+          onDeleteSale={(toDelete) => void handleDeleteSale(toDelete)}
+        />
       )}
 
       {/* ── 6.5. EDIT SALE MODAL (ADMIN ONLY) ── */}

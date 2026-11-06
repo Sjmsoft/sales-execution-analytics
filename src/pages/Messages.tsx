@@ -7,7 +7,6 @@ import {
   Video,
   Send,
   Paperclip,
-  Smile,
   Mic,
   Pin,
   CheckCheck,
@@ -28,7 +27,7 @@ import {
   Settings,
   Trash2,
   Lock,
-  Globe,
+  MoreVertical,
 } from "lucide-react";
 import LogoLoader from "../components/brand/LogoLoader";
 import { useAuth } from "../context/AuthContext";
@@ -38,7 +37,6 @@ import {
   getStoredMessages,
   sendMessage,
   markConversationAsRead,
-  toggleMessageReaction,
   deleteMessage,
   clearConversationMessages,
   clearConversationCallLogs,
@@ -47,7 +45,6 @@ import {
   createDirectConversation,
   initiateCall,
   formatRoleName,
-  SMART_REPLIES,
   messagingEvents,
   getMessagingSettings,
   canUserSeeContact,
@@ -57,7 +54,6 @@ import {
   canUserReceiveMessages,
   canUserDeleteMessage,
   getEffectiveRolePermission,
-  getEffectiveDirectoryScopeForUser,
   isNationalLeadershipRole,
   doRegionsOverlap,
   type MessagingModuleSettings,
@@ -68,21 +64,38 @@ import {
 } from "../services/messagingService";
 import { getCurrentPosition } from "./visits/visitsUtils";
 
-const REACTION_EMOJIS = ["👍", "🔥", "🎯", "✅", "❤️", "🙏", "👏"];
-
 export default function Messages() {
   const navigate = useNavigate();
   const { staff, role } = useAuth();
   const currentUserId = staff?.id || "current-user";
-  const currentUserRole = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "brand_ambassador").toLowerCase();
+  const currentUserRole = (
+    role?.key ||
+    staff?.user_roles?.key ||
+    staff?.assigned_role ||
+    "brand_ambassador"
+  ).toLowerCase();
+
   const isAdmin =
     currentUserRole === "administrator" ||
     currentUserRole === "admin" ||
     currentUserRole === "a0000000-0000-4000-8000-000000000001" ||
     role?.hierarchy_level === 1;
-  const isManagement = ["administrator", "admin", "hr", "national_sales_manager", "nsm", "regional_sales_manager", "rsm", "sales_executive", "se"].includes(currentUserRole);
 
-  const [moduleSettings, setModuleSettings] = useState<MessagingModuleSettings>(() => getMessagingSettings());
+  const isManagement = [
+    "administrator",
+    "admin",
+    "hr",
+    "national_sales_manager",
+    "nsm",
+    "regional_sales_manager",
+    "rsm",
+    "sales_executive",
+    "se",
+  ].includes(currentUserRole);
+
+  const [moduleSettings, setModuleSettings] = useState<MessagingModuleSettings>(() =>
+    getMessagingSettings()
+  );
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<ChatUser[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -92,17 +105,19 @@ export default function Messages() {
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Dropdown menus
+  const [sidebarMenuOpen, setSidebarMenuOpen] = useState(false);
+  const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const sidebarMenuRef = useRef<HTMLDivElement>(null);
+  const chatMenuRef = useRef<HTMLDivElement>(null);
+
   // Composer states
   const [inputText, setInputText] = useState("");
   const [priorityMode, setPriorityMode] = useState<"normal" | "urgent" | "broadcast">("normal");
-  const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [recordDuration, setRecordDuration] = useState(0);
-  const [showRightPanel, setShowRightPanel] = useState(() =>
-    typeof window !== "undefined" ? window.innerWidth > 900 : true
-  );
-  const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
+  const [showRightPanel, setShowRightPanel] = useState(false);
 
   // Modals
   const [newChatModalOpen, setNewChatModalOpen] = useState(false);
@@ -131,6 +146,20 @@ export default function Messages() {
   const audioChunksRef = useRef<Blob[]>([]);
   const recordedBlobUrlRef = useRef<string | null>(null);
 
+  // Close menus on outside click
+  useEffect(() => {
+    function handleOutsideClick(e: MouseEvent) {
+      if (sidebarMenuRef.current && !sidebarMenuRef.current.contains(e.target as Node)) {
+        setSidebarMenuOpen(false);
+      }
+      if (chatMenuRef.current && !chatMenuRef.current.contains(e.target as Node)) {
+        setChatMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, []);
+
   // Stop playback when leaving page or changing chat
   useEffect(() => {
     return () => {
@@ -146,7 +175,9 @@ export default function Messages() {
       if (active) {
         setUsers(data.users);
         setConversations(data.conversations);
-        if (data.conversations.length > 0) {
+        // On desktop (> 768px), auto-select the first conversation; on mobile, show the inbox list first
+        const isMobileViewport = typeof window !== "undefined" && window.innerWidth <= 768;
+        if (!isMobileViewport && data.conversations.length > 0) {
           setSelectedConvId(data.conversations[0].id);
         }
         setLoading(false);
@@ -239,28 +270,26 @@ export default function Messages() {
       roleKey: currentUserRole,
       region: staff?.region || selfFromDir?.region || "National",
       assignedRegions: assignedRegs,
-      reportsToId: (staff as any)?.reports_to_id || (staff as any)?.reports_to || selfFromDir?.reportsToId || null,
+      reportsToId:
+        (staff as any)?.reports_to_id ||
+        (staff as any)?.reports_to ||
+        selfFromDir?.reportsToId ||
+        null,
     };
   }, [currentUserId, currentUserRole, staff, users]);
 
   const myRolePermission = useMemo(
     () => getEffectiveRolePermission(currentUserRole, moduleSettings),
-    [currentUserRole, moduleSettings],
-  );
-
-  const effectiveDirectoryScope = useMemo(
-    () => getEffectiveDirectoryScopeForUser(viewerContext, moduleSettings),
-    [viewerContext, moduleSettings],
+    [currentUserRole, moduleSettings]
   );
 
   // Filter callable/messageable contacts according to Admin Directory & Region Visibility settings
   const visibleDirectoryUsers = useMemo(() => {
-    const baseVisible = filterDirectoryUsersForViewer(
+    return filterDirectoryUsersForViewer(
       users.filter((u) => u.id !== currentUserId),
       viewerContext,
-      moduleSettings,
+      moduleSettings
     );
-    return baseVisible;
   }, [users, currentUserId, viewerContext, moduleSettings]);
 
   const modalFilteredDirectoryUsers = useMemo(() => {
@@ -290,27 +319,28 @@ export default function Messages() {
     return Array.from(set).sort();
   }, [visibleDirectoryUsers]);
 
-  // Filtered conversations (enforcing Region & Contact Visibility + Territory Hub scope)
+  // Filtered conversations
   const filteredConversations = useMemo(() => {
     return conversations.filter((c) => {
       if (activeTab !== "all" && c.type !== activeTab) {
         return false;
       }
 
-      // Enforce Territory Hub region restriction if enabled by Admin
       if (
         c.type === "channel" &&
         c.channelCategory === "regions" &&
         moduleSettings.restrictTerritoryHubsToRegion &&
         !isNationalLeadershipRole(currentUserRole)
       ) {
-        const hubRegionName = c.title.replace(/^📍\s*/i, "").replace(/\s*Territory Hub$/i, "").trim();
+        const hubRegionName = c.title
+          .replace(/^📍\s*/i, "")
+          .replace(/\s*Territory Hub$/i, "")
+          .trim();
         if (hubRegionName && !doRegionsOverlap(viewerContext, { region: hubRegionName })) {
           return false;
         }
       }
 
-      // Enforce Direct Contact Visibility Scope (unless there's already an active chat message or user is visible)
       if (c.type === "direct") {
         const pId = c.participantIds.find((id) => id !== currentUserId && id !== "current-user");
         const pUser =
@@ -339,21 +369,37 @@ export default function Messages() {
       }
       return true;
     });
-  }, [conversations, activeTab, searchQuery, roleFilter, users, currentUserId, currentUserRole, viewerContext, moduleSettings]);
+  }, [
+    conversations,
+    activeTab,
+    searchQuery,
+    roleFilter,
+    users,
+    currentUserId,
+    currentUserRole,
+    viewerContext,
+    moduleSettings,
+  ]);
+
+  const totalUnreadCount = useMemo(
+    () => conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0),
+    [conversations]
+  );
 
   const activeConversation = useMemo(
     () =>
-      filteredConversations.find((c) => c.id === selectedConvId) ||
-      conversations.find((c) => c.id === selectedConvId) ||
-      filteredConversations[0] ||
-      conversations[0],
-    [filteredConversations, conversations, selectedConvId],
+      selectedConvId
+        ? filteredConversations.find((c) => c.id === selectedConvId) ||
+          conversations.find((c) => c.id === selectedConvId) ||
+          null
+        : null,
+    [filteredConversations, conversations, selectedConvId]
   );
 
   const directPartner = useMemo(() => {
     if (!activeConversation || activeConversation.type !== "direct") return null;
     const partnerId = activeConversation.participantIds.find(
-      (id) => id !== currentUserId && id !== "current-user",
+      (id) => id !== currentUserId && id !== "current-user"
     );
     return (
       users.find((u) => u.id === partnerId) ||
@@ -362,7 +408,6 @@ export default function Messages() {
     );
   }, [activeConversation, users, currentUserId]);
 
-  // Evaluate active conversation calling & messaging permissions
   const activeCallTargetMeta = useMemo(() => {
     if (directPartner) {
       return {
@@ -388,9 +433,9 @@ export default function Messages() {
         activeCallTargetMeta.target,
         "audio",
         moduleSettings,
-        activeCallTargetMeta.isGroupHuddle,
+        activeCallTargetMeta.isGroupHuddle
       ),
-    [viewerContext, activeCallTargetMeta, moduleSettings],
+    [viewerContext, activeCallTargetMeta, moduleSettings]
   );
 
   const activeVideoCallPermission = useMemo(
@@ -400,35 +445,33 @@ export default function Messages() {
         activeCallTargetMeta.target,
         "video",
         moduleSettings,
-        activeCallTargetMeta.isGroupHuddle,
+        activeCallTargetMeta.isGroupHuddle
       ),
-    [viewerContext, activeCallTargetMeta, moduleSettings],
+    [viewerContext, activeCallTargetMeta, moduleSettings]
   );
 
   const activeSendPermission = useMemo(
-    () => canUserSendMessage(viewerContext, activeConversation, directPartner, moduleSettings),
-    [viewerContext, activeConversation, directPartner, moduleSettings],
+    () => canUserSendMessage(viewerContext, activeConversation ?? undefined, directPartner, moduleSettings),
+    [viewerContext, activeConversation, directPartner, moduleSettings]
   );
 
   const activeReceivePermission = useMemo(
     () => canUserReceiveMessages(viewerContext, moduleSettings),
-    [viewerContext, moduleSettings],
+    [viewerContext, moduleSettings]
   );
 
-  // Smart suggestions relevant to current chat
-  const suggestions = useMemo(() => {
-    if (moduleSettings.smartRepliesList && moduleSettings.smartRepliesList.length > 0) {
-      return moduleSettings.smartRepliesList;
-    }
-    if (!activeConversation) return SMART_REPLIES.default;
-    if (activeConversation.type === "announcement") return SMART_REPLIES.announcement;
-    if (activeConversation.lastMessage?.type === "target_update") return SMART_REPLIES.target_update;
-    return SMART_REPLIES.default;
-  }, [activeConversation, moduleSettings.smartRepliesList]);
-
   // Send message handler
-  async function handleSendMessage(overrideText?: string, attachments?: MessageAttachment[], msgType: ChatMessage["type"] = "text") {
-    const sendCheck = canUserSendMessage(viewerContext, activeConversation, directPartner, moduleSettings);
+  async function handleSendMessage(
+    overrideText?: string,
+    attachments?: MessageAttachment[],
+    msgType: ChatMessage["type"] = "text"
+  ) {
+    const sendCheck = canUserSendMessage(
+      viewerContext,
+      activeConversation ?? undefined,
+      directPartner,
+      moduleSettings
+    );
     if (!sendCheck.allowed) {
       alert(sendCheck.reason);
       return;
@@ -450,19 +493,11 @@ export default function Messages() {
       content: textToSend,
       type: msgType,
       priority: priorityMode,
-      replyTo: replyTarget
-        ? {
-            id: replyTarget.id,
-            senderName: replyTarget.senderName,
-            content: replyTarget.content.slice(0, 70),
-          }
-        : undefined,
       attachments,
       isPushNotification: priorityMode === "urgent" || priorityMode === "broadcast",
     });
 
     setInputText("");
-    setReplyTarget(null);
     setPriorityMode("normal");
     setShowAttachmentMenu(false);
   }
@@ -484,7 +519,7 @@ export default function Messages() {
       await handleSendMessage(
         `📍 Live Trade Location Shared: ${lat}°, ${lng}°`,
         [locationAttachment],
-        "location_pin",
+        "location_pin"
       );
     } catch {
       alert("Unable to acquire GPS coordinates. Please ensure location permissions are enabled.");
@@ -537,7 +572,6 @@ export default function Messages() {
     recordedBlobUrlRef.current = null;
   }
 
-  // Handle voice note send
   async function handleFinishVoiceRecording() {
     setIsRecordingVoice(false);
     const secs = recordDuration || 3;
@@ -626,19 +660,6 @@ export default function Messages() {
       if (ctx.state === "suspended") void ctx.resume();
 
       const now = ctx.currentTime;
-
-      const chirp = ctx.createOscillator();
-      const chirpGain = ctx.createGain();
-      chirp.type = "sine";
-      chirp.frequency.setValueAtTime(1100, now);
-      chirp.frequency.exponentialRampToValueAtTime(750, now + 0.08);
-      chirpGain.gain.setValueAtTime(0.08, now);
-      chirpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-      chirp.connect(chirpGain);
-      chirpGain.connect(ctx.destination);
-      chirp.start(now);
-      chirp.stop(now + 0.1);
-
       const osc = ctx.createOscillator();
       const filter = ctx.createBiquadFilter();
       const gain = ctx.createGain();
@@ -686,12 +707,17 @@ export default function Messages() {
     }
   }
 
-  // Handle calls (Teams / WhatsApp initiate — supports 1-on-1 direct & channel/bulletin huddles)
-  function handleStartCall(callType: "audio" | "video", targetOverride?: ChatUser, convIdOverride?: string) {
+  // Handle calls
+  function handleStartCall(
+    callType: "audio" | "video",
+    targetOverride?: ChatUser,
+    convIdOverride?: string
+  ) {
     try {
       const targetConvId = convIdOverride || selectedConvId || activeConversation?.id;
       const targetEntity = targetOverride || directPartner;
-      const isGroupHuddle = !targetEntity && Boolean(activeConversation && activeConversation.type !== "direct");
+      const isGroupHuddle =
+        !targetEntity && Boolean(activeConversation && activeConversation.type !== "direct");
 
       const checkTarget = targetEntity
         ? targetEntity
@@ -702,7 +728,13 @@ export default function Messages() {
             region: viewerContext.region,
           };
 
-      const callPerm = canUserCallTarget(viewerContext, checkTarget, callType, moduleSettings, isGroupHuddle);
+      const callPerm = canUserCallTarget(
+        viewerContext,
+        checkTarget,
+        callType,
+        moduleSettings,
+        isGroupHuddle
+      );
       if (!callPerm.allowed) {
         alert(callPerm.reason);
         return;
@@ -723,7 +755,9 @@ export default function Messages() {
         : activeConversation
         ? {
             id: activeConversation.id,
-            name: activeConversation.title.replace(/^[^\w\s]+/u, "").trim() || activeConversation.title,
+            name:
+              activeConversation.title.replace(/^[^\w\s]+/u, "").trim() ||
+              activeConversation.title,
             role:
               activeConversation.type === "announcement"
                 ? "All-Hands Fleet Huddle"
@@ -743,7 +777,7 @@ export default function Messages() {
         },
         receiver,
         callType,
-        targetConvId,
+        targetConvId
       );
     } catch (err: any) {
       alert(err?.message || "Unable to start call. Please check Communications & Calling settings.");
@@ -780,8 +814,8 @@ export default function Messages() {
     return (
       <LogoLoader
         variant="page"
-        message="Loading messages & communication channels"
-        hint="Connecting to field dispatch directory and regional feeds…"
+        message="Loading messages & calls"
+        hint="Connecting to team conversations…"
       />
     );
   }
@@ -789,201 +823,134 @@ export default function Messages() {
   return (
     <div className="messages-hub-container">
       {/* ═══════════════════════════════════════════════════════════════════ */}
-      {/* LEFT SIDEBAR: Conversations & Directory Search                     */}
+      {/* LEFT SIDEBAR: Clean Inbox & Compact Filter Dropdowns               */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
       <aside className={`messages-sidebar ${selectedConvId ? "mobile-hidden" : ""}`}>
-        {/* Hub Header */}
         <div className="messages-sidebar-header">
+          {/* Row 1: Title + Primary New Button + More Dropdown */}
           <div className="messages-header-top">
-            <div className="messages-user-profile">
-              <div className="messages-avatar user-self">
-                {(staff?.name || "PE").slice(0, 2).toUpperCase()}
-                <span className="online-dot" />
-              </div>
-              <div>
-                <strong>{staff?.name || "Sales Staff"}</strong>
-                <span className="user-role-label">{formatRoleName(currentUserRole)}</span>
-              </div>
+            <div className="messages-title-group">
+              <h2 className="messages-sidebar-title">Messages &amp; Calls</h2>
+              {totalUnreadCount > 0 && (
+                <span className="messages-unread-total-pill">{totalUnreadCount}</span>
+              )}
             </div>
 
             <div className="messages-header-actions">
-              {isAdmin && (
-                <button
-                  type="button"
-                  className="msg-hdr-btn settings-admin"
-                  onClick={() => navigate("/settings?tab=communications")}
-                  title="Communications & Calling Settings (Admin Only)"
-                  style={{
-                    background: "#0f172a",
-                    color: "#ffffff",
-                    borderColor: "#334155",
-                    fontWeight: 600,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  <Settings size={13} />
-                  <span>Settings</span>
-                </button>
-              )}
-              {isManagement && moduleSettings.broadcastRolesAllowed.includes(currentUserRole) && (
-                <button
-                  type="button"
-                  className="msg-hdr-btn broadcast"
-                  onClick={() => setBroadcastModalOpen(true)}
-                  title="Push Executive Broadcast / Directive to Field Staff"
-                  style={{ whiteSpace: "nowrap" }}
-                >
-                  <Radio size={14} />
-                  <span>Broadcast</span>
-                </button>
-              )}
               <button
                 type="button"
-                className="msg-hdr-btn"
+                className="msg-hdr-btn primary-new"
                 onClick={() => setNewChatModalOpen(true)}
-                title="Start Direct Message or Call with Staff"
-                style={{
-                  background: "#059669",
-                  color: "#ffffff",
-                  borderColor: "#047857",
-                  whiteSpace: "nowrap",
-                }}
+                title="New Message or Call"
               >
                 <Plus size={15} />
-                <span>New</span>
+                <span>New Chat</span>
               </button>
-              <button
-                type="button"
-                className="msg-hdr-btn"
-                onClick={() => setClearHistoryModalOpen(true)}
-                title="Clear Calls & Messages History"
-                style={{
-                  background: "#fff1f2",
-                  color: "#e11d48",
-                  borderColor: "#fecdd3",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                <Trash2 size={13} />
-                <span>Clear</span>
-              </button>
+
+              <div className="msg-dropdown-wrap" ref={sidebarMenuRef}>
+                <button
+                  type="button"
+                  className="msg-icon-menu-btn"
+                  onClick={() => setSidebarMenuOpen((v) => !v)}
+                  title="More options"
+                  aria-label="More options"
+                >
+                  <MoreVertical size={17} />
+                </button>
+
+                {sidebarMenuOpen && (
+                  <div className="msg-dropdown-menu">
+                    {isManagement && moduleSettings.broadcastRolesAllowed.includes(currentUserRole) && (
+                      <button
+                        type="button"
+                        className="msg-dropdown-item"
+                        onClick={() => {
+                          setSidebarMenuOpen(false);
+                          setBroadcastModalOpen(true);
+                        }}
+                      >
+                        <Radio size={14} color="#d97706" />
+                        <span>Send Broadcast</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="msg-dropdown-item"
+                      onClick={() => {
+                        setSidebarMenuOpen(false);
+                        setClearHistoryModalOpen(true);
+                      }}
+                    >
+                      <Trash2 size={14} color="#e11d48" />
+                      <span>Clear History…</span>
+                    </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        className="msg-dropdown-item"
+                        onClick={() => {
+                          setSidebarMenuOpen(false);
+                          navigate("/settings?tab=communications");
+                        }}
+                      >
+                        <Settings size={14} color="#475569" />
+                        <span>Messaging Settings</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Search box */}
+          {/* Row 2: Search Box */}
           <div className="messages-search-wrap">
             <Search size={14} className="messages-search-icon" />
             <input
               type="text"
-              placeholder="Search chats, staff, regions or keywords…"
+              placeholder="Search chats or staff…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="messages-search-input"
             />
             {searchQuery && (
-              <button type="button" onClick={() => setSearchQuery("")} className="search-clear-btn">
-                <X size={12} />
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="search-clear-btn"
+                aria-label="Clear search"
+              >
+                <X size={13} />
               </button>
             )}
           </div>
 
-          {/* Navigation Category Tabs */}
-          <div className="messages-nav-tabs">
-            <button
-              type="button"
-              className={`nav-tab ${activeTab === "all" ? "active" : ""}`}
-              onClick={() => setActiveTab("all")}
+          {/* Row 3: Compact Filter Dropdowns (Replaces crowded multi-row tabs & chips) */}
+          <div className="messages-filter-dropdowns">
+            <select
+              value={activeTab}
+              onChange={(e) => setActiveTab(e.target.value as typeof activeTab)}
+              className="messages-compact-select"
+              aria-label="Filter by conversation type"
             >
-              All
-            </button>
-            <button
-              type="button"
-              className={`nav-tab ${activeTab === "announcement" ? "active" : ""}`}
-              onClick={() => setActiveTab("announcement")}
-            >
-              📢 Bulletins
-            </button>
-            <button
-              type="button"
-              className={`nav-tab ${activeTab === "channel" ? "active" : ""}`}
-              onClick={() => setActiveTab("channel")}
-            >
-              📍 Territory Hubs
-            </button>
-            <button
-              type="button"
-              className={`nav-tab ${activeTab === "direct" ? "active" : ""}`}
-              onClick={() => setActiveTab("direct")}
-            >
-              Direct
-            </button>
-          </div>
+              <option value="all">All Chats ({conversations.length})</option>
+              <option value="direct">Direct Messages</option>
+              <option value="channel">📍 Territory Hubs</option>
+              <option value="announcement">📢 Bulletins</option>
+            </select>
 
-          {/* Role Filter Chips */}
-          <div className="messages-role-chips">
-            <button
-              type="button"
-              className={`role-chip ${roleFilter === "all" ? "active" : ""}`}
-              onClick={() => setRoleFilter("all")}
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              className="messages-compact-select"
+              aria-label="Filter by staff role"
             >
-              All Roles
-            </button>
-            <button
-              type="button"
-              className={`role-chip ${roleFilter === "brand_ambassador" ? "active" : ""}`}
-              onClick={() => setRoleFilter(roleFilter === "brand_ambassador" ? "all" : "brand_ambassador")}
-            >
-              BAs
-            </button>
-            <button
-              type="button"
-              className={`role-chip ${roleFilter === "vsr" ? "active" : ""}`}
-              onClick={() => setRoleFilter(roleFilter === "vsr" ? "all" : "vsr")}
-            >
-              VSRs
-            </button>
-            <button
-              type="button"
-              className={`role-chip ${roleFilter === "sales_executive" ? "active" : ""}`}
-              onClick={() => setRoleFilter(roleFilter === "sales_executive" ? "all" : "sales_executive")}
-            >
-              SEs
-            </button>
-            <button
-              type="button"
-              className={`role-chip ${roleFilter === "regional_sales_manager" ? "active" : ""}`}
-              onClick={() => setRoleFilter(roleFilter === "regional_sales_manager" ? "all" : "regional_sales_manager")}
-            >
-              RSMs
-            </button>
-          </div>
-
-          {/* Active Directory & Region Visibility Scope Banner */}
-          <div
-            style={{
-              marginTop: 8,
-              padding: "5px 10px",
-              borderRadius: 8,
-              background: effectiveDirectoryScope === "all_regions" ? "#eff6ff" : "#ecfdf5",
-              border: effectiveDirectoryScope === "all_regions" ? "1px solid #bfdbfe" : "1px solid #a7f3d0",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 6,
-              fontSize: 11,
-              color: effectiveDirectoryScope === "all_regions" ? "#1d4ed8" : "#047857",
-              fontWeight: 600,
-            }}
-          >
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-              {effectiveDirectoryScope === "all_regions" ? <Globe size={12} /> : <MapPin size={12} />}
-              {effectiveDirectoryScope === "all_regions"
-                ? "Directory: All Regions"
-                : effectiveDirectoryScope === "reporting_line_only"
-                ? "Directory: Reporting Line Only"
-                : `Directory: ${viewerContext.region} Region`}
-            </span>
-            <span style={{ opacity: 0.85 }}>{visibleDirectoryUsers.length} Contacts</span>
+              <option value="all">All Roles</option>
+              <option value="brand_ambassador">Brand Ambassadors (BAs)</option>
+              <option value="vsr">Van Sales Reps (VSRs)</option>
+              <option value="sales_executive">Sales Executives (SEs)</option>
+              <option value="regional_sales_manager">Regional Managers (RSMs)</option>
+            </select>
           </div>
         </div>
 
@@ -991,14 +958,14 @@ export default function Messages() {
         <div className="messages-list-scroll">
           {filteredConversations.length === 0 ? (
             <div className="messages-empty-list">
-              <Users size={32} style={{ opacity: 0.35, marginBottom: 8 }} />
-              <p>No conversations found</p>
+              <Users size={30} style={{ opacity: 0.35, marginBottom: 8 }} />
+              <p>No conversations match your filter</p>
               <button
                 type="button"
                 className="empty-cta-btn"
                 onClick={() => setNewChatModalOpen(true)}
               >
-                Start a New Message
+                Start a New Chat
               </button>
             </div>
           ) : (
@@ -1055,12 +1022,14 @@ export default function Messages() {
                             {conv.lastMessage.content}
                           </>
                         ) : (
-                          conv.description || "Start communicating…"
+                          conv.description || "Tap to start chatting…"
                         )}
                       </span>
 
-                      {conv.isPinned && <Pin size={11} className="pin-icon" />}
-                      {hasUnread && <span className="unread-badge">{conv.unreadCount}</span>}
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                        {conv.isPinned && <Pin size={11} className="pin-icon" />}
+                        {hasUnread && <span className="unread-badge">{conv.unreadCount}</span>}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1071,7 +1040,7 @@ export default function Messages() {
       </aside>
 
       {/* ═══════════════════════════════════════════════════════════════════ */}
-      {/* MAIN CHAT STAGE: Active Chat, Smart Replies, Calls & Composer      */}
+      {/* MAIN CHAT STAGE: Clean Header, Messages Stream & Simple Composer   */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
       <main className={`messages-main-panel ${!selectedConvId ? "mobile-hidden" : ""}`}>
         {activeConversation ? (
@@ -1079,16 +1048,14 @@ export default function Messages() {
             {/* Stage Header */}
             <header className="chat-stage-header">
               <div className="chat-partner-info">
-                {/* Mobile Back Button to Return to Chats List */}
                 <button
                   type="button"
                   className="chat-mobile-back-btn"
                   onClick={() => setSelectedConvId("")}
-                  title="Back to conversations"
-                  aria-label="Back to conversations"
+                  title="Back to chats"
+                  aria-label="Back to chats"
                 >
-                  <ChevronLeft size={19} />
-                  <span>Chats</span>
+                  <ChevronLeft size={20} />
                 </button>
 
                 <div className="chat-header-avatar">
@@ -1100,33 +1067,29 @@ export default function Messages() {
                   {directPartner?.status === "online" && <span className="online-dot" />}
                 </div>
 
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <h2 className="chat-header-title">
-                      {activeConversation.type === "direct" && directPartner
-                        ? directPartner.name
-                        : activeConversation.title}
-                    </h2>
-                    {directPartner && (
-                      <span className="chat-header-role-badge">{directPartner.roleName}</span>
-                    )}
-                  </div>
+                <div style={{ minWidth: 0 }}>
+                  <h2 className="chat-header-title">
+                    {activeConversation.type === "direct" && directPartner
+                      ? directPartner.name
+                      : activeConversation.title}
+                  </h2>
                   <p className="chat-header-sub">
                     {activeConversation.type === "direct" && directPartner ? (
                       <>
                         <span className="status-label">
-                          {directPartner.status === "online" ? "🟢 Active Now" : "⚪ Offline"}
+                          {directPartner.status === "online" ? "Online" : "Offline"}
                         </span>
-                        {directPartner.region && ` · Territory: ${directPartner.region}`}
+                        {` · ${directPartner.roleName}`}
+                        {directPartner.region ? ` (${directPartner.region})` : ""}
                       </>
                     ) : (
-                      activeConversation.description
+                      activeConversation.description || "Group Channel"
                     )}
                   </p>
                 </div>
               </div>
 
-              {/* Header Communication Actions */}
+              {/* Header Actions: Audio Call, Video Call, and More Menu */}
               <div className="chat-header-actions">
                 {moduleSettings.allowVoiceCalls && (
                   <button
@@ -1136,21 +1099,12 @@ export default function Messages() {
                     disabled={!activeVoiceCallPermission.allowed}
                     title={
                       activeVoiceCallPermission.allowed
-                        ? activeConversation.type === "direct"
-                          ? "Audio Call (Teams / WhatsApp WebRTC)"
-                          : "Start Channel Audio Huddle"
+                        ? "Voice Call"
                         : activeVoiceCallPermission.reason
-                    }
-                    style={
-                      !activeVoiceCallPermission.allowed
-                        ? { opacity: 0.55, cursor: "not-allowed", background: "#f1f5f9", color: "#64748b", borderColor: "#cbd5e1" }
-                        : undefined
                     }
                   >
                     {activeVoiceCallPermission.allowed ? <Phone size={16} /> : <Lock size={14} />}
-                    <span className="btn-label">
-                      {activeConversation.type === "direct" ? "Voice Call" : "Voice Huddle"}
-                    </span>
+                    <span className="btn-label">Call</span>
                   </button>
                 )}
 
@@ -1162,71 +1116,94 @@ export default function Messages() {
                     disabled={!activeVideoCallPermission.allowed}
                     title={
                       activeVideoCallPermission.allowed
-                        ? activeConversation.type === "direct"
-                          ? "Video Call (Teams / WhatsApp WebRTC)"
-                          : "Start Channel Video Huddle"
+                        ? "Video Call"
                         : activeVideoCallPermission.reason
-                    }
-                    style={
-                      !activeVideoCallPermission.allowed
-                        ? { opacity: 0.55, cursor: "not-allowed", background: "#f1f5f9", color: "#64748b", borderColor: "#cbd5e1" }
-                        : undefined
                     }
                   >
                     {activeVideoCallPermission.allowed ? <Video size={16} /> : <Lock size={14} />}
-                    <span className="btn-label">
-                      {activeConversation.type === "direct" ? "Video Call" : "Video Huddle"}
-                    </span>
+                    <span className="btn-label">Video</span>
                   </button>
                 )}
 
-                <button
-                  type="button"
-                  className="chat-action-btn icon-only"
-                  onClick={() => setClearHistoryModalOpen(true)}
-                  title="Clear Calls or Messages"
-                  style={{ color: "#e11d48", borderColor: "#fecdd3", background: "#fff1f2" }}
-                >
-                  <Trash2 size={16} />
-                </button>
+                <div className="msg-dropdown-wrap" ref={chatMenuRef}>
+                  <button
+                    type="button"
+                    className="msg-icon-menu-btn"
+                    onClick={() => setChatMenuOpen((v) => !v)}
+                    title="Chat options"
+                    aria-label="Chat options"
+                  >
+                    <MoreVertical size={17} />
+                  </button>
 
-                <button
-                  type="button"
-                  className={`chat-action-btn icon-only ${showRightPanel ? "active" : ""}`}
-                  onClick={() => setShowRightPanel(!showRightPanel)}
-                  title="Toggle Contact & Media Details"
-                >
-                  <Info size={17} />
-                </button>
+                  {chatMenuOpen && (
+                    <div className="msg-dropdown-menu right">
+                      <button
+                        type="button"
+                        className="msg-dropdown-item"
+                        onClick={() => {
+                          setChatMenuOpen(false);
+                          setShowRightPanel((v) => !v);
+                        }}
+                      >
+                        <Info size={14} color="#059669" />
+                        <span>{showRightPanel ? "Hide Info Panel" : "Contact / Channel Info"}</span>
+                      </button>
+
+                      {moduleSettings.allowLocationSharing && activeSendPermission.allowed && (
+                        <button
+                          type="button"
+                          className="msg-dropdown-item"
+                          onClick={() => {
+                            setChatMenuOpen(false);
+                            void handleShareLocation();
+                          }}
+                        >
+                          <MapPin size={14} color="#0284c7" />
+                          <span>Share GPS Location</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        className="msg-dropdown-item"
+                        onClick={() => {
+                          setChatMenuOpen(false);
+                          if (window.confirm(`Clear call logs in "${activeConversation.title}"?`)) {
+                            clearConversationCallLogs(activeConversation.id);
+                          }
+                        }}
+                      >
+                        <Phone size={14} color="#d97706" />
+                        <span>Clear Call Logs</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="msg-dropdown-item"
+                        onClick={() => {
+                          setChatMenuOpen(false);
+                          if (window.confirm(`Clear all messages in "${activeConversation.title}"?`)) {
+                            clearConversationMessages(activeConversation.id);
+                          }
+                        }}
+                      >
+                        <Trash2 size={14} color="#e11d48" />
+                        <span>Clear Chat Messages</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </header>
 
-            {/* Pinned Broadcast Banner (If Announcement Channel) */}
-            {activeConversation.type === "announcement" && (
-              <div className="chat-announcement-banner">
-                <div className="banner-icon-wrap">
-                  <Radio size={16} />
-                </div>
-                <div className="banner-text">
-                  <strong>Official Field Directive Channel</strong>
-                  <p>
-                    All messages posted here are broadcast in real-time with high-priority push notifications to regional field teams, BAs, and Van Sales Reps.
-                  </p>
-                </div>
-              </div>
-            )}
-
             {/* Messages Scroll Area */}
             <div className="chat-messages-stream">
-              <div className="chat-date-divider">
-                <span>Today</span>
-              </div>
-
               {messages.length === 0 ? (
                 <div className="chat-messages-empty">
-                  <Sparkles size={28} color="#059669" />
-                  <h3>Start the conversation</h3>
-                  <p>Send a direct message, outlet location pin, or voice note below.</p>
+                  <Sparkles size={26} color="#059669" />
+                  <h3>No messages yet</h3>
+                  <p>Send a message, voice note, or attachment below.</p>
                 </div>
               ) : (
                 messages.map((msg) => {
@@ -1253,33 +1230,22 @@ export default function Messages() {
                           </div>
                         )}
 
-                        {/* Reply to snippet */}
-                        {msg.replyTo && (
-                          <div className="msg-reply-snippet">
-                            <span className="reply-name">{msg.replyTo.senderName}</span>
-                            <span className="reply-content">{msg.replyTo.content}</span>
-                          </div>
-                        )}
-
-                        {/* Priority Badge */}
                         {msg.priority !== "normal" && (
                           <div className={`msg-priority-tag ${msg.priority}`}>
-                            {msg.priority === "broadcast" ? "📢 EXECUTIVE BROADCAST" : "⚡ URGENT DIRECTIVE"}
+                            {msg.priority === "broadcast" ? "📢 BROADCAST" : "⚡ URGENT"}
                           </div>
                         )}
 
-                        {/* Message Content */}
                         <div className="msg-body">
                           {isCallLog ? (
                             <div className="msg-call-log-card">
-                              <PhoneCall size={16} color="#059669" />
+                              <PhoneCall size={15} color="#059669" />
                               <span>{msg.content}</span>
                             </div>
                           ) : (
                             <p className="msg-text-content">{msg.content}</p>
                           )}
 
-                          {/* Attachment rendering */}
                           {msg.attachments && msg.attachments.length > 0 && (
                             <div className="msg-attachments-container">
                               {msg.attachments.map((att) => (
@@ -1287,7 +1253,7 @@ export default function Messages() {
                                   {att.type === "location" ? (
                                     <div className="msg-location-card">
                                       <div className="loc-icon-wrap">
-                                        <Compass size={18} />
+                                        <Compass size={17} />
                                       </div>
                                       <div className="loc-details">
                                         <strong>{att.name}</strong>
@@ -1306,9 +1272,10 @@ export default function Messages() {
                                       <button
                                         type="button"
                                         className={`voice-play-btn ${playingVoiceId === att.id ? "active" : ""}`}
-                                        onClick={() => handlePlayVoiceNote(att.id, att.url, att.data?.durationSecs || 3)}
-                                        title={playingVoiceId === att.id ? "Pause Voice Note" : "Play Voice Note"}
-                                        aria-label={playingVoiceId === att.id ? "Pause Voice Note" : "Play Voice Note"}
+                                        onClick={() =>
+                                          handlePlayVoiceNote(att.id, att.url, att.data?.durationSecs || 3)
+                                        }
+                                        aria-label={playingVoiceId === att.id ? "Pause" : "Play"}
                                       >
                                         {playingVoiceId === att.id ? (
                                           <Pause size={13} fill="currentColor" />
@@ -1316,15 +1283,17 @@ export default function Messages() {
                                           <Play size={13} fill="currentColor" />
                                         )}
                                       </button>
-                                      <div className={`voice-waveform-preview ${playingVoiceId === att.id ? "animating" : ""}`}>
+                                      <div
+                                        className={`voice-waveform-preview ${
+                                          playingVoiceId === att.id ? "animating" : ""
+                                        }`}
+                                      >
                                         <span className="wave-bar h-1" />
                                         <span className="wave-bar h-3" />
                                         <span className="wave-bar h-2" />
                                         <span className="wave-bar h-4" />
                                         <span className="wave-bar h-1" />
                                         <span className="wave-bar h-3" />
-                                        <span className="wave-bar h-2" />
-                                        <span className="wave-bar h-4" />
                                       </div>
                                       <span className="voice-duration">
                                         {playingVoiceId === att.id
@@ -1334,7 +1303,7 @@ export default function Messages() {
                                     </div>
                                   ) : (
                                     <div className="msg-file-card">
-                                      <FileText size={16} />
+                                      <FileText size={15} />
                                       <span>{att.name}</span>
                                     </div>
                                   )}
@@ -1344,7 +1313,6 @@ export default function Messages() {
                           )}
                         </div>
 
-                        {/* Reactions and Message Footer */}
                         <div className="msg-footer">
                           <span className="msg-timestamp">
                             {new Date(msg.timestamp).toLocaleTimeString([], {
@@ -1362,66 +1330,18 @@ export default function Messages() {
                             </span>
                           )}
 
-                          {/* Emoji quick reaction trigger */}
-                          <div className="msg-reaction-trigger-wrap">
-                            <button
-                              type="button"
-                              className="msg-reaction-add-btn"
-                              onClick={() =>
-                                setShowEmojiPicker(showEmojiPicker === msg.id ? null : msg.id)
-                              }
-                            >
-                              <Smile size={12} />
-                            </button>
-
-                            {showEmojiPicker === msg.id && (
-                              <div className="msg-reaction-picker-popover">
-                                {REACTION_EMOJIS.map((emoji) => (
-                                  <button
-                                    key={emoji}
-                                    type="button"
-                                    onClick={() => {
-                                      toggleMessageReaction(msg.id, emoji, currentUserId);
-                                      setShowEmojiPicker(null);
-                                    }}
-                                  >
-                                    {emoji}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Delete individual message or call log (enforcing messageDeletionPolicy) */}
                           {canUserDeleteMessage(viewerContext, msg, moduleSettings) && (
                             <button
                               type="button"
                               className="msg-reaction-add-btn"
                               onClick={() => deleteMessage(msg.id)}
-                              title={isCallLog ? "Delete Call Log" : "Delete Message"}
-                              style={{ marginLeft: 2, color: "#94a3b8" }}
+                              title="Delete"
+                              style={{ marginLeft: 2, color: isMe ? "rgba(255,255,255,0.75)" : "#94a3b8" }}
                             >
-                              <Trash2 size={12} />
+                              <Trash2 size={11} />
                             </button>
                           )}
                         </div>
-
-                        {/* Render active reaction chips */}
-                        {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                          <div className="msg-reactions-row">
-                            {Object.entries(msg.reactions).map(([emoji, userIds]) => (
-                              <button
-                                key={emoji}
-                                type="button"
-                                className={`reaction-chip ${userIds.includes(currentUserId) ? "mine" : ""}`}
-                                onClick={() => toggleMessageReaction(msg.id, emoji, currentUserId)}
-                              >
-                                <span>{emoji}</span>
-                                <span className="reaction-count">{userIds.length}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     </div>
                   );
@@ -1430,279 +1350,184 @@ export default function Messages() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Smart Reply Quick Response Bar (Teams/WhatsApp AI Suggestions) */}
-            {moduleSettings.allowSmartReplies && activeSendPermission.allowed && (
-              <div className="chat-smart-replies-bar">
-                <span className="smart-replies-label">
-                  <Sparkles size={12} color="#059669" /> Quick Smart Replies:
-                </span>
-                <div className="smart-chips-scroll">
-                  {suggestions.map((reply, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      className="smart-reply-chip"
-                      onClick={() => handleSendMessage(reply)}
-                    >
-                      {reply}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Composer Container */}
+            {/* Streamlined Composer */}
             <div className="chat-composer-wrap">
               {!activeReceivePermission.allowed && (
-                <div
-                  style={{
-                    padding: "8px 14px",
-                    marginBottom: 8,
-                    borderRadius: 8,
-                    background: "#fffbeb",
-                    border: "1px solid #fde68a",
-                    color: "#92400e",
-                    fontSize: 12,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                  }}
-                >
-                  <Lock size={14} />
+                <div className="composer-notice-bar warning">
+                  <Lock size={13} />
                   <span>{activeReceivePermission.reason}</span>
                 </div>
               )}
 
               {!activeSendPermission.allowed ? (
-                <div
-                  style={{
-                    padding: "14px 16px",
-                    borderRadius: 10,
-                    background: "#f8fafc",
-                    border: "1px solid #cbd5e1",
-                    color: "#475569",
-                    fontSize: 12.5,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 10,
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Lock size={15} color="#64748b" />
-                    <span>
-                      <strong>Read-Only Channel / Chat:</strong> {activeSendPermission.reason}
-                    </span>
+                <div className="composer-notice-bar readonly">
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <Lock size={14} color="#64748b" />
+                    <span>Read-Only: {activeSendPermission.reason}</span>
                   </div>
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      onClick={() => navigate("/settings?tab=communications")}
-                      style={{
-                        padding: "4px 10px",
-                        borderRadius: 6,
-                        border: "1px solid #cbd5e1",
-                        background: "#ffffff",
-                        fontSize: 11.5,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Manage Policy
-                    </button>
-                  )}
                 </div>
               ) : (
-                <>
-                  {/* Reply Preview */}
-                  {replyTarget && (
-                    <div className="composer-reply-banner">
-                      <div>
-                        <strong>Replying to {replyTarget.senderName}</strong>
-                        <p>{replyTarget.content.slice(0, 80)}</p>
-                      </div>
-                      <button type="button" onClick={() => setReplyTarget(null)}>
-                        <X size={14} />
+                <div className="chat-composer-box">
+                  {/* Attachments Trigger */}
+                  {myRolePermission.canSendAttachments && (
+                    <div className="composer-attach-wrapper">
+                      <button
+                        type="button"
+                        className="composer-action-btn"
+                        onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
+                        title="Attach Photo, File or Location"
+                      >
+                        <Paperclip size={18} />
                       </button>
-                    </div>
-                  )}
 
-                  {/* Management Priority Bar */}
-                  {isManagement && (
-                    <div className="composer-priority-selector">
-                      <span className="priority-label">Message Priority Mode:</span>
-                      <button
-                        type="button"
-                        className={`priority-chip normal ${priorityMode === "normal" ? "active" : ""}`}
-                        onClick={() => setPriorityMode("normal")}
-                      >
-                        Normal
-                      </button>
-                      <button
-                        type="button"
-                        className={`priority-chip urgent ${priorityMode === "urgent" ? "active" : ""}`}
-                        onClick={() => setPriorityMode("urgent")}
-                      >
-                        ⚡ Urgent Push Notice
-                      </button>
-                      {myRolePermission.canBroadcast && (
-                        <button
-                          type="button"
-                          className={`priority-chip broadcast ${priorityMode === "broadcast" ? "active" : ""}`}
-                          onClick={() => setPriorityMode("broadcast")}
-                        >
-                          📢 Broadcast Directive
-                        </button>
+                      {showAttachmentMenu && (
+                        <div className="composer-attach-popover">
+                          {moduleSettings.allowPhotoAttachments !== false && (
+                            <button
+                              type="button"
+                              onClick={() => imageInputRef.current?.click()}
+                              className="attach-item photo"
+                            >
+                              <ImageIcon size={16} />
+                              <div>
+                                <strong>Photo</strong>
+                                <span>Share image</span>
+                              </div>
+                            </button>
+                          )}
+
+                          {moduleSettings.allowFileAttachments !== false && (
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="attach-item file"
+                            >
+                              <FileText size={16} />
+                              <div>
+                                <strong>Document</strong>
+                                <span>Upload file or PDF</span>
+                              </div>
+                            </button>
+                          )}
+
+                          {moduleSettings.allowLocationSharing && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowAttachmentMenu(false);
+                                void handleShareLocation();
+                              }}
+                              className="attach-item location"
+                            >
+                              <MapPin size={16} />
+                              <div>
+                                <strong>GPS Location</strong>
+                                <span>Pin current coordinates</span>
+                              </div>
+                            </button>
+                          )}
+
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            style={{ display: "none" }}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                void handleSendMessage(`📎 Document: ${file.name}`, [
+                                  {
+                                    id: `file-${Date.now()}`,
+                                    name: file.name,
+                                    type: "document",
+                                    url: "#",
+                                    size: `${Math.round(file.size / 1024)} KB`,
+                                  },
+                                ]);
+                              }
+                            }}
+                          />
+                          <input
+                            ref={imageInputRef}
+                            type="file"
+                            accept="image/*"
+                            style={{ display: "none" }}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                void handleSendMessage(`🖼️ Photo: ${file.name}`, [
+                                  {
+                                    id: `img-${Date.now()}`,
+                                    name: file.name,
+                                    type: "image",
+                                    url: "#",
+                                    size: `${Math.round(file.size / 1024)} KB`,
+                                  },
+                                ]);
+                              }
+                            }}
+                          />
+                        </div>
                       )}
                     </div>
                   )}
 
-                  {/* Main Composer Box */}
-                  <div className="chat-composer-box">
-                    {/* Attachments Trigger */}
-                    {myRolePermission.canSendAttachments && (
-                      <div className="composer-attach-wrapper">
+                  {/* Compact Priority Dropdown for Management */}
+                  {isManagement && !isRecordingVoice && (
+                    <select
+                      value={priorityMode}
+                      onChange={(e) => setPriorityMode(e.target.value as typeof priorityMode)}
+                      className={`composer-priority-select ${priorityMode}`}
+                      title="Message priority"
+                    >
+                      <option value="normal">Normal</option>
+                      <option value="urgent">⚡ Urgent</option>
+                      {myRolePermission.canBroadcast && (
+                        <option value="broadcast">📢 Broadcast</option>
+                      )}
+                    </select>
+                  )}
+
+                  {/* Voice Recording or Text Input */}
+                  {isRecordingVoice ? (
+                    <div className="composer-voice-recording-stage">
+                      <span className="voice-pulse-indicator" />
+                      <strong>Recording ({recordDuration}s)…</strong>
+                      <div className="voice-stage-actions">
                         <button
                           type="button"
-                          className="composer-action-btn"
-                          onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
-                          title="Add Attachment"
+                          className="voice-cancel-btn"
+                          onClick={handleCancelVoiceRecording}
                         >
-                          <Paperclip size={18} />
+                          Cancel
                         </button>
-
-                        {showAttachmentMenu && (
-                          <div className="composer-attach-popover">
-                            {moduleSettings.allowLocationSharing && (
-                              <button
-                                type="button"
-                                onClick={handleShareLocation}
-                                className="attach-item location"
-                              >
-                                <MapPin size={16} />
-                                <div>
-                                  <strong>Current GPS Location</strong>
-                                  <span>Pin outlet coordinates</span>
-                                </div>
-                              </button>
-                            )}
-
-                            {moduleSettings.allowFileAttachments !== false && (
-                              <button
-                                type="button"
-                                onClick={() => fileInputRef.current?.click()}
-                                className="attach-item file"
-                              >
-                                <FileText size={16} />
-                                <div>
-                                  <strong>Document / Invoice</strong>
-                                  <span>Upload PDF or spreadsheet</span>
-                                </div>
-                              </button>
-                            )}
-
-                            {moduleSettings.allowPhotoAttachments !== false && (
-                              <button
-                                type="button"
-                                onClick={() => imageInputRef.current?.click()}
-                                className="attach-item photo"
-                              >
-                                <ImageIcon size={16} />
-                                <div>
-                                  <strong>Photo / Shelf Evidence</strong>
-                                  <span>Share store image</span>
-                                </div>
-                              </button>
-                            )}
-
-                            <input
-                              ref={fileInputRef}
-                              type="file"
-                              style={{ display: "none" }}
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  handleSendMessage(`📎 Uploaded Document: ${file.name}`, [
-                                    {
-                                      id: `file-${Date.now()}`,
-                                      name: file.name,
-                                      type: "document",
-                                      url: "#",
-                                      size: `${Math.round(file.size / 1024)} KB`,
-                                    },
-                                  ]);
-                                }
-                              }}
-                            />
-                            <input
-                              ref={imageInputRef}
-                              type="file"
-                              accept="image/*"
-                              style={{ display: "none" }}
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  handleSendMessage(`🖼️ Uploaded Photo: ${file.name}`, [
-                                    {
-                                      id: `img-${Date.now()}`,
-                                      name: file.name,
-                                      type: "image",
-                                      url: "#",
-                                      size: `${Math.round(file.size / 1024)} KB`,
-                                    },
-                                  ]);
-                                }
-                              }}
-                            />
-                          </div>
-                        )}
+                        <button
+                          type="button"
+                          className="voice-send-btn"
+                          onClick={handleFinishVoiceRecording}
+                        >
+                          <Send size={13} /> Send
+                        </button>
                       </div>
-                    )}
+                    </div>
+                  ) : (
+                    <>
+                      <textarea
+                        placeholder="Type a message…"
+                        value={inputText}
+                        onChange={(e) => setInputText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            void handleSendMessage();
+                          }
+                        }}
+                        rows={1}
+                        className="composer-textarea"
+                      />
 
-                    {/* Voice Note Recording UI or Textarea */}
-                    {isRecordingVoice ? (
-                      <div className="composer-voice-recording-stage">
-                        <span className="voice-pulse-indicator" />
-                        <strong>Recording voice note… ({recordDuration}s)</strong>
-                        <div className="voice-stage-actions">
-                          <button
-                            type="button"
-                            className="voice-cancel-btn"
-                            onClick={handleCancelVoiceRecording}
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            className="voice-send-btn"
-                            onClick={handleFinishVoiceRecording}
-                          >
-                            <Send size={14} /> Send Note
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <textarea
-                          placeholder={`Message ${
-                            activeConversation.type === "direct" && directPartner
-                              ? directPartner.name
-                              : activeConversation.title
-                          }… (Press Enter to send)`}
-                          value={inputText}
-                          onChange={(e) => setInputText(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                              e.preventDefault();
-                              void handleSendMessage();
-                            }
-                          }}
-                          rows={1}
-                          className="composer-textarea"
-                        />
-
-                        {/* Voice Recording Button */}
-                        {moduleSettings.allowVoiceNotes && myRolePermission.canSendAttachments && (
+                      {moduleSettings.allowVoiceNotes &&
+                        myRolePermission.canSendAttachments &&
+                        !inputText.trim() && (
                           <button
                             type="button"
                             className="composer-action-btn voice"
@@ -1713,45 +1538,43 @@ export default function Messages() {
                           </button>
                         )}
 
-                        {/* Send Button */}
-                        <button
-                          type="button"
-                          className="composer-send-btn"
-                          disabled={!inputText.trim()}
-                          onClick={() => void handleSendMessage()}
-                          title="Send Message"
-                        >
-                          <Send size={16} />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </>
+                      <button
+                        type="button"
+                        className="composer-send-btn"
+                        disabled={!inputText.trim()}
+                        onClick={() => void handleSendMessage()}
+                        title="Send Message"
+                      >
+                        <Send size={16} />
+                      </button>
+                    </>
+                  )}
+                </div>
               )}
             </div>
           </>
         ) : (
           <div className="chat-empty-selection">
-            <Users size={48} style={{ opacity: 0.3, marginBottom: 12 }} />
-            <h2>Select a conversation or staff member</h2>
-            <p>Pick a territory group, all-hands channel, or direct message from the left sidebar.</p>
+            <Users size={42} style={{ opacity: 0.3, marginBottom: 10 }} />
+            <h2>Select a conversation</h2>
+            <p>Choose a chat from the list or start a new conversation.</p>
           </div>
         )}
       </main>
 
       {/* ═══════════════════════════════════════════════════════════════════ */}
-      {/* RIGHT SIDEBAR: Contact Profile, Territory Info & Shared Media      */}
+      {/* OPTIONAL DRAWER: Contact / Channel Details                         */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {showRightPanel && activeConversation && (
         <aside className="messages-info-panel">
           <div className="info-panel-header">
-            <h3>{activeConversation.type === "direct" ? "Contact Details" : "Channel Overview"}</h3>
+            <h3>{activeConversation.type === "direct" ? "Contact Info" : "Channel Info"}</h3>
             <button
               type="button"
               className="info-close-btn"
               onClick={() => setShowRightPanel(false)}
             >
-              <X size={15} />
+              <X size={16} />
             </button>
           </div>
 
@@ -1772,42 +1595,15 @@ export default function Messages() {
               <p className="info-role">
                 {activeConversation.type === "direct" && directPartner
                   ? directPartner.roleName
-                  : "Field Fleet Communications Group"}
+                  : activeConversation.description || "Communications Channel"}
               </p>
             </div>
 
-            {/* Quick Actions (Audio / Video Call) */}
-            {(moduleSettings.allowVoiceCalls || moduleSettings.allowVideoCalls) && (
-              <div className="info-quick-actions">
-                {moduleSettings.allowVoiceCalls && (
-                  <button
-                    type="button"
-                    className="quick-call-btn"
-                    onClick={() => handleStartCall("audio")}
-                  >
-                    <Phone size={15} />
-                    <span>{activeConversation.type === "direct" ? "Audio Call" : "Voice Huddle"}</span>
-                  </button>
-                )}
-                {moduleSettings.allowVideoCalls && (
-                  <button
-                    type="button"
-                    className="quick-call-btn"
-                    onClick={() => handleStartCall("video")}
-                  >
-                    <Video size={15} />
-                    <span>{activeConversation.type === "direct" ? "Video Call" : "Video Huddle"}</span>
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Territory & Contact Metadata */}
             <div className="info-section">
-              <span className="info-section-title">Territory &amp; Scope</span>
+              <span className="info-section-title">Details</span>
               <div className="info-detail-row">
                 <MapPin size={14} color="#64748b" />
-                <span>{directPartner?.region || "National Headquarters & All Regions"}</span>
+                <span>{directPartner?.region || "All Regions"}</span>
               </div>
               {directPartner?.phone && (
                 <div className="info-detail-row">
@@ -1816,72 +1612,20 @@ export default function Messages() {
                 </div>
               )}
             </div>
-
-            {/* Shared Attachments & Tools */}
-            <div className="info-section">
-              <span className="info-section-title">Quick Actions</span>
-              <button
-                type="button"
-                className="info-tool-btn"
-                onClick={handleShareLocation}
-              >
-                <MapPin size={14} />
-                <span>Share My Current GPS Coordinates</span>
-              </button>
-              <button
-                type="button"
-                className="info-tool-btn"
-                onClick={() => {
-                  const annConv = conversations.find((c) => c.type === "announcement");
-                  if (annConv) setSelectedConvId(annConv.id);
-                }}
-              >
-                <Radio size={14} />
-                <span>View All-Hands Announcements</span>
-              </button>
-              <button
-                type="button"
-                className="info-tool-btn"
-                onClick={() => {
-                  if (!activeConversation) return;
-                  if (window.confirm(`Clear all call logs in "${activeConversation.title}"?`)) {
-                    clearConversationCallLogs(activeConversation.id);
-                  }
-                }}
-                style={{ color: "#b45309", borderColor: "#fde68a", background: "#fffbeb" }}
-              >
-                <Phone size={14} />
-                <span>Clear Call Logs in This Chat</span>
-              </button>
-              <button
-                type="button"
-                className="info-tool-btn"
-                onClick={() => {
-                  if (!activeConversation) return;
-                  if (window.confirm(`Clear all messages & calls in "${activeConversation.title}"?`)) {
-                    clearConversationMessages(activeConversation.id);
-                  }
-                }}
-                style={{ color: "#e11d48", borderColor: "#fecdd3", background: "#fff1f2" }}
-              >
-                <Trash2 size={14} />
-                <span>Clear Chat Messages &amp; Calls</span>
-              </button>
-            </div>
           </div>
         </aside>
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════ */}
-      {/* MODAL 1: NEW DIRECT MESSAGE / CALL (Select Staff from Directory)    */}
+      {/* MODAL 1: NEW DIRECT MESSAGE / CALL                                 */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {newChatModalOpen && (
-        <div className="comm-modal-backdrop">
-          <div className="comm-dialog">
+        <div className="comm-modal-backdrop" onClick={() => setNewChatModalOpen(false)}>
+          <div className="comm-dialog" onClick={(e) => e.stopPropagation()}>
             <div className="comm-dialog-header">
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <Users size={18} color="#059669" />
-                <h3 style={{ margin: 0 }}>Start Direct Message or Call</h3>
+                <h3 style={{ margin: 0, fontSize: 16 }}>New Chat or Call</h3>
               </div>
               <button
                 type="button"
@@ -1893,45 +1637,21 @@ export default function Messages() {
             </div>
 
             <div className="comm-dialog-body">
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  flexWrap: "wrap",
-                  gap: 8,
-                  padding: "8px 12px",
-                  borderRadius: 8,
-                  background: effectiveDirectoryScope === "all_regions" ? "#eff6ff" : "#ecfdf5",
-                  border: effectiveDirectoryScope === "all_regions" ? "1px solid #bfdbfe" : "1px solid #a7f3d0",
-                  marginBottom: 12,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: effectiveDirectoryScope === "all_regions" ? "#1d4ed8" : "#047857" }}>
-                  {effectiveDirectoryScope === "all_regions" ? <Globe size={14} /> : <MapPin size={14} />}
-                  <span>
-                    {effectiveDirectoryScope === "all_regions"
-                      ? "Visibility Scope: All Regions (National Directory)"
-                      : effectiveDirectoryScope === "reporting_line_only"
-                      ? "Visibility Scope: Direct Reporting Chain & Peers"
-                      : `Visibility Scope: Assigned Region (${viewerContext.region})`}
-                  </span>
-                </div>
-                <span style={{ fontSize: 11.5, color: "#475569", fontWeight: 600 }}>
-                  {modalFilteredDirectoryUsers.length} Staff Available
-                </span>
-              </div>
-
-              {/* Search & Region Filter inside Directory Modal */}
               <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-                <div style={{ position: "relative", flex: 1, minWidth: 180 }}>
+                <div style={{ position: "relative", flex: "1 1 180px" }}>
                   <Search
                     size={13}
-                    style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#94a3b8" }}
+                    style={{
+                      position: "absolute",
+                      left: 10,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      color: "#94a3b8",
+                    }}
                   />
                   <input
                     type="text"
-                    placeholder="Search staff name, role, or region…"
+                    placeholder="Search staff name or role…"
                     value={directorySearchQuery}
                     onChange={(e) => setDirectorySearchQuery(e.target.value)}
                     style={{
@@ -1957,8 +1677,8 @@ export default function Messages() {
                     background: "#ffffff",
                   }}
                 >
-                  <option value="all">All Allowed Regions</option>
-                  <option value="my_region">Only My Region ({viewerContext.region})</option>
+                  <option value="all">All Regions ({visibleDirectoryUsers.length})</option>
+                  <option value="my_region">My Region ({viewerContext.region})</option>
                   {availableDirectoryRegions.map((reg) => (
                     <option key={reg} value={reg}>
                       {reg}
@@ -1970,12 +1690,24 @@ export default function Messages() {
               <div className="directory-list-scroll">
                 {modalFilteredDirectoryUsers.length === 0 ? (
                   <div style={{ padding: 24, textAlign: "center", color: "#64748b", fontSize: 13 }}>
-                    No staff contacts match your current region visibility scope or filter.
+                    No matching staff contacts found.
                   </div>
                 ) : (
                   modalFilteredDirectoryUsers.map((target) => {
-                    const audioPerm = canUserCallTarget(viewerContext, target, "audio", moduleSettings, false);
-                    const videoPerm = canUserCallTarget(viewerContext, target, "video", moduleSettings, false);
+                    const audioPerm = canUserCallTarget(
+                      viewerContext,
+                      target,
+                      "audio",
+                      moduleSettings,
+                      false
+                    );
+                    const videoPerm = canUserCallTarget(
+                      viewerContext,
+                      target,
+                      "video",
+                      moduleSettings,
+                      false
+                    );
                     return (
                       <div
                         key={target.id}
@@ -1993,40 +1725,28 @@ export default function Messages() {
                         </div>
                         <div className="dir-meta">
                           <strong>{target.name}</strong>
-                          <span className="dir-role">{target.roleName} · {target.region}</span>
+                          <span className="dir-role">
+                            {target.roleName} · {target.region}
+                          </span>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           {moduleSettings.allowVoiceCalls && (
                             <button
                               type="button"
                               disabled={!audioPerm.allowed}
-                              title={audioPerm.allowed ? `Voice Call ${target.name}` : audioPerm.reason}
+                              title={audioPerm.allowed ? `Call ${target.name}` : audioPerm.reason}
                               onClick={async (e) => {
                                 e.stopPropagation();
-                                if (!audioPerm.allowed) {
-                                  alert(audioPerm.reason);
-                                  return;
-                                }
+                                if (!audioPerm.allowed) return;
                                 const conv = await createDirectConversation(currentUserId, target);
                                 setConversations(getStoredConversations());
                                 setSelectedConvId(conv.id);
                                 setNewChatModalOpen(false);
                                 handleStartCall("audio", target, conv.id);
                               }}
-                              style={{
-                                width: 30,
-                                height: 30,
-                                borderRadius: 8,
-                                border: audioPerm.allowed ? "1px solid #a7f3d0" : "1px solid #e2e8f0",
-                                background: audioPerm.allowed ? "#f0fdf4" : "#f8fafc",
-                                color: audioPerm.allowed ? "#059669" : "#94a3b8",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                cursor: audioPerm.allowed ? "pointer" : "not-allowed",
-                              }}
+                              className="dir-call-icon-btn audio"
                             >
-                              {audioPerm.allowed ? <Phone size={14} /> : <Lock size={13} />}
+                              {audioPerm.allowed ? <Phone size={14} /> : <Lock size={12} />}
                             </button>
                           )}
                           {moduleSettings.allowVideoCalls && (
@@ -2036,33 +1756,19 @@ export default function Messages() {
                               title={videoPerm.allowed ? `Video Call ${target.name}` : videoPerm.reason}
                               onClick={async (e) => {
                                 e.stopPropagation();
-                                if (!videoPerm.allowed) {
-                                  alert(videoPerm.reason);
-                                  return;
-                                }
+                                if (!videoPerm.allowed) return;
                                 const conv = await createDirectConversation(currentUserId, target);
                                 setConversations(getStoredConversations());
                                 setSelectedConvId(conv.id);
                                 setNewChatModalOpen(false);
                                 handleStartCall("video", target, conv.id);
                               }}
-                              style={{
-                                width: 30,
-                                height: 30,
-                                borderRadius: 8,
-                                border: videoPerm.allowed ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
-                                background: videoPerm.allowed ? "#eff6ff" : "#f8fafc",
-                                color: videoPerm.allowed ? "#2563eb" : "#94a3b8",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                cursor: videoPerm.allowed ? "pointer" : "not-allowed",
-                              }}
+                              className="dir-call-icon-btn video"
                             >
-                              {videoPerm.allowed ? <Video size={14} /> : <Lock size={13} />}
+                              {videoPerm.allowed ? <Video size={14} /> : <Lock size={12} />}
                             </button>
                           )}
-                          <ChevronRight size={16} color="#94a3b8" />
+                          <ChevronRight size={15} color="#94a3b8" />
                         </div>
                       </div>
                     );
@@ -2075,15 +1781,15 @@ export default function Messages() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════ */}
-      {/* MODAL 2: EXECUTIVE BROADCAST PUSH MODAL (Admin / HR / RSM / SE)    */}
+      {/* MODAL 2: SEND BROADCAST                                            */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {broadcastModalOpen && (
-        <div className="comm-modal-backdrop">
-          <div className="comm-dialog broadcast">
+        <div className="comm-modal-backdrop" onClick={() => setBroadcastModalOpen(false)}>
+          <div className="comm-dialog broadcast" onClick={(e) => e.stopPropagation()}>
             <div className="comm-dialog-header">
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <Radio size={18} color="#d97706" />
-                <h3 style={{ margin: 0 }}>Push Executive Broadcast to Field Staff</h3>
+                <h3 style={{ margin: 0, fontSize: 16 }}>Send Broadcast</h3>
               </div>
               <button
                 type="button"
@@ -2095,60 +1801,80 @@ export default function Messages() {
             </div>
 
             <div className="comm-dialog-body">
-              <p style={{ margin: "0 0 14px 0", fontSize: 13, color: "#64748b" }}>
-                Send an instant high-priority directive with audio chime and in-app banner to BAs, Van Sales Reps, and Supervisors:
-              </p>
-
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <div>
                   <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
-                    Broadcast Headline / Topic
+                    Topic
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. Q4 Target Directive or Price Adjustment Notice"
+                    placeholder="e.g. Monthly Target Update"
                     value={broadcastTitle}
                     onChange={(e) => setBroadcastTitle(e.target.value)}
-                    style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #cbd5e1" }}
+                    style={{
+                      width: "100%",
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      border: "1px solid #cbd5e1",
+                      boxSizing: "border-box",
+                    }}
                   />
                 </div>
 
                 <div>
                   <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
-                    Target Audience
+                    Audience
                   </label>
                   <select
                     value={broadcastTargetRole}
                     onChange={(e) => setBroadcastTargetRole(e.target.value)}
-                    style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #cbd5e1" }}
+                    style={{
+                      width: "100%",
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      border: "1px solid #cbd5e1",
+                      background: "#ffffff",
+                    }}
                   >
-                    <option value="all">Entire Company (All Staff &amp; Roles)</option>
-                    <option value="brand_ambassador">All Brand Ambassadors (BAs)</option>
-                    <option value="vsr">All Van Sales Reps (VSRs)</option>
-                    <option value="sales_executive">All Sales Executives (SEs)</option>
-                    <option value="regional_sales_manager">All Regional Sales Managers (RSMs)</option>
+                    <option value="all">All Staff &amp; Roles</option>
+                    <option value="brand_ambassador">Brand Ambassadors (BAs)</option>
+                    <option value="vsr">Van Sales Reps (VSRs)</option>
+                    <option value="sales_executive">Sales Executives (SEs)</option>
+                    <option value="regional_sales_manager">Regional Managers (RSMs)</option>
                   </select>
                 </div>
 
                 <div>
                   <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
-                    Directive Message Content
+                    Message
                   </label>
                   <textarea
                     rows={4}
-                    placeholder="Enter directive instructions, target figures, or instructions..."
+                    placeholder="Write your announcement..."
                     value={broadcastContent}
                     onChange={(e) => setBroadcastContent(e.target.value)}
-                    style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #cbd5e1" }}
+                    style={{
+                      width: "100%",
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      border: "1px solid #cbd5e1",
+                      boxSizing: "border-box",
+                    }}
                   />
                 </div>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
                 <button
                   type="button"
                   onClick={() => setBroadcastModalOpen(false)}
-                  style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", cursor: "pointer" }}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 8,
+                    border: "1px solid #cbd5e1",
+                    background: "#fff",
+                    cursor: "pointer",
+                  }}
                 >
                   Cancel
                 </button>
@@ -2157,19 +1883,18 @@ export default function Messages() {
                   disabled={!broadcastTitle.trim() || !broadcastContent.trim()}
                   onClick={handleSendBroadcast}
                   style={{
-                    padding: "8px 18px",
+                    padding: "8px 16px",
                     borderRadius: 8,
                     border: "none",
-                    background: broadcastTitle.trim() && broadcastContent.trim() ? "#d97706" : "#cbd5e1",
+                    background:
+                      broadcastTitle.trim() && broadcastContent.trim() ? "#d97706" : "#cbd5e1",
                     color: "#fff",
                     fontWeight: 700,
-                    cursor: broadcastTitle.trim() && broadcastContent.trim() ? "pointer" : "not-allowed",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
+                    cursor:
+                      broadcastTitle.trim() && broadcastContent.trim() ? "pointer" : "not-allowed",
                   }}
                 >
-                  <Radio size={14} /> Send Live Broadcast
+                  Send Broadcast
                 </button>
               </div>
             </div>
@@ -2181,12 +1906,12 @@ export default function Messages() {
       {/* MODAL 3: CLEAR CALLS & MESSAGES HISTORY                            */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {clearHistoryModalOpen && (
-        <div className="comm-modal-backdrop">
-          <div className="comm-dialog" style={{ maxWidth: 460 }}>
+        <div className="comm-modal-backdrop" onClick={() => setClearHistoryModalOpen(false)}>
+          <div className="comm-dialog" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
             <div className="comm-dialog-header">
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <Trash2 size={18} color="#e11d48" />
-                <h3 style={{ margin: 0 }}>Clear Calls &amp; Messages</h3>
+                <h3 style={{ margin: 0, fontSize: 16 }}>Clear History</h3>
               </div>
               <button
                 type="button"
@@ -2198,11 +1923,7 @@ export default function Messages() {
             </div>
 
             <div className="comm-dialog-body">
-              <p style={{ margin: "0 0 14px 0", fontSize: 13, color: "#64748b" }}>
-                Choose whether to clear call logs or messages for the current conversation or across all chats:
-              </p>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {activeConversation && (
                   <>
                     <button
@@ -2211,28 +1932,13 @@ export default function Messages() {
                         clearConversationCallLogs(activeConversation.id);
                         setClearHistoryModalOpen(false);
                       }}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "12px 14px",
-                        borderRadius: 10,
-                        border: "1px solid #fde68a",
-                        background: "#fffbeb",
-                        color: "#92400e",
-                        cursor: "pointer",
-                        textAlign: "left",
-                      }}
+                      className="clear-history-option-btn"
                     >
                       <div>
-                        <strong style={{ display: "block", fontSize: 13 }}>
-                          Clear Call Logs in Current Chat
-                        </strong>
-                        <span style={{ fontSize: 11.5, opacity: 0.85 }}>
-                          Removes only voice/video call entries in {activeConversation.title}
-                        </span>
+                        <strong>Clear Call Logs in Current Chat</strong>
+                        <span>Only removes call entries in {activeConversation.title}</span>
                       </div>
-                      <Phone size={16} />
+                      <Phone size={15} />
                     </button>
 
                     <button
@@ -2241,100 +1947,49 @@ export default function Messages() {
                         clearConversationMessages(activeConversation.id);
                         setClearHistoryModalOpen(false);
                       }}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "12px 14px",
-                        borderRadius: 10,
-                        border: "1px solid #fecdd3",
-                        background: "#fff1f2",
-                        color: "#be123c",
-                        cursor: "pointer",
-                        textAlign: "left",
-                      }}
+                      className="clear-history-option-btn danger-soft"
                     >
                       <div>
-                        <strong style={{ display: "block", fontSize: 13 }}>
-                          Clear All Messages &amp; Calls in Current Chat
-                        </strong>
-                        <span style={{ fontSize: 11.5, opacity: 0.85 }}>
-                          Empties all chat messages and call logs in {activeConversation.title}
-                        </span>
+                        <strong>Clear Current Chat</strong>
+                        <span>Empties messages &amp; calls in {activeConversation.title}</span>
                       </div>
-                      <Trash2 size={16} />
+                      <Trash2 size={15} />
                     </button>
                   </>
                 )}
 
-                <div style={{ height: 1, background: "#e2e8f0", margin: "4px 0" }} />
-
                 <button
                   type="button"
                   onClick={() => {
-                    if (window.confirm("Clear all voice and video call logs across all conversations?")) {
+                    if (window.confirm("Clear all call logs across all conversations?")) {
                       clearAllCallLogs();
                       setClearHistoryModalOpen(false);
                     }
                   }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "12px 14px",
-                    borderRadius: 10,
-                    border: "1px solid #cbd5e1",
-                    background: "#f8fafc",
-                    color: "#334155",
-                    cursor: "pointer",
-                    textAlign: "left",
-                  }}
+                  className="clear-history-option-btn"
                 >
                   <div>
-                    <strong style={{ display: "block", fontSize: 13 }}>
-                      Clear All Call Logs (All Conversations)
-                    </strong>
-                    <span style={{ fontSize: 11.5, color: "#64748b" }}>
-                      Deletes all call history and resets any active call session
-                    </span>
+                    <strong>Clear All Call Logs</strong>
+                    <span>Deletes call history across all chats</span>
                   </div>
-                  <PhoneCall size={16} />
+                  <PhoneCall size={15} />
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
-                    if (
-                      window.confirm(
-                        "Clear ALL messages and call logs across every conversation? Conversation channels and contacts will remain intact.",
-                      )
-                    ) {
+                    if (window.confirm("Clear ALL messages and call logs across every chat?")) {
                       clearAllMessagesAndCalls();
                       setClearHistoryModalOpen(false);
                     }
                   }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "12px 14px",
-                    borderRadius: 10,
-                    border: "1px solid #f43f5e",
-                    background: "#e11d48",
-                    color: "#ffffff",
-                    cursor: "pointer",
-                    textAlign: "left",
-                  }}
+                  className="clear-history-option-btn danger"
                 >
                   <div>
-                    <strong style={{ display: "block", fontSize: 13 }}>
-                      Clear All Messages &amp; Call History (Global)
-                    </strong>
-                    <span style={{ fontSize: 11.5, opacity: 0.9 }}>
-                      Wipes all messages, attachments, and call logs across all chats
-                    </span>
+                    <strong>Clear All Messages &amp; Calls</strong>
+                    <span>Resets all conversation histories</span>
                   </div>
-                  <Trash2 size={16} />
+                  <Trash2 size={15} />
                 </button>
               </div>
             </div>

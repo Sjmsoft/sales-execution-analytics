@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Camera, CheckCircle2, Clock, LogOut, ShieldAlert, Sparkles, UserCheck, X } from "lucide-react";
+import { Camera, CheckCircle2, Clock, LogOut, ShieldAlert, Sparkles, Upload, UserCheck, X } from "lucide-react";
 import {
   uploadVisitSignOutPhoto,
   checkOutVisit,
@@ -63,6 +63,7 @@ export function SignOutDialog({
       : ""
   );
   const [photo, setPhoto] = useState<File | null>(null);
+  const [photoSource, setPhotoSource] = useState<"camera" | "upload" | null>(null);
   const [isCompressing, setIsCompressing] = useState(false);
   const [compressionText, setCompressionText] = useState<string | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
@@ -71,23 +72,28 @@ export function SignOutDialog({
   const photoPreview = useFilePreview(photo);
   const { position, startDrag } = useDragPosition();
 
-  async function handlePhotoSelect(selectedFile: File | null) {
+  async function handlePhotoSelect(selectedFile: File | null, source: "camera" | "upload" = "camera") {
     if (!selectedFile) {
       setPhoto(null);
+      setPhotoSource(null);
       setCompressionText(null);
       return;
     }
     setIsCompressing(true);
+    setPhotoSource(source);
     setCompressionText(null);
     try {
       const result = await compressImageWithStats(selectedFile, {
-        maxWidth: 1600,
-        maxHeight: 1600,
-        quality: 0.8,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        quality: 0.75,
+        maxSizeMB: 0.45,
       });
       setPhoto(result.file);
       if (result.savingsPercent > 0) {
         setCompressionText(`${formatBytes(result.originalSize)} → ${formatBytes(result.compressedSize)} (${result.savingsPercent}% smaller)`);
+      } else {
+        setCompressionText(`Optimized (${formatBytes(result.compressedSize)})`);
       }
     } catch (err) {
       console.warn("SignOutDialog photo compression notice:", err);
@@ -350,43 +356,112 @@ export function SignOutDialog({
                 Sign-out photo {!requiresPhoto && <small style={{ color: "#64748b", fontWeight: 400 }}>(Optional for Admin/HR override)</small>}
                 {requiresPhoto && <b>*</b>}
               </span>
+              <small style={{ color: "#64748b", fontSize: 11 }}>Auto-compressed</small>
             </div>
-            <label className="signout-capture">
-              <Camera size={18} /> {isCompressing ? "Compressing photo..." : photo ? "Change Photo" : "Upload / Capture Photo"}
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                disabled={isCompressing}
-                onChange={(event) => handlePhotoSelect(event.target.files?.[0] ?? null)}
-              />
-            </label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+              <label
+                className="signout-capture"
+                style={{
+                  flex: "1 1 160px",
+                  justifyContent: "center",
+                  margin: 0,
+                }}
+              >
+                <Camera size={16} />{" "}
+                {isCompressing && photoSource === "camera"
+                  ? "Compressing..."
+                  : photo && photoSource === "camera"
+                    ? "Retake Photo"
+                    : "Capture Photo"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  disabled={isCompressing}
+                  onChange={(event) => {
+                    const f = event.target.files?.[0] ?? null;
+                    if (f) void handlePhotoSelect(f, "camera");
+                    event.currentTarget.value = "";
+                  }}
+                />
+              </label>
+
+              <label
+                className="signout-capture"
+                style={{
+                  flex: "1 1 160px",
+                  justifyContent: "center",
+                  margin: 0,
+                  background: "#ffffff",
+                  color: "#065f46",
+                  border: "1.5px solid #10b981",
+                }}
+              >
+                <Upload size={16} />{" "}
+                {isCompressing && photoSource === "upload"
+                  ? "Compressing..."
+                  : photo && photoSource === "upload"
+                    ? "Change Uploaded Photo"
+                    : "Upload Photo"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={isCompressing}
+                  onChange={(event) => {
+                    const f = event.target.files?.[0] ?? null;
+                    if (f) void handlePhotoSelect(f, "upload");
+                    event.currentTarget.value = "";
+                  }}
+                />
+              </label>
+            </div>
             {isCompressing && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#059669", padding: "6px 0" }}>
                 <span className="checkin-compressing-spinner" />
-                <span>Optimizing photo size…</span>
+                <span>Compressing &amp; optimizing photo before upload…</span>
               </div>
             )}
             {!isCompressing && photoPreview && (
-              <div className="signout-photo-preview">
+              <div className="signout-photo-preview" style={{ position: "relative" }}>
                 <img src={photoPreview} alt="Captured sign-out preview" />
-                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                  <span style={{ fontWeight: 600 }}>{photo?.name}</span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 0 }}>
+                  <span style={{ fontWeight: 700, fontSize: 12.5, color: "#059669" }}>
+                    {photoSource === "upload" ? "✓ Photo Uploaded & Compressed" : "✓ Photo Captured & Compressed"}
+                  </span>
                   {compressionText ? (
                     <span style={{ fontSize: 11, color: "#065f46", background: "#ecfdf5", border: "1px solid #a7f3d0", padding: "2px 8px", borderRadius: 9999, fontWeight: 700, width: "fit-content" }}>
-                      ⚡ Compressed: {compressionText}
+                      ⚡ {compressionText}
                     </span>
                   ) : (
                     <span style={{ fontSize: 11, color: "#64748b" }}>Photo ready for upload</span>
                   )}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => void handlePhotoSelect(null)}
+                  title="Remove photo"
+                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: 6,
+                    border: "1px solid #fecaca",
+                    background: "#fef2f2",
+                    color: "#dc2626",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                  }}
+                >
+                  <X size={14} />
+                </button>
               </div>
             )}
             {!isCompressing && !photoPreview && (
               <p style={{ fontSize: 11.5, color: "#94a3b8" }}>
                 {forceCheckout
                   ? "No photo attached. As Admin/HR, you can proceed without photo evidence."
-                  : "No photo captured yet. A sign-out photo is required."}
+                  : "Choose to capture a live camera photo or upload an existing photo from your device."}
               </p>
             )}
           </div>

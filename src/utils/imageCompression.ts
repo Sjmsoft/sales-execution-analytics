@@ -108,14 +108,14 @@ export async function compressImageWithStats(
   const originalSize = file.size;
 
   // Defaults optimized for mobile field audits & photo proofs
-  const maxWidth = options.maxWidth ?? 1600;
-  const maxHeight = options.maxHeight ?? 1600;
-  const quality = options.quality ?? 0.8;
+  const maxWidth = options.maxWidth ?? 1280;
+  const maxHeight = options.maxHeight ?? 1280;
+  const quality = options.quality ?? 0.75;
   const mimeType = options.mimeType ?? "image/jpeg";
   const originalName = file instanceof File ? file.name : "photo.jpg";
 
-  // If already a tiny file (e.g. < 60KB) and not oversized dimensions, avoid redundant processing
-  if (originalSize < 60 * 1024 && file instanceof File) {
+  // Only skip if the file is already tiny (< 15KB)
+  if (originalSize < 15 * 1024 && file instanceof File) {
     return {
       file,
       blob: file,
@@ -163,19 +163,26 @@ export async function compressImageWithStats(
       );
     });
 
-    // Adaptive pass if file still exceeds maxSizeMB
-    const targetMaxBytes = (options.maxSizeMB ?? 1.5) * 1024 * 1024;
-    if (compressedBlob.size > targetMaxBytes && quality > 0.5) {
-      const lowerQuality = Math.max(0.5, quality - 0.25);
-      const secondPassBlob = await new Promise<Blob | null>((resolve) => {
-        canvas.toBlob((b) => resolve(b), mimeType, lowerQuality);
+    // Adaptive multi-step pass if file still exceeds maxSizeMB (default 0.45 MB = ~450 KB)
+    // or if initial pass wasn't smaller than original file
+    const targetMaxBytes = (options.maxSizeMB ?? 0.45) * 1024 * 1024;
+    let currentQuality = quality;
+    while (
+      (compressedBlob.size > targetMaxBytes || compressedBlob.size >= originalSize) &&
+      currentQuality > 0.4
+    ) {
+      currentQuality = Math.max(0.38, Number((currentQuality - 0.15).toFixed(2)));
+      const nextBlob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((b) => resolve(b), mimeType, currentQuality);
       });
-      if (secondPassBlob && secondPassBlob.size < compressedBlob.size) {
-        compressedBlob = secondPassBlob;
+      if (nextBlob && nextBlob.size < compressedBlob.size) {
+        compressedBlob = nextBlob;
+      } else {
+        break;
       }
     }
 
-    // If compression somehow produced a larger file than original (e.g. tiny low-res PNG re-encoded),
+    // If compression still produced a larger file than original (e.g. tiny already-compressed icon),
     // keep the original
     if (file instanceof File && compressedBlob.size >= originalSize) {
       return {
