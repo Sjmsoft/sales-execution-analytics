@@ -15,6 +15,7 @@ import {
   Calendar,
   Search,
   Tag,
+  DollarSign,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import {
@@ -56,6 +57,9 @@ export function DrinksAndProductsSection() {
   const [customCategory, setCustomCategory] = useState("");
   const [pricePerBottle, setPricePerBottle] = useState<number | "">("");
   const [pricePerCase, setPricePerCase] = useState<number | "">("");
+  const [distributorPrice, setDistributorPrice] = useState<number | "">("");
+  const [wholesalePrice, setWholesalePrice] = useState<number | "">("");
+  const [retailPrice, setRetailPrice] = useState<number | "">("");
   const [bottlesPerCase, setBottlesPerCase] = useState<number | "">(12);
 
   const [submitting, setSubmitting] = useState(false);
@@ -146,6 +150,9 @@ export function DrinksAndProductsSection() {
     setCustomCategory("");
     setPricePerBottle(0);
     setPricePerCase(0);
+    setDistributorPrice(0);
+    setWholesalePrice(0);
+    setRetailPrice(0);
     setBottlesPerCase(12);
     setFormError("");
     setModalOpen(true);
@@ -158,6 +165,9 @@ export function DrinksAndProductsSection() {
     setCustomCategory("");
     setPricePerBottle(drink.price_per_bottle ?? 0);
     setPricePerCase(drink.price_per_case ?? 0);
+    setDistributorPrice(drink.distributor_price ?? drink.price_per_case ?? 0);
+    setWholesalePrice(drink.wholesale_price ?? drink.price_per_case ?? 0);
+    setRetailPrice(drink.retail_price ?? drink.price_per_case ?? 0);
     setBottlesPerCase(drink.bottles_per_case ?? 12);
     setFormError("");
     setModalOpen(true);
@@ -187,22 +197,34 @@ export function DrinksAndProductsSection() {
 
     setSubmitting(true);
 
+    const distVal = Number(distributorPrice) || 0;
+    const wholeVal = Number(wholesalePrice) || 0;
+    const retailVal = Number(retailPrice) || 0;
+    const baseCaseVal = Number(pricePerCase) || distVal || wholeVal || retailVal || 0;
+
     const inputData: CreateDrinkTypeInput = {
       name: name.trim(),
       category: resolvedCategory,
       price_per_bottle: Number(pricePerBottle) || 0,
-      price_per_case: Number(pricePerCase) || 0,
+      price_per_case: baseCaseVal,
+      distributor_price: distVal,
+      wholesale_price: wholeVal,
+      retail_price: retailVal,
+      old_distributor_price: editingDrink ? Number(editingDrink.distributor_price ?? 0) : 0,
+      old_wholesale_price: editingDrink ? Number(editingDrink.wholesale_price ?? 0) : 0,
+      old_retail_price: editingDrink ? Number(editingDrink.retail_price ?? 0) : 0,
       bottles_per_case: bPerCase,
       created_by: currentUserName,
+      changed_by_id: staff?.id || user?.id || null,
     };
 
     try {
       if (editingDrink) {
         const updated = await updateDrinkType(editingDrink.id, inputData);
-        setNotification(`Successfully updated "${updated.name}".`);
+        setNotification(`Successfully updated "${updated.name}" and its tiered case prices in Supabase.`);
       } else {
         const created = await createDrinkType(inputData);
-        setNotification(`Successfully added "${created.name}".`);
+        setNotification(`Successfully added "${created.name}" to Supabase.`);
       }
 
       await loadDrinks();
@@ -305,10 +327,10 @@ export function DrinksAndProductsSection() {
           </div>
           <div>
             <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "#111827", margin: 0 }}>
-              Drinks &amp; Products
+              Drinks &amp; Products — Product Pricing (Cases &amp; Bottles)
             </h2>
             <p style={{ fontSize: "0.875rem", color: "#6b7280", margin: "2px 0 0 0" }}>
-              Manage drink types available in the system
+              Set tiered prices for case transactions (Distributor, Wholesale, Retail) and default bottle prices
             </p>
           </div>
         </div>
@@ -335,6 +357,28 @@ export function DrinksAndProductsSection() {
           <Plus size={16} />
           <span>Add Drink</span>
         </button>
+      </div>
+
+      {/* ── Admin-Only Tiered Case Pricing Banner ── */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+          background: "#fff8eb",
+          border: "1px solid #f5dcc0",
+          borderRadius: "10px",
+          padding: "12px 16px",
+          marginBottom: "1rem",
+          color: "#b45309",
+          fontSize: "0.875rem",
+          lineHeight: 1.45,
+        }}
+      >
+        <AlertCircle size={18} style={{ color: "#d97706", flexShrink: 0 }} />
+        <span>
+          <strong style={{ fontWeight: 700 }}>Admin only:</strong> These tiered prices (Distributor, Wholesale, Retail) are used for case sales only. Bottle sales use the default price.
+        </span>
       </div>
 
       {/* ── Notification Alert ── */}
@@ -544,187 +588,224 @@ export function DrinksAndProductsSection() {
           </div>
         ) : (
           <>
-            <table style={{ width: "100%", minWidth: "920px", borderCollapse: "collapse", textAlign: "left", fontSize: "0.85rem" }}>
+            <table style={{ width: "100%", minWidth: "980px", borderCollapse: "collapse", textAlign: "left", fontSize: "0.85rem" }}>
               <thead>
-                <tr style={{ background: "#ffffff", borderBottom: "1px solid #e5e7eb", color: "#374151" }}>
-                  <th style={{ padding: "12px 14px", fontWeight: 600, minWidth: "160px" }}>Name</th>
-                  <th style={{ padding: "12px 14px", fontWeight: 600, minWidth: "110px" }}>Category</th>
-                  <th style={{ padding: "12px 14px", fontWeight: 600, textAlign: "right", minWidth: "100px", whiteSpace: "nowrap" }}>Price/Bottle</th>
-                  <th style={{ padding: "12px 14px", fontWeight: 600, textAlign: "right", minWidth: "110px", whiteSpace: "nowrap" }}>Price/Case</th>
-                  <th style={{ padding: "12px 14px", fontWeight: 600, textAlign: "center", minWidth: "90px", whiteSpace: "nowrap" }}>Bottles/Case</th>
-                  <th style={{ padding: "12px 14px", fontWeight: 600, minWidth: "110px", whiteSpace: "nowrap" }}>Date Created</th>
-                  <th style={{ padding: "12px 14px", fontWeight: 600, minWidth: "120px", whiteSpace: "nowrap" }}>Created By</th>
+                <tr style={{ background: "#fafafa", borderBottom: "1px solid #e5e7eb", color: "#111827" }}>
+                  <th style={{ padding: "12px 14px", fontWeight: 600, minWidth: "170px" }}>Product</th>
+                  <th style={{ padding: "12px 14px", fontWeight: 600, textAlign: "right", minWidth: "110px", whiteSpace: "nowrap" }}>Distributor</th>
+                  <th style={{ padding: "12px 14px", fontWeight: 600, textAlign: "right", minWidth: "110px", whiteSpace: "nowrap" }}>Wholesale</th>
+                  <th style={{ padding: "12px 14px", fontWeight: 600, textAlign: "right", minWidth: "110px", whiteSpace: "nowrap" }}>Retail</th>
+                  <th style={{ padding: "12px 14px", fontWeight: 600, textAlign: "right", minWidth: "105px", whiteSpace: "nowrap" }}>Price/Bottle</th>
+                  <th style={{ padding: "12px 14px", fontWeight: 600, textAlign: "center", minWidth: "85px", whiteSpace: "nowrap" }}>Bottles/Case</th>
+                  <th style={{ padding: "12px 14px", fontWeight: 600, textAlign: "center", minWidth: "105px", whiteSpace: "nowrap" }}>Status</th>
+                  <th style={{ padding: "12px 14px", fontWeight: 600, minWidth: "130px", whiteSpace: "nowrap" }}>Created</th>
                   <th style={{ padding: "12px 14px", fontWeight: 600, textAlign: "right", minWidth: "90px", whiteSpace: "nowrap" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {paginatedDrinks.map((drink) => (
-                  <tr
-                    key={drink.id}
-                    style={{
-                      borderBottom: "1px solid #f3f4f6",
-                      transition: "background 0.12s ease",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                  >
-                    {/* Name */}
-                    <td style={{ padding: "14px 16px", fontWeight: 600, color: "#111827" }}>
-                      {drink.name}
-                    </td>
+                {paginatedDrinks.map((drink) => {
+                  const isConfigured =
+                    Number(drink.distributor_price ?? 0) > 0 ||
+                    Number(drink.wholesale_price ?? 0) > 0 ||
+                    Number(drink.retail_price ?? 0) > 0;
 
-                    {/* Category */}
-                    <td style={{ padding: "14px 16px" }}>
-                      <span
-                        style={{
-                          display: "inline-block",
-                          padding: "3px 10px",
-                          borderRadius: "9999px",
-                          fontSize: "0.75rem",
-                          fontWeight: 500,
-                          background: "#ffffff",
-                          border: "1px solid #e5e7eb",
-                          color: "#4b5563",
-                        }}
-                      >
-                        {drink.category || "No category"}
-                      </span>
-                    </td>
+                  return (
+                    <tr
+                      key={drink.id}
+                      style={{
+                        borderBottom: "1px solid #f3f4f6",
+                        transition: "background 0.12s ease",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                    >
+                      {/* Product (Name + Category below, matching screenshot) */}
+                      <td style={{ padding: "14px 16px" }}>
+                        <div style={{ fontWeight: 700, color: "#111827", fontSize: "0.9rem", lineHeight: 1.3 }}>
+                          {drink.name}
+                        </div>
+                        <div style={{ fontSize: "0.78rem", color: "#6b7280", marginTop: "2px" }}>
+                          {drink.category || "No category"}
+                        </div>
+                      </td>
 
-                    {/* Price per Bottle */}
-                    <td style={{ padding: "14px 16px", textAlign: "right", color: "#374151" }}>
-                      {formatNaira(drink.price_per_bottle)}
-                    </td>
+                      {/* Distributor (Case) */}
+                      <td style={{ padding: "14px 14px", textAlign: "right", fontWeight: 600, color: "#111827", whiteSpace: "nowrap" }}>
+                        {formatNaira(drink.distributor_price ?? 0)}
+                      </td>
 
-                    {/* Price per Case */}
-                    <td style={{ padding: "14px 16px", textAlign: "right", color: "#374151" }}>
-                      {formatNaira(drink.price_per_case)}
-                    </td>
+                      {/* Wholesale (Case) */}
+                      <td style={{ padding: "14px 14px", textAlign: "right", fontWeight: 600, color: "#111827", whiteSpace: "nowrap" }}>
+                        {formatNaira(drink.wholesale_price ?? 0)}
+                      </td>
 
-                    {/* Bottles per Case */}
-                    <td style={{ padding: "14px 16px", textAlign: "center", color: "#374151" }}>
-                      {drink.bottles_per_case}
-                    </td>
+                      {/* Retail (Case) */}
+                      <td style={{ padding: "14px 14px", textAlign: "right", fontWeight: 600, color: "#111827", whiteSpace: "nowrap" }}>
+                        {formatNaira(drink.retail_price ?? 0)}
+                      </td>
 
-                    {/* Date Created */}
-                    <td style={{ padding: "14px 16px", color: "#6b7280", fontSize: "0.8rem" }}>
-                      <div style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                        <Calendar size={13} style={{ color: "#9ca3af" }} />
-                        <span>{formatDate(drink.created_at)}</span>
-                      </div>
-                    </td>
+                      {/* Price per Bottle */}
+                      <td style={{ padding: "14px 14px", textAlign: "right", color: "#374151", whiteSpace: "nowrap" }}>
+                        {formatNaira(drink.price_per_bottle)}
+                      </td>
 
-                    {/* Created By */}
-                    <td style={{ padding: "14px 16px", color: "#4b5563", fontSize: "0.8rem" }}>
-                      <div style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                        <UserCheck size={13} style={{ color: "#075544" }} />
-                        <span>{drink.created_by || "System Admin"}</span>
-                      </div>
-                    </td>
+                      {/* Bottles per Case */}
+                      <td style={{ padding: "14px 14px", textAlign: "center", color: "#374151" }}>
+                        {drink.bottles_per_case}
+                      </td>
 
-                    {/* Actions Column (Edit & Delete icons) */}
-                    <td style={{ padding: "14px 16px", textAlign: "right" }}>
-                      {deletingId === drink.id ? (
-                        <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                          <span style={{ fontSize: "0.75rem", color: "#dc2626", fontWeight: 500 }}>Confirm?</span>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(drink.id, drink.name)}
+                      {/* Status */}
+                      <td style={{ padding: "14px 14px", textAlign: "center" }}>
+                        {isConfigured ? (
+                          <span
                             style={{
-                              padding: "3px 8px",
+                              display: "inline-block",
+                              padding: "4px 12px",
+                              borderRadius: "9999px",
+                              background: "#0d9467",
+                              color: "#ffffff",
                               fontSize: "0.75rem",
-                              borderRadius: "4px",
-                              background: "#fee2e2",
-                              color: "#dc2626",
-                              border: "none",
-                              cursor: "pointer",
+                              fontWeight: 700,
+                              letterSpacing: "0.01em",
+                            }}
+                          >
+                            Configured
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              display: "inline-block",
+                              padding: "4px 12px",
+                              borderRadius: "9999px",
+                              background: "#f3f4f6",
+                              color: "#6b7280",
+                              fontSize: "0.75rem",
                               fontWeight: 600,
                             }}
                           >
-                            Delete
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeletingId(null)}
-                            style={{
-                              padding: "3px 6px",
-                              fontSize: "0.75rem",
-                              borderRadius: "4px",
-                              background: "#f3f4f6",
-                              color: "#4b5563",
-                              border: "none",
-                              cursor: "pointer",
-                            }}
-                          >
-                            <X size={12} />
-                          </button>
-                        </div>
-                      ) : (
-                        <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditModal(drink)}
-                            title="Edit Drink"
-                            style={{
-                              background: "#f3f4f6",
-                              border: "1px solid #e5e7eb",
-                              color: "#374151",
-                              cursor: "pointer",
-                              padding: "6px",
-                              borderRadius: "6px",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              transition: "all 0.15s ease",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#e6f4f0";
-                              e.currentTarget.style.borderColor = "#075544";
-                              e.currentTarget.style.color = "#075544";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "#f3f4f6";
-                              e.currentTarget.style.borderColor = "#e5e7eb";
-                              e.currentTarget.style.color = "#374151";
-                            }}
-                          >
-                            <Pencil size={15} />
-                          </button>
+                            Not Set
+                          </span>
+                        )}
+                      </td>
 
-                          <button
-                            type="button"
-                            onClick={() => setDeletingId(drink.id)}
-                            title="Delete Drink"
-                            style={{
-                              background: "#f3f4f6",
-                              border: "1px solid #e5e7eb",
-                              color: "#374151",
-                              cursor: "pointer",
-                              padding: "6px",
-                              borderRadius: "6px",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              transition: "all 0.15s ease",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#fef2f2";
-                              e.currentTarget.style.borderColor = "#fecaca";
-                              e.currentTarget.style.color = "#dc2626";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "#f3f4f6";
-                              e.currentTarget.style.borderColor = "#e5e7eb";
-                              e.currentTarget.style.color = "#374151";
-                            }}
-                          >
-                            <Trash2 size={15} />
-                          </button>
+                      {/* Created Date & Author */}
+                      <td style={{ padding: "14px 14px", color: "#6b7280", fontSize: "0.78rem" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", color: "#374151", fontWeight: 500 }}>
+                            <UserCheck size={12} style={{ color: "#075544" }} />
+                            {drink.created_by || "System Admin"}
+                          </span>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", color: "#6b7280" }}>
+                            <Calendar size={12} style={{ color: "#9ca3af" }} />
+                            {formatDate(drink.created_at)}
+                          </span>
                         </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+
+                      {/* Actions Column (Edit & Delete icons) */}
+                      <td style={{ padding: "14px 16px", textAlign: "right" }}>
+                        {deletingId === drink.id ? (
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                            <span style={{ fontSize: "0.75rem", color: "#dc2626", fontWeight: 500 }}>Confirm?</span>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(drink.id, drink.name)}
+                              style={{
+                                padding: "3px 8px",
+                                fontSize: "0.75rem",
+                                borderRadius: "4px",
+                                background: "#fee2e2",
+                                color: "#dc2626",
+                                border: "none",
+                                cursor: "pointer",
+                                fontWeight: 600,
+                              }}
+                            >
+                              Delete
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeletingId(null)}
+                              style={{
+                                padding: "3px 6px",
+                                fontSize: "0.75rem",
+                                borderRadius: "4px",
+                                background: "#f3f4f6",
+                                color: "#4b5563",
+                                border: "none",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditModal(drink)}
+                              title="Edit Drink & Case Pricing"
+                              style={{
+                                background: "#f3f4f6",
+                                border: "1px solid #e5e7eb",
+                                color: "#374151",
+                                cursor: "pointer",
+                                padding: "6px",
+                                borderRadius: "6px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                transition: "all 0.15s ease",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = "#e6f4f0";
+                                e.currentTarget.style.borderColor = "#075544";
+                                e.currentTarget.style.color = "#075544";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = "#f3f4f6";
+                                e.currentTarget.style.borderColor = "#e5e7eb";
+                                e.currentTarget.style.color = "#374151";
+                              }}
+                            >
+                              <Pencil size={15} />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setDeletingId(drink.id)}
+                              title="Delete Drink"
+                              style={{
+                                background: "#f3f4f6",
+                                border: "1px solid #e5e7eb",
+                                color: "#374151",
+                                cursor: "pointer",
+                                padding: "6px",
+                                borderRadius: "6px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                transition: "all 0.15s ease",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = "#fef2f2";
+                                e.currentTarget.style.borderColor = "#fecaca";
+                                e.currentTarget.style.color = "#dc2626";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = "#f3f4f6";
+                                e.currentTarget.style.borderColor = "#e5e7eb";
+                                e.currentTarget.style.color = "#374151";
+                              }}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
 
@@ -846,7 +927,7 @@ export function DrinksAndProductsSection() {
         )}
       </div>
 
-      {/* ── Add / Edit Drink Modal (Matching Screenshot 2) ── */}
+      {/* ── Add / Edit Drink & Case Pricing Modal ── */}
       {modalOpen && (
         <div
           role="presentation"
@@ -869,7 +950,7 @@ export function DrinksAndProductsSection() {
               background: "#f7faf8",
               borderRadius: "16px",
               width: "100%",
-              maxWidth: "480px",
+              maxWidth: "540px",
               boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
               border: "1px solid #e5e7eb",
               overflow: "hidden",
@@ -889,10 +970,12 @@ export function DrinksAndProductsSection() {
                   id="drink-modal-title"
                   style={{ fontSize: "1.2rem", fontWeight: 700, color: "#111827", margin: 0 }}
                 >
-                  {editingDrink ? "Edit Drink" : "Add New Drink"}
+                  {editingDrink ? `Edit Drink & Pricing — ${editingDrink.name}` : "Add New Drink & Pricing"}
                 </h3>
                 <p style={{ fontSize: "0.875rem", color: "#6b7280", margin: "4px 0 0 0" }}>
-                  {editingDrink ? "Update existing drink details" : "Add a new drink to the system"}
+                  {editingDrink
+                    ? "Update drink details, default bottle price, and tiered case prices"
+                    : "Add a new drink product and configure tiered case pricing"}
                 </p>
               </div>
               <button
@@ -914,7 +997,7 @@ export function DrinksAndProductsSection() {
 
             {/* Modal Form Body */}
             <form onSubmit={handleSubmit}>
-              <div style={{ padding: "0 24px 20px 24px" }}>
+              <div style={{ padding: "0 24px 20px 24px", maxHeight: "75vh", overflowY: "auto" }}>
                 {formError && (
                   <div
                     style={{
@@ -935,75 +1018,77 @@ export function DrinksAndProductsSection() {
                   </div>
                 )}
 
-                {/* 1. Drink Name */}
-                <div style={{ marginBottom: "16px" }}>
-                  <label
-                    htmlFor="dp-name-input"
-                    style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#111827", marginBottom: "6px" }}
-                  >
-                    Drink Name *
-                  </label>
-                  <input
-                    id="dp-name-input"
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g., Heineken"
-                    required
-                    style={{
-                      width: "100%",
-                      padding: "10px 14px",
-                      borderRadius: "8px",
-                      border: "1.5px solid #075544",
-                      outline: "none",
-                      fontSize: "0.9rem",
-                      background: "#ffffff",
-                      boxShadow: "0 0 0 1px rgba(7, 85, 68, 0.1)",
-                      boxSizing: "border-box",
-                    }}
-                  />
+                {/* 1. Drink Name & Category */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                  <div>
+                    <label
+                      htmlFor="dp-name-input"
+                      style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#111827", marginBottom: "6px" }}
+                    >
+                      Drink Name *
+                    </label>
+                    <input
+                      id="dp-name-input"
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="e.g., Fercullen Falls"
+                      required
+                      style={{
+                        width: "100%",
+                        padding: "10px 14px",
+                        borderRadius: "8px",
+                        border: "1.5px solid #075544",
+                        outline: "none",
+                        fontSize: "0.9rem",
+                        background: "#ffffff",
+                        boxSizing: "border-box",
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="dp-category-select"
+                      style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#111827", marginBottom: "6px" }}
+                    >
+                      Category
+                    </label>
+                    <select
+                      id="dp-category-select"
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "10px 14px",
+                        borderRadius: "8px",
+                        border: "1px solid #d1d5db",
+                        outline: "none",
+                        fontSize: "0.9rem",
+                        background: "#ffffff",
+                        boxSizing: "border-box",
+                        color: "#374151",
+                      }}
+                    >
+                      <option value="No category">No category</option>
+                      {categoryOptions.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                      <option value="__custom__">+ Create new category...</option>
+                    </select>
+                  </div>
                 </div>
 
-                {/* 2. Category */}
-                <div style={{ marginBottom: "16px" }}>
-                  <label
-                    htmlFor="dp-category-select"
-                    style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#111827", marginBottom: "6px" }}
-                  >
-                    Category
-                  </label>
-                  <select
-                    id="dp-category-select"
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "10px 14px",
-                      borderRadius: "8px",
-                      border: "1px solid #d1d5db",
-                      outline: "none",
-                      fontSize: "0.9rem",
-                      background: "#ffffff",
-                      boxSizing: "border-box",
-                      color: "#374151",
-                    }}
-                  >
-                    <option value="No category">No category</option>
-                    {categoryOptions.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                    <option value="__custom__">+ Create new category...</option>
-                  </select>
-                  {category === "__custom__" && (
+                {category === "__custom__" && (
+                  <div style={{ marginBottom: "16px" }}>
                     <input
                       type="text"
                       value={customCategory}
                       onChange={(e) => setCustomCategory(e.target.value)}
                       placeholder="Enter new category name (e.g., Cider, Energy Drink)"
                       style={{
-                        marginTop: "8px",
                         width: "100%",
                         padding: "9px 14px",
                         borderRadius: "8px",
@@ -1014,22 +1099,138 @@ export function DrinksAndProductsSection() {
                         boxSizing: "border-box",
                       }}
                     />
-                  )}
+                  </div>
+                )}
+
+                {/* 2. Tiered Case Pricing Box */}
+                <div
+                  style={{
+                    background: "#ffffff",
+                    border: "1px solid #d1d5db",
+                    borderRadius: "10px",
+                    padding: "14px",
+                    marginBottom: "16px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                    <DollarSign size={16} style={{ color: "#075544" }} />
+                    <span style={{ fontSize: "0.88rem", fontWeight: 700, color: "#111827" }}>
+                      Product Pricing (Cases) — Tiered Case Prices
+                    </span>
+                  </div>
+                  <p style={{ fontSize: "0.78rem", color: "#6b7280", margin: "0 0 12px 0" }}>
+                    Used when recording sales by case (Distributor, Wholesale, and Retail tiers).
+                  </p>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+                    <div>
+                      <label
+                        htmlFor="dp-distributor-price"
+                        style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#374151", marginBottom: "5px" }}
+                      >
+                        Distributor (₦)
+                      </label>
+                      <input
+                        id="dp-distributor-price"
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={distributorPrice}
+                        onChange={(e) => {
+                          const val = e.target.value === "" ? "" : Number(e.target.value);
+                          setDistributorPrice(val);
+                          if (typeof val === "number") setPricePerCase(val);
+                        }}
+                        placeholder="0"
+                        style={{
+                          width: "100%",
+                          padding: "8px 10px",
+                          borderRadius: "7px",
+                          border: "1px solid #d1d5db",
+                          fontSize: "0.86rem",
+                          fontWeight: 600,
+                          outline: "none",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="dp-wholesale-price"
+                        style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#374151", marginBottom: "5px" }}
+                      >
+                        Wholesale (₦)
+                      </label>
+                      <input
+                        id="dp-wholesale-price"
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={wholesalePrice}
+                        onChange={(e) =>
+                          setWholesalePrice(e.target.value === "" ? "" : Number(e.target.value))
+                        }
+                        placeholder="0"
+                        style={{
+                          width: "100%",
+                          padding: "8px 10px",
+                          borderRadius: "7px",
+                          border: "1px solid #d1d5db",
+                          fontSize: "0.86rem",
+                          fontWeight: 600,
+                          outline: "none",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="dp-retail-price"
+                        style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#374151", marginBottom: "5px" }}
+                      >
+                        Retail (₦)
+                      </label>
+                      <input
+                        id="dp-retail-price"
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={retailPrice}
+                        onChange={(e) =>
+                          setRetailPrice(e.target.value === "" ? "" : Number(e.target.value))
+                        }
+                        placeholder="0"
+                        style={{
+                          width: "100%",
+                          padding: "8px 10px",
+                          borderRadius: "7px",
+                          border: "1px solid #d1d5db",
+                          fontSize: "0.86rem",
+                          fontWeight: 600,
+                          outline: "none",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                {/* 3. Price per Bottle & Price per Case (Row) */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                {/* 3. Price per Bottle & Bottles per Case (Row) */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "8px" }}>
                   <div>
                     <label
                       htmlFor="dp-price-bottle-input"
-                      style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#111827", marginBottom: "6px" }}
+                      style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#111827", marginBottom: "6px" }}
                     >
-                      Price per Bottle (₦)
+                      Default Price per Bottle (₦)
                     </label>
                     <input
                       id="dp-price-bottle-input"
                       type="number"
                       min="0"
+                      step="any"
                       value={pricePerBottle}
                       onChange={(e) => setPricePerBottle(e.target.value === "" ? "" : Number(e.target.value))}
                       placeholder="0"
@@ -1048,18 +1249,19 @@ export function DrinksAndProductsSection() {
 
                   <div>
                     <label
-                      htmlFor="dp-price-case-input"
-                      style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#111827", marginBottom: "6px" }}
+                      htmlFor="dp-bottles-case-input"
+                      style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#111827", marginBottom: "6px" }}
                     >
-                      Price per Case (₦)
+                      Bottles per Case *
                     </label>
                     <input
-                      id="dp-price-case-input"
+                      id="dp-bottles-case-input"
                       type="number"
-                      min="0"
-                      value={pricePerCase}
-                      onChange={(e) => setPricePerCase(e.target.value === "" ? "" : Number(e.target.value))}
-                      placeholder="0"
+                      min="1"
+                      value={bottlesPerCase}
+                      onChange={(e) => setBottlesPerCase(e.target.value === "" ? "" : Number(e.target.value))}
+                      placeholder="12"
+                      required
                       style={{
                         width: "100%",
                         padding: "10px 14px",
@@ -1072,35 +1274,6 @@ export function DrinksAndProductsSection() {
                       }}
                     />
                   </div>
-                </div>
-
-                {/* 4. Bottles per Case */}
-                <div style={{ marginBottom: "20px" }}>
-                  <label
-                    htmlFor="dp-bottles-case-input"
-                    style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#111827", marginBottom: "6px" }}
-                  >
-                    Bottles per Case *
-                  </label>
-                  <input
-                    id="dp-bottles-case-input"
-                    type="number"
-                    min="1"
-                    value={bottlesPerCase}
-                    onChange={(e) => setBottlesPerCase(e.target.value === "" ? "" : Number(e.target.value))}
-                    placeholder="12"
-                    required
-                    style={{
-                      width: "100%",
-                      padding: "10px 14px",
-                      borderRadius: "8px",
-                      border: "1px solid #d1d5db",
-                      outline: "none",
-                      fontSize: "0.9rem",
-                      background: "#ffffff",
-                      boxSizing: "border-box",
-                    }}
-                  />
                 </div>
               </div>
 

@@ -48,12 +48,18 @@ type DrinkTypeOption = {
   bottles_per_case: number;
   price_per_bottle?: number | null;
   price_per_case?: number | null;
+  distributor_price?: number | null;
+  wholesale_price?: number | null;
+  retail_price?: number | null;
 };
+
+export type CasePriceTier = "distributor" | "wholesale" | "retail";
 
 export type SaleItemEntry = {
   id: string;
   drinkTypeId: string;
   unitType: number;
+  priceTier?: CasePriceTier;
   quantity: string;
   unitPrice: number;
   totalAmount: number;
@@ -74,6 +80,8 @@ export function NewSaleDialog({ onSaved, onClose }: NewSaleDialogProps) {
   const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
   const isBrandAmbassador = roleKey === "brand_ambassador" || roleKey === "ba";
   const isVsr = roleKey === "vsr";
+  // Only RSM, SE, NSM, Admin, and HR can select Distributor / Wholesale / Retail case price tiers
+  const canSelectCasePriceTier = userScope.isNational || userScope.isRegional;
   const canRecordWithoutCheckIn = true; // Direct sales entry enabled for BA and field reps
 
   // Reference data
@@ -94,6 +102,7 @@ export function NewSaleDialog({ onSaved, onClose }: NewSaleDialogProps) {
       id: "item-1",
       drinkTypeId: "",
       unitType: isBrandAmbassador ? UNIT_TYPE_VALUES.bottles : UNIT_TYPE_VALUES.cases,
+      priceTier: "distributor",
       quantity: "1",
       unitPrice: 0,
       totalAmount: 0,
@@ -182,7 +191,11 @@ export function NewSaleDialog({ onSaved, onClose }: NewSaleDialogProps) {
   }, [outlets, outletId]);
 
   /* Helper to calculate item price and total */
-  function computeItemPrice(drinkId: string, unitType: number) {
+  function computeItemPrice(
+    drinkId: string,
+    unitType: number,
+    priceTier: CasePriceTier = "distributor"
+  ) {
     const drink = drinkTypes.find((d) => d.id === drinkId);
     if (!drink) return 0;
     if (unitType === UNIT_TYPE_VALUES.bottles) {
@@ -192,6 +205,19 @@ export function NewSaleDialog({ onSaved, onClose }: NewSaleDialogProps) {
       const bpc = Number(drink.bottles_per_case) || 1;
       return casePrice > 0 ? Math.round(casePrice / bpc) : 0;
     }
+
+    // Case sales: only RSM, SE, NSM, Admin, HR use tiered Distributor/Wholesale/Retail pricing
+    if (canSelectCasePriceTier) {
+      const tierPrice =
+        priceTier === "wholesale"
+          ? Number(drink.wholesale_price ?? 0)
+          : priceTier === "retail"
+          ? Number(drink.retail_price ?? 0)
+          : Number(drink.distributor_price ?? 0);
+
+      if (tierPrice > 0) return tierPrice;
+    }
+
     const casePrice = Number(drink.price_per_case ?? 0);
     if (casePrice > 0) return casePrice;
     const bottlePrice = Number(drink.price_per_bottle ?? 0);
@@ -258,8 +284,12 @@ export function NewSaleDialog({ onSaved, onClose }: NewSaleDialogProps) {
           return updated;
         }
 
-        if (field === "drinkTypeId" || field === "unitType") {
-          const price = computeItemPrice(updated.drinkTypeId, updated.unitType);
+        if (field === "drinkTypeId" || field === "unitType" || field === "priceTier") {
+          const price = computeItemPrice(
+            updated.drinkTypeId,
+            updated.unitType,
+            updated.priceTier || "distributor"
+          );
           const qty = Math.max(0, Number(updated.quantity || 0));
           updated.unitPrice = price;
           updated.totalAmount = qty * price;
@@ -314,6 +344,7 @@ export function NewSaleDialog({ onSaved, onClose }: NewSaleDialogProps) {
         id: newId,
         drinkTypeId: "",
         unitType: isBrandAmbassador ? UNIT_TYPE_VALUES.bottles : UNIT_TYPE_VALUES.cases,
+        priceTier: "distributor",
         quantity: "1",
         unitPrice: 0,
         totalAmount: 0,
@@ -878,6 +909,43 @@ export function NewSaleDialog({ onSaved, onClose }: NewSaleDialogProps) {
                             <span>Bottles</span>
                           </button>
                         </div>
+                        {canSelectCasePriceTier && item.unitType === UNIT_TYPE_VALUES.cases && (() => {
+                          const selectedDrink = drinkTypes.find((d) => d.id === item.drinkTypeId);
+                          const distP = Number(selectedDrink?.distributor_price ?? 0);
+                          const wholeP = Number(selectedDrink?.wholesale_price ?? 0);
+                          const retailP = Number(selectedDrink?.retail_price ?? 0);
+                          return (
+                            <div style={{ marginTop: 6 }}>
+                              <select
+                                aria-label="Case Price Tier"
+                                value={item.priceTier || "distributor"}
+                                onChange={(e) =>
+                                  handleItemChange(item.id, "priceTier", e.target.value as CasePriceTier)
+                                }
+                                style={{
+                                  width: "100%",
+                                  padding: "4px 8px",
+                                  borderRadius: 6,
+                                  border: "1px solid #cbd5e1",
+                                  fontSize: "0.75rem",
+                                  fontWeight: 600,
+                                  color: "#0f172a",
+                                  background: "#f8fafc",
+                                }}
+                              >
+                                <option value="distributor">
+                                  Distributor{distP > 0 ? ` (${formatCurrency(distP)})` : ""}
+                                </option>
+                                <option value="wholesale">
+                                  Wholesale{wholeP > 0 ? ` (${formatCurrency(wholeP)})` : ""}
+                                </option>
+                                <option value="retail">
+                                  Retail{retailP > 0 ? ` (${formatCurrency(retailP)})` : ""}
+                                </option>
+                              </select>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Quantity Stepper & Presets */}

@@ -128,8 +128,8 @@ function getLocalOutlets(): Outlet[] {
         }
         const existingRegion =
           updated.region_id &&
-          !isValidUuid(String(updated.region_id)) &&
-          String(updated.region_id).toLowerCase() !== "unassigned"
+            !isValidUuid(String(updated.region_id)) &&
+            String(updated.region_id).toLowerCase() !== "unassigned"
             ? String(updated.region_id).trim()
             : null;
         const chosenRegion =
@@ -409,18 +409,18 @@ function normalizeRemoteOutlet(o: any, local?: Outlet): Outlet {
   const selectedOverride = lookupSelectedOutletRegion(o.id, o.name);
   const explicitRemote =
     o.region_id &&
-    !isValidUuid(String(o.region_id)) &&
-    String(o.region_id).toLowerCase() !== "unassigned"
+      !isValidUuid(String(o.region_id)) &&
+      String(o.region_id).toLowerCase() !== "unassigned"
       ? String(o.region_id).trim()
       : o.region &&
         !isValidUuid(String(o.region)) &&
         String(o.region).toLowerCase() !== "unassigned"
-      ? String(o.region).trim()
-      : null;
+        ? String(o.region).trim()
+        : null;
   const localRegion =
     local?.region_id &&
-    !isValidUuid(String(local.region_id)) &&
-    String(local.region_id).toLowerCase() !== "unassigned"
+      !isValidUuid(String(local.region_id)) &&
+      String(local.region_id).toLowerCase() !== "unassigned"
       ? String(local.region_id).trim()
       : null;
 
@@ -636,7 +636,7 @@ function outletDbError(action: string, error: { code?: string; message?: string 
   if (code === "42501" || /row-level security/i.test(msg)) {
     return new Error(
       `Unable to ${action} outlet: your account does not have database permission to write outlets. ` +
-        `Ask an administrator to apply the "outlets_write_rls" migration in Supabase.`
+      `Ask an administrator to apply the "outlets_write_rls" migration in Supabase.`
     );
   }
   if (code === "22P02") {
@@ -875,7 +875,7 @@ export async function calibrateOutletGps(
           };
           localStorage.setItem(STORAGE_KEY_OUTLETS, JSON.stringify(items));
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     return data as Outlet | null;
@@ -910,8 +910,13 @@ export type DrinkType = {
   bottles_per_case: number;
   price_per_bottle: number;
   price_per_case: number;
+  distributor_price?: number;
+  wholesale_price?: number;
+  retail_price?: number;
   created_at?: string | null;
   created_by?: string | null;
+  updated_at?: string | null;
+  updated_by?: string | null;
 };
 
 export type CreateDrinkTypeInput = {
@@ -920,24 +925,87 @@ export type CreateDrinkTypeInput = {
   price_per_bottle: number;
   price_per_case: number;
   bottles_per_case: number;
+  distributor_price?: number;
+  wholesale_price?: number;
+  retail_price?: number;
+  old_distributor_price?: number;
+  old_wholesale_price?: number;
+  old_retail_price?: number;
   created_by?: string | null;
+  changed_by_id?: string | null;
 };
 
+export type PricingHistoryEntry = {
+  id: string;
+  drink_type: string | null;
+  drink_type_name1: string;
+  change_type: number;
+  old_distributor_price: number;
+  new_distributor_price: number;
+  old_wholesale_price: number;
+  new_wholesale_price: number;
+  old_retail_price: number;
+  new_retail_price: number;
+  changed_at: string;
+  changed_by: string | null;
+  changed_by_name1: string;
+  reference: string | null;
+};
+
+export type UpdateProductCasePricingInput = {
+  drinkId: string;
+  drinkName: string;
+  distributorPrice: number;
+  wholesalePrice: number;
+  retailPrice: number;
+  oldDistributorPrice?: number;
+  oldWholesalePrice?: number;
+  oldRetailPrice?: number;
+  changedById?: string | null;
+  changedByName?: string | null;
+};
+
+function normalizeDrinkTypeRow(row: any): DrinkType {
+  const pricePerCase = Number(row.price_per_case ?? 0);
+  const distPrice = Number(row.distributor_price ?? 0);
+  const wholePrice = Number(row.wholesale_price ?? 0);
+  const retPrice = Number(row.retail_price ?? 0);
+  const hasAnyTier = distPrice > 0 || wholePrice > 0 || retPrice > 0;
+
+  return {
+    id: String(row.id),
+    name: String(row.name || ""),
+    category: row.category ?? null,
+    bottles_per_case: Number(row.bottles_per_case ?? 12) || 12,
+    price_per_bottle: Number(row.price_per_bottle ?? 0),
+    price_per_case: pricePerCase,
+    distributor_price: hasAnyTier ? distPrice : pricePerCase,
+    wholesale_price: hasAnyTier ? wholePrice : pricePerCase,
+    retail_price: hasAnyTier ? retPrice : pricePerCase,
+    created_at: row.created_at ?? null,
+    created_by: row.created_by ?? null,
+    updated_at: row.updated_at ?? null,
+    updated_by: row.updated_by ?? null,
+  };
+}
+
 export async function getDrinkTypes(): Promise<DrinkType[]> {
-  // First attempt selecting with created_at and created_by
+  // First attempt selecting all columns including tiered case prices
   const { data, error } = await supabase
     .from("drink_types")
-    .select("id, name, category, bottles_per_case, price_per_bottle, price_per_case, created_at, created_by")
+    .select(
+      "id, name, category, bottles_per_case, price_per_bottle, price_per_case, distributor_price, wholesale_price, retail_price, created_at, created_by, updated_at, updated_by"
+    )
     .order("name");
 
   if (!error && data) {
-    return data;
+    return data.map(normalizeDrinkTypeRow);
   }
 
-  // Fallback if created_at or created_by columns do not exist yet on remote table
+  // Fallback if some audit columns do not exist yet on remote table
   const fallback = await supabase
     .from("drink_types")
-    .select("id, name, category, bottles_per_case, price_per_bottle, price_per_case")
+    .select("*")
     .order("name");
 
   if (fallback.error) {
@@ -945,16 +1013,27 @@ export async function getDrinkTypes(): Promise<DrinkType[]> {
     return [];
   }
 
-  return fallback.data ?? [];
+  return (fallback.data ?? []).map(normalizeDrinkTypeRow);
 }
 
 export async function createDrinkType(input: CreateDrinkTypeInput): Promise<DrinkType> {
+  const defaultCasePrice = Number(input.price_per_case) || 0;
+  const distPrice =
+    input.distributor_price !== undefined ? Number(input.distributor_price) || 0 : defaultCasePrice;
+  const wholePrice =
+    input.wholesale_price !== undefined ? Number(input.wholesale_price) || 0 : defaultCasePrice;
+  const retPrice =
+    input.retail_price !== undefined ? Number(input.retail_price) || 0 : defaultCasePrice;
+
   const payload: Record<string, any> = {
     name: input.name.trim(),
     category: input.category?.trim() || null,
     price_per_bottle: Number(input.price_per_bottle) || 0,
-    price_per_case: Number(input.price_per_case) || 0,
+    price_per_case: defaultCasePrice || distPrice || wholePrice || retPrice,
     bottles_per_case: Number(input.bottles_per_case) || 12,
+    distributor_price: distPrice,
+    wholesale_price: wholePrice,
+    retail_price: retPrice,
   };
 
   if (input.created_by) {
@@ -968,10 +1047,19 @@ export async function createDrinkType(input: CreateDrinkTypeInput): Promise<Drin
   data = res.data;
   error = res.error;
 
-  // Fallback if created_by column is not yet added in remote table
-  if (error && "created_by" in payload) {
-    delete payload.created_by;
-    const fb = await supabase.from("drink_types").insert(payload).select().single();
+  // Fallback if optional columns are not yet present
+  if (error) {
+    const minimalPayload: Record<string, any> = {
+      name: input.name.trim(),
+      category: input.category?.trim() || null,
+      price_per_bottle: Number(input.price_per_bottle) || 0,
+      price_per_case: defaultCasePrice || distPrice || wholePrice || retPrice,
+      bottles_per_case: Number(input.bottles_per_case) || 12,
+      distributor_price: distPrice,
+      wholesale_price: wholePrice,
+      retail_price: retPrice,
+    };
+    const fb = await supabase.from("drink_types").insert(minimalPayload).select().single();
     data = fb.data;
     error = fb.error;
   }
@@ -981,17 +1069,79 @@ export async function createDrinkType(input: CreateDrinkTypeInput): Promise<Drin
     throw new Error(error.message || "Failed to create drink type in Supabase.");
   }
 
-  return data;
+  // Write pricing_history audit row when product is created with tiered case prices
+  if (distPrice > 0 || wholePrice > 0 || retPrice > 0) {
+    try {
+      await supabase.from("pricing_history").insert({
+        id: generateUuid(),
+        drink_type: isValidUuid(data?.id) ? data.id : null,
+        drink_type_name1: input.name.trim(),
+        old_distributor_price: 0,
+        new_distributor_price: distPrice,
+        old_wholesale_price: 0,
+        new_wholesale_price: wholePrice,
+        old_retail_price: 0,
+        new_retail_price: retPrice,
+        changed_at: new Date().toISOString(),
+        changed_by: isValidUuid(input.changed_by_id) ? input.changed_by_id : null,
+        changed_by_name1: input.created_by || "Admin",
+        change_type: 2,
+        reference: `PRC-${Date.now()}`,
+      });
+    } catch (histErr) {
+      console.warn("Notice writing pricing_history create audit row:", histErr);
+    }
+  }
+
+  return normalizeDrinkTypeRow(data);
 }
 
 export async function updateDrinkType(id: string, input: CreateDrinkTypeInput): Promise<DrinkType> {
-  const payload = {
+  const distPrice =
+    input.distributor_price !== undefined ? Number(input.distributor_price) || 0 : undefined;
+  const wholePrice =
+    input.wholesale_price !== undefined ? Number(input.wholesale_price) || 0 : undefined;
+  const retPrice =
+    input.retail_price !== undefined ? Number(input.retail_price) || 0 : undefined;
+
+  let oldDist = input.old_distributor_price;
+  let oldWhole = input.old_wholesale_price;
+  let oldRetail = input.old_retail_price;
+
+  if (
+    (distPrice !== undefined || wholePrice !== undefined || retPrice !== undefined) &&
+    (oldDist === undefined || oldWhole === undefined || oldRetail === undefined)
+  ) {
+    try {
+      const { data: existing } = await supabase
+        .from("drink_types")
+        .select("distributor_price, wholesale_price, retail_price")
+        .eq("id", id)
+        .maybeSingle();
+      if (existing) {
+        if (oldDist === undefined) oldDist = Number(existing.distributor_price ?? 0);
+        if (oldWhole === undefined) oldWhole = Number(existing.wholesale_price ?? 0);
+        if (oldRetail === undefined) oldRetail = Number(existing.retail_price ?? 0);
+      }
+    } catch {
+      // ignore fallback fetch error
+    }
+  }
+
+  const resolvedCasePrice =
+    Number(input.price_per_case) || distPrice || wholePrice || retPrice || 0;
+
+  const payload: Record<string, any> = {
     name: input.name.trim(),
     category: input.category?.trim() || null,
     price_per_bottle: Number(input.price_per_bottle) || 0,
-    price_per_case: Number(input.price_per_case) || 0,
+    price_per_case: resolvedCasePrice,
     bottles_per_case: Number(input.bottles_per_case) || 12,
   };
+
+  if (distPrice !== undefined) payload.distributor_price = distPrice;
+  if (wholePrice !== undefined) payload.wholesale_price = wholePrice;
+  if (retPrice !== undefined) payload.retail_price = retPrice;
 
   const { data, error } = await supabase
     .from("drink_types")
@@ -1008,7 +1158,103 @@ export async function updateDrinkType(id: string, input: CreateDrinkTypeInput): 
     throw new Error(error.message || "Failed to update drink type in Supabase.");
   }
 
-  return data;
+  // Write pricing_history audit row when tiered case prices are updated
+  if (distPrice !== undefined || wholePrice !== undefined || retPrice !== undefined) {
+    try {
+      const { error: histInsertErr } = await supabase.from("pricing_history").insert({
+        id: generateUuid(),
+        drink_type: isValidUuid(id) ? id : null,
+        drink_type_name1: input.name.trim(),
+        old_distributor_price: Number(oldDist ?? 0),
+        new_distributor_price: distPrice ?? 0,
+        old_wholesale_price: Number(oldWhole ?? 0),
+        new_wholesale_price: wholePrice ?? 0,
+        old_retail_price: Number(oldRetail ?? 0),
+        new_retail_price: retPrice ?? 0,
+        changed_at: new Date().toISOString(),
+        changed_by: isValidUuid(input.changed_by_id) ? input.changed_by_id : null,
+        changed_by_name1: input.created_by || "Admin",
+        change_type: 1,
+        reference: `PRC-${Date.now()}`,
+      });
+      if (histInsertErr) {
+        console.warn("pricing_history insert warning:", histInsertErr.message);
+      }
+    } catch (histErr) {
+      console.warn("Notice writing pricing_history audit row:", histErr);
+    }
+  }
+
+  return normalizeDrinkTypeRow(data);
+}
+
+export async function updateProductCasePricing(
+  input: UpdateProductCasePricingInput
+): Promise<DrinkType> {
+  const dist = Math.max(0, Number(input.distributorPrice) || 0);
+  const whole = Math.max(0, Number(input.wholesalePrice) || 0);
+  const retail = Math.max(0, Number(input.retailPrice) || 0);
+
+  const updatePayload: Record<string, any> = {
+    distributor_price: dist,
+    wholesale_price: whole,
+    retail_price: retail,
+    updated_at: new Date().toISOString(),
+    updated_by: input.changedByName || "System Admin",
+  };
+
+  let { data, error } = await supabase
+    .from("drink_types")
+    .update(updatePayload)
+    .eq("id", input.drinkId)
+    .select("*")
+    .single();
+
+  if (error) {
+    // Retry without updated_at / updated_by if those columns aren't present
+    const retryPayload = {
+      distributor_price: dist,
+      wholesale_price: whole,
+      retail_price: retail,
+    };
+    const retry = await supabase
+      .from("drink_types")
+      .update(retryPayload)
+      .eq("id", input.drinkId)
+      .select("*")
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error || !data) {
+    console.error("Error updating product case pricing in Supabase:", error);
+    throw new Error(error?.message || "Failed to save product case pricing to Supabase.");
+  }
+
+  // Also write an audit record to public.pricing_history in Supabase
+  try {
+    const historyPayload: Record<string, any> = {
+      drink_type: isValidUuid(input.drinkId) ? input.drinkId : null,
+      drink_type_name1: input.drinkName,
+      old_distributor_price: Number(input.oldDistributorPrice ?? 0),
+      new_distributor_price: dist,
+      old_wholesale_price: Number(input.oldWholesalePrice ?? 0),
+      new_wholesale_price: whole,
+      old_retail_price: Number(input.oldRetailPrice ?? 0),
+      new_retail_price: retail,
+      changed_at: new Date().toISOString(),
+      changed_by: isValidUuid(input.changedById) ? input.changedById : null,
+      changed_by_name1: input.changedByName || "System Admin",
+      change_type: 1,
+      reference: `PRC-${Date.now()}`,
+    };
+    await supabase.from("pricing_history").insert(historyPayload);
+  } catch (histErr) {
+    console.warn("Notice writing pricing_history audit row:", histErr);
+  }
+
+  return normalizeDrinkTypeRow(data);
 }
 
 export async function deleteDrinkType(id: string): Promise<void> {
@@ -1023,5 +1269,49 @@ export async function deleteDrinkType(id: string): Promise<void> {
       throw new Error("Cannot delete this drink product because it has existing recorded sales or targets linked to it.");
     }
     throw new Error(error.message || "Failed to delete drink type from Supabase.");
+  }
+}
+
+export async function getPricingHistory(): Promise<PricingHistoryEntry[]> {
+  const { data, error } = await supabase
+    .from("pricing_history")
+    .select(
+      "id, drink_type, drink_type_name1, change_type, old_distributor_price, new_distributor_price, old_wholesale_price, new_wholesale_price, old_retail_price, new_retail_price, changed_at, changed_by, changed_by_name1, reference"
+    )
+    .order("changed_at", { ascending: false })
+    .limit(200);
+
+  if (error) {
+    console.error("Error fetching pricing_history:", error);
+    throw new Error(error.message || "Failed to load pricing history from Supabase.");
+  }
+
+  return (data ?? []).map((row: any) => ({
+    id: String(row.id),
+    drink_type: row.drink_type ?? null,
+    drink_type_name1: String(row.drink_type_name1 || "Unknown Product"),
+    change_type: Number(row.change_type ?? 1),
+    old_distributor_price: Number(row.old_distributor_price ?? 0),
+    new_distributor_price: Number(row.new_distributor_price ?? 0),
+    old_wholesale_price: Number(row.old_wholesale_price ?? 0),
+    new_wholesale_price: Number(row.new_wholesale_price ?? 0),
+    old_retail_price: Number(row.old_retail_price ?? 0),
+    new_retail_price: Number(row.new_retail_price ?? 0),
+    changed_at: row.changed_at || new Date().toISOString(),
+    changed_by: row.changed_by ?? null,
+    changed_by_name1: String(row.changed_by_name1 || "Admin"),
+    reference: row.reference ?? null,
+  }));
+}
+
+export async function clearPricingHistory(): Promise<void> {
+  const { error } = await supabase
+    .from("pricing_history")
+    .delete()
+    .not("id", "is", null);
+
+  if (error) {
+    console.error("Error clearing pricing_history:", error);
+    throw new Error(error.message || "Failed to clear pricing history in Supabase.");
   }
 }

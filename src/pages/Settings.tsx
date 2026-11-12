@@ -41,6 +41,7 @@ import {
   Mail,
   RefreshCw,
   Copy,
+  History,
 } from "lucide-react";
 import { useAppearance, THEME_COLOR_OPTIONS } from "../hooks/useAppearance";
 import { useAuth } from "../context/AuthContext";
@@ -52,6 +53,7 @@ import {
 } from "../services/userManagementService";
 import { UserManagementSection } from "./settings/UserManagementSection";
 import { DrinksAndProductsSection } from "./settings/DrinksAndProductsSection";
+import { PricingHistorySection } from "./settings/PricingHistorySection";
 import { RoleManagementSection } from "./settings/RoleManagementSection";
 import { RegionsSection } from "./settings/RegionsSection";
 import { OutletTypesSection } from "./settings/OutletTypesSection";
@@ -81,6 +83,7 @@ type TabId =
   | "regional"
   | "privacy"
   | "drinksAndProducts"
+  | "pricingHistory"
   | "users"
   | "roles"
   | "regions"
@@ -125,6 +128,7 @@ const TAB_LABELS: Record<TabId, string> = {
   regional: "Regional & Language",
   privacy: "Privacy & Security",
   drinksAndProducts: "Drinks & Products",
+  pricingHistory: "Pricing History",
   outletTypes: "Outlet Types",
   paymentMethods: "Payment Methods",
   visitOutcomes: "Visit Outcomes",
@@ -266,7 +270,7 @@ export default function Settings() {
   const accountTabs: TabId[] = ["profile", "security", "notifications", "appearance", "regional", "privacy"];
 
   const initialTab: TabId =
-    rawParamTab === "drinkCategories"
+    rawParamTab === "drinkCategories" || rawParamTab === "productPricing"
       ? isAdmin
         ? "drinksAndProducts"
         : "security"
@@ -282,7 +286,7 @@ export default function Settings() {
   // Sync activeTab when URL query param ?tab=... changes
   useEffect(() => {
     const paramTab = searchParams.get("tab");
-    if (paramTab === "drinkCategories") {
+    if (paramTab === "drinkCategories" || paramTab === "productPricing") {
       setActiveTabState(isAdmin ? "drinksAndProducts" : "security");
       return;
     }
@@ -347,7 +351,7 @@ export default function Settings() {
 
   useEffect(() => {
     const group1 = ["profile", "security", "notifications", "appearance", "regional", "privacy"];
-    const group2 = ["drinksAndProducts", "outletTypes", "paymentMethods", "visitOutcomes", "regions"];
+    const group2 = ["drinksAndProducts", "pricingHistory", "outletTypes", "paymentMethods", "visitOutcomes", "regions"];
     const group3 = ["geofencing", "communications"];
     const group4 = ["users", "roles"];
 
@@ -797,6 +801,7 @@ export default function Settings() {
               {(!collapsedGroups.catalog || menuSidebarCollapsed) && (
                 <div className="settings-sidebar-group-items">
                   <SubnavButton id="drinksAndProducts" icon={Wine} label="Drinks & Products" active={activeTab === "drinksAndProducts"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
+                  <SubnavButton id="pricingHistory" icon={History} label="Pricing History" active={activeTab === "pricingHistory"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
                   <SubnavButton id="outletTypes" icon={Building2} label="Outlet Types" active={activeTab === "outletTypes"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
                   <SubnavButton id="paymentMethods" icon={CreditCard} label="Payment Methods" active={activeTab === "paymentMethods"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
                   <SubnavButton id="visitOutcomes" icon={CheckCircle2} label="Visit Outcomes" active={activeTab === "visitOutcomes"} collapsed={menuSidebarCollapsed} onClick={setActiveTab} />
@@ -2064,10 +2069,17 @@ export default function Settings() {
           </div>
           )}
 
-          {/* ── Drinks & Products ── */}
-          {activeTab === "drinksAndProducts" && (
+          {/* ── Drinks & Products (Admin only) ── */}
+          {activeTab === "drinksAndProducts" && isAdmin && (
             <div className="settings-section-content" style={{ padding: 0, background: "transparent", border: "none", boxShadow: "none" }}>
               <DrinksAndProductsSection />
+            </div>
+          )}
+
+          {/* ── Pricing History (Admin only) ── */}
+          {activeTab === "pricingHistory" && isAdmin && (
+            <div className="settings-section-content" style={{ padding: 0, background: "transparent", border: "none", boxShadow: "none" }}>
+              <PricingHistorySection />
             </div>
           )}
 
