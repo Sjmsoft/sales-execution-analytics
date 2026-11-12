@@ -15,6 +15,7 @@ import {
   DollarSign,
   Globe,
   Layers,
+  LayoutGrid,
   MapPin,
   Package,
   Plus,
@@ -53,6 +54,37 @@ type TimeframeOption = "today" | "7d" | "30d" | "month" | "all";
 type SegmentFilter = "all" | "sales" | "visits" | "outlets" | "targets";
 type ChartMetric = "revenue" | "volume";
 type ActivityTab = "sales" | "visits" | "attendance";
+type DashboardViewMode = "simple" | "full";
+
+const DASHBOARD_MODE_STORAGE_KEY = "penedge_admin_dashboard_mode_v1";
+
+function readStoredDashboardMode(userId?: string | null): DashboardViewMode | null {
+  try {
+    if (typeof localStorage === "undefined") return null;
+    if (userId) {
+      const userScoped = localStorage.getItem(`${DASHBOARD_MODE_STORAGE_KEY}_${userId}`);
+      if (userScoped === "simple" || userScoped === "full") return userScoped;
+    }
+    const globalStored = localStorage.getItem(DASHBOARD_MODE_STORAGE_KEY);
+    if (globalStored === "simple" || globalStored === "full") return globalStored;
+  } catch {
+    // ignore storage errors
+  }
+  return null;
+}
+
+function persistDashboardMode(mode: DashboardViewMode, userId?: string | null) {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(DASHBOARD_MODE_STORAGE_KEY, mode);
+      if (userId) {
+        localStorage.setItem(`${DASHBOARD_MODE_STORAGE_KEY}_${userId}`, mode);
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
 
 type DashboardKpiResult = {
   transaction_count?: number;
@@ -99,12 +131,17 @@ function getDateRange(timeframe: TimeframeOption): { startDate: string; endDate:
 }
 
 export default function Dashboard() {
-  const { staff, role, loading: authLoading } = useAuth();
+  const { user, staff, role, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   // Role Scoping
   const userScope = useMemo(() => getUserScope(staff, role), [staff, role]);
   const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
+  const isAdmin =
+    roleKey === "administrator" ||
+    roleKey === "admin" ||
+    roleKey === "a0000000-0000-4000-8000-000000000001" ||
+    role?.hierarchy_level === 1;
   const isExecutive =
     userScope.isNational ||
     roleKey === "administrator" ||
@@ -112,6 +149,35 @@ export default function Dashboard() {
     roleKey === "national_sales_manager" ||
     roleKey === "nsm" ||
     roleKey === "hr";
+
+  // Admin Dashboard View Mode ("simple" | "full") - retained across sign-outs
+  const [dashboardMode, setDashboardMode] = useState<DashboardViewMode>(() => {
+    return readStoredDashboardMode() ?? "full";
+  });
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const stored = readStoredDashboardMode(user?.id || staff?.id);
+    if (stored) {
+      setDashboardMode(stored);
+      return;
+    }
+    const metaMode = user?.user_metadata?.admin_dashboard_mode;
+    if (metaMode === "simple" || metaMode === "full") {
+      setDashboardMode(metaMode);
+      persistDashboardMode(metaMode, user?.id || staff?.id);
+    }
+  }, [isAdmin, user?.id, staff?.id, user?.user_metadata?.admin_dashboard_mode]);
+
+  const handleToggleDashboardMode = (mode: DashboardViewMode) => {
+    setDashboardMode(mode);
+    persistDashboardMode(mode, user?.id || staff?.id);
+    if (user?.id) {
+      void supabase.auth
+        .updateUser({ data: { admin_dashboard_mode: mode } })
+        .catch(() => {});
+    }
+  };
 
   // State Management
   const [timeframe, setTimeframe] = useState<TimeframeOption>("30d");
@@ -467,6 +533,751 @@ export default function Dashboard() {
     return <DashboardSkeleton />;
   }
 
+  const renderDashboardViewSwitch = (variant: "light" | "dark" = "dark") => {
+    if (!isAdmin) return null;
+    const isLight = variant === "light";
+    return (
+      <div
+        role="group"
+        aria-label="Dashboard view mode"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          padding: "3px",
+          borderRadius: "10px",
+          background: isLight ? "#f1f5f9" : "rgba(255, 255, 255, 0.1)",
+          border: isLight ? "1px solid #e2e8f0" : "1px solid rgba(255, 255, 255, 0.16)",
+          gap: "2px",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => handleToggleDashboardMode("simple")}
+          title="Simple Dashboard: Total Sales, Visits/Attendance & Targets"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "5px",
+            padding: "5px 11px",
+            borderRadius: "7px",
+            border: "none",
+            fontSize: "0.78rem",
+            fontWeight: 600,
+            cursor: "pointer",
+            transition: "all 0.15s ease",
+            background:
+              dashboardMode === "simple"
+                ? isLight
+                  ? "#075544"
+                  : "#10b981"
+                : "transparent",
+            color:
+              dashboardMode === "simple"
+                ? "#ffffff"
+                : isLight
+                  ? "#475569"
+                  : "#cbd5e1",
+          }}
+        >
+          <LayoutGrid size={13} />
+          <span>Simple</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => handleToggleDashboardMode("full")}
+          title="Full Executive Command Center"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "5px",
+            padding: "5px 11px",
+            borderRadius: "7px",
+            border: "none",
+            fontSize: "0.78rem",
+            fontWeight: 600,
+            cursor: "pointer",
+            transition: "all 0.15s ease",
+            background:
+              dashboardMode === "full"
+                ? isLight
+                  ? "#075544"
+                  : "#10b981"
+                : "transparent",
+            color:
+              dashboardMode === "full"
+                ? "#ffffff"
+                : isLight
+                  ? "#475569"
+                  : "#cbd5e1",
+          }}
+        >
+          <Layers size={13} />
+          <span>Full</span>
+        </button>
+      </div>
+    );
+  };
+
+  if (isAdmin && dashboardMode === "simple") {
+    const simpleVisitsCount = visits.filter((v) => v.type !== "attendance").length;
+    const simpleTopTargets = targets.slice(0, 5);
+    const simpleRecentSales = sales.slice(0, 5);
+    const simpleRecentVisits = visits.slice(0, 5);
+
+    return (
+      <div
+        className="dashboard-container"
+        style={{
+          maxWidth: "1240px",
+          margin: "0 auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: "20px",
+        }}
+      >
+        {/* ── Simple Dashboard Header ── */}
+        <section
+          style={{
+            background: "#ffffff",
+            border: "1px solid #e2e8f0",
+            borderRadius: "16px",
+            padding: "20px 24px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "16px",
+            boxShadow: "0 1px 3px rgba(15, 23, 42, 0.04)",
+          }}
+        >
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              <h2 style={{ margin: 0, fontSize: "1.35rem", fontWeight: 700, color: "#0f172a" }}>
+                Dashboard Overview
+              </h2>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "3px 10px",
+                  borderRadius: "9999px",
+                  background: "#ecfdf5",
+                  color: "#065f46",
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                  border: "1px solid #a7f3d0",
+                }}
+              >
+                <span className="live-pulse-dot" />
+                Live
+              </span>
+            </div>
+            <p style={{ margin: "4px 0 0 0", fontSize: "0.86rem", color: "#64748b" }}>
+              Welcome, <strong style={{ color: "#1e293b" }}>{staff?.name ?? "Admin"}</strong> &bull;{" "}
+              {currentTime.toLocaleDateString("en-NG", { weekday: "short", month: "short", day: "numeric" })} &bull;{" "}
+              {currentTime.toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" })}
+            </p>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            <select
+              aria-label="Timeframe filter"
+              value={timeframe}
+              onChange={(e) => setTimeframe(e.target.value as TimeframeOption)}
+              style={{
+                padding: "7px 12px",
+                borderRadius: "9px",
+                border: "1px solid #cbd5e1",
+                background: "#ffffff",
+                color: "#0f172a",
+                fontSize: "0.82rem",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              <option value="today">Today</option>
+              <option value="7d">Last 7 Days</option>
+              <option value="30d">Last 30 Days</option>
+              <option value="month">This Month</option>
+              <option value="all">All Time</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={() => void loadDashboardData(true)}
+              title="Refresh metrics"
+              aria-label="Refresh simple dashboard"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "34px",
+                height: "34px",
+                borderRadius: "9px",
+                border: "1px solid #cbd5e1",
+                background: "#ffffff",
+                color: "#334155",
+                cursor: "pointer",
+              }}
+            >
+              <RefreshCw size={15} className={refreshing ? "spin" : ""} />
+            </button>
+
+            {renderDashboardViewSwitch("light")}
+          </div>
+        </section>
+
+        {error && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "12px 16px",
+              borderRadius: "10px",
+              background: "#fef2f2",
+              border: "1px solid #fecaca",
+              color: "#991b1b",
+              fontSize: "0.86rem",
+            }}
+          >
+            <AlertCircle size={16} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* ── 4 Core Metric Cards ── */}
+        <section
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(235px, 1fr))",
+            gap: "16px",
+          }}
+        >
+          {/* 1. Total Sales */}
+          <div
+            onClick={() => navigate("/sales")}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === "Enter" && navigate("/sales")}
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "14px",
+              padding: "20px",
+              cursor: "pointer",
+              boxShadow: "0 1px 3px rgba(15, 23, 42, 0.04)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: "0.84rem", fontWeight: 600, color: "#64748b" }}>
+                Total Sales
+              </span>
+              <div
+                style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "10px",
+                  background: "#ecfdf5",
+                  color: "#059669",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <DollarSign size={18} />
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: "1.65rem", fontWeight: 800, color: "#0f172a", lineHeight: 1.2 }}>
+                {formatCurrency(grossSales)}
+              </div>
+              <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "6px" }}>
+                {totalOrders} orders &bull; {unitsSold} units sold
+              </div>
+            </div>
+            <div
+              style={{
+                paddingTop: "10px",
+                borderTop: "1px solid #f1f5f9",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                fontSize: "0.78rem",
+                color: "#075544",
+                fontWeight: 600,
+              }}
+            >
+              <span>Collected: {formatShortCurrency(cashCollected)} ({collectionRate}%)</span>
+              <ArrowRight size={14} />
+            </div>
+          </div>
+
+          {/* 2. Total Visits */}
+          <div
+            onClick={() => navigate("/visits")}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === "Enter" && navigate("/visits")}
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "14px",
+              padding: "20px",
+              cursor: "pointer",
+              boxShadow: "0 1px 3px rgba(15, 23, 42, 0.04)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: "0.84rem", fontWeight: 600, color: "#64748b" }}>
+                Total Visits
+              </span>
+              <div
+                style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "10px",
+                  background: "#eff6ff",
+                  color: "#2563eb",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <MapPin size={18} />
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: "1.65rem", fontWeight: 800, color: "#0f172a", lineHeight: 1.2 }}>
+                {simpleVisitsCount.toLocaleString()}
+              </div>
+              <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "6px" }}>
+                {completedVisitsCount} completed &bull; {activeVisitsCount} active now
+              </div>
+            </div>
+            <div
+              style={{
+                paddingTop: "10px",
+                borderTop: "1px solid #f1f5f9",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                fontSize: "0.78rem",
+                color: "#2563eb",
+                fontWeight: 600,
+              }}
+            >
+              <span>Outlets Covered: {activeOutlets} / {totalOutlets}</span>
+              <ArrowRight size={14} />
+            </div>
+          </div>
+
+          {/* 3. Attendances */}
+          <div
+            onClick={() => navigate("/attendance")}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === "Enter" && navigate("/attendance")}
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "14px",
+              padding: "20px",
+              cursor: "pointer",
+              boxShadow: "0 1px 3px rgba(15, 23, 42, 0.04)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: "0.84rem", fontWeight: 600, color: "#64748b" }}>
+                Attendances
+              </span>
+              <div
+                style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "10px",
+                  background: "#f5f3ff",
+                  color: "#7c3aed",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <UserCheck size={18} />
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: "1.65rem", fontWeight: 800, color: "#0f172a", lineHeight: 1.2 }}>
+                {attendanceRecords.toLocaleString()}
+              </div>
+              <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "6px" }}>
+                {completedShifts} completed shifts &bull; {activeReps} active reps
+              </div>
+            </div>
+            <div
+              style={{
+                paddingTop: "10px",
+                borderTop: "1px solid #f1f5f9",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                fontSize: "0.78rem",
+                color: "#7c3aed",
+                fontWeight: 600,
+              }}
+            >
+              <span>View Attendance Log</span>
+              <ArrowRight size={14} />
+            </div>
+          </div>
+
+          {/* 4. Targets */}
+          <div
+            onClick={() => navigate("/targets")}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === "Enter" && navigate("/targets")}
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "14px",
+              padding: "20px",
+              cursor: "pointer",
+              boxShadow: "0 1px 3px rgba(15, 23, 42, 0.04)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: "0.84rem", fontWeight: 600, color: "#64748b" }}>
+                Targets Progress
+              </span>
+              <div
+                style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "10px",
+                  background: "#fffbeb",
+                  color: "#d97706",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Target size={18} />
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: "1.65rem", fontWeight: 800, color: "#0f172a", lineHeight: 1.2 }}>
+                {targetProgress.toFixed(1)}%
+              </div>
+              <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "6px" }}>
+                {targetsAchieved} of {activeTargets} targets achieved
+              </div>
+            </div>
+            <div style={{ paddingTop: "6px" }}>
+              <div
+                style={{
+                  height: "7px",
+                  borderRadius: "9999px",
+                  background: "#f1f5f9",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${Math.min(100, Math.max(0, targetProgress))}%`,
+                    background: targetIsOnTrack ? "#10b981" : "#f59e0b",
+                    borderRadius: "9999px",
+                    transition: "width 0.3s ease",
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Two-Column Clean Summary: Targets & Recent Activity ── */}
+        <section
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gap: "16px",
+          }}
+        >
+          {/* Targets Summary Card */}
+          <div
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "14px",
+              padding: "20px",
+              boxShadow: "0 1px 3px rgba(15, 23, 42, 0.04)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "14px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 700, color: "#0f172a" }}>
+                  Active Targets
+                </h3>
+                <p style={{ margin: "2px 0 0 0", fontSize: "0.8rem", color: "#64748b" }}>
+                  Current quota attainment across teams
+                </p>
+              </div>
+              <Link
+                to="/targets"
+                style={{
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  color: "#075544",
+                  textDecoration: "none",
+                }}
+              >
+                View all →
+              </Link>
+            </div>
+
+            {simpleTopTargets.length === 0 ? (
+              <div style={{ padding: "24px 12px", textAlign: "center", color: "#64748b", fontSize: "0.85rem" }}>
+                No targets configured yet.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                {simpleTopTargets.map((t) => {
+                  const pct = Math.min(100, Math.max(0, Number(t.progressPercent ?? 0)));
+                  return (
+                    <div
+                      key={t.id}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "10px",
+                        background: "#f8fafc",
+                        border: "1px solid #f1f5f9",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: "8px",
+                          marginBottom: "6px",
+                        }}
+                      >
+                        <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#0f172a" }}>
+                          {t.title || t.salesRep?.name || t.salesRep?.region || t.targetType || "Sales Target"}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: "0.8rem",
+                            fontWeight: 700,
+                            color: pct >= 100 ? "#059669" : pct >= 70 ? "#0284c7" : "#d97706",
+                          }}
+                        >
+                          {pct.toFixed(0)}%
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          height: "6px",
+                          borderRadius: "9999px",
+                          background: "#e2e8f0",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: "100%",
+                            width: `${pct}%`,
+                            background: pct >= 100 ? "#10b981" : pct >= 70 ? "#0ea5e9" : "#f59e0b",
+                            borderRadius: "9999px",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Recent Activity Card */}
+          <div
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "14px",
+              padding: "20px",
+              boxShadow: "0 1px 3px rgba(15, 23, 42, 0.04)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "14px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 700, color: "#0f172a" }}>
+                  Recent Activity
+                </h3>
+                <p style={{ margin: "2px 0 0 0", fontSize: "0.8rem", color: "#64748b" }}>
+                  Latest recorded sales &amp; field check-ins
+                </p>
+              </div>
+              <div
+                style={{
+                  display: "inline-flex",
+                  padding: "2px",
+                  borderRadius: "8px",
+                  background: "#f1f5f9",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setActivityTab("sales")}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: "6px",
+                    border: "none",
+                    fontSize: "0.76rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    background: activityTab === "sales" ? "#ffffff" : "transparent",
+                    color: activityTab === "sales" ? "#0f172a" : "#64748b",
+                  }}
+                >
+                  Sales
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActivityTab("visits")}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: "6px",
+                    border: "none",
+                    fontSize: "0.76rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    background: activityTab !== "sales" ? "#ffffff" : "transparent",
+                    color: activityTab !== "sales" ? "#0f172a" : "#64748b",
+                  }}
+                >
+                  Visits &amp; Attendance
+                </button>
+              </div>
+            </div>
+
+            {activityTab === "sales" ? (
+              simpleRecentSales.length === 0 ? (
+                <div style={{ padding: "24px 12px", textAlign: "center", color: "#64748b", fontSize: "0.85rem" }}>
+                  No sales recorded in this period.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {simpleRecentSales.map((s) => (
+                    <div
+                      key={s.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "12px",
+                        padding: "10px 12px",
+                        borderRadius: "10px",
+                        background: "#f8fafc",
+                        border: "1px solid #f1f5f9",
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {s.outlet || "Direct Store"}
+                        </div>
+                        <div style={{ fontSize: "0.76rem", color: "#64748b" }}>
+                          {s.drink_type} &bull; {s.staff || "Rep"}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <div style={{ fontSize: "0.86rem", fontWeight: 700, color: "#059669" }}>
+                          {formatCurrency(Number(s.total_amount ?? 0))}
+                        </div>
+                        <div style={{ fontSize: "0.72rem", color: "#64748b" }}>
+                          {formatActivityDate(s.sale_date || s.created_at)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            ) : simpleRecentVisits.length === 0 ? (
+              <div style={{ padding: "24px 12px", textAlign: "center", color: "#64748b", fontSize: "0.85rem" }}>
+                No visits or attendance records in this period.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {simpleRecentVisits.map((v) => (
+                  <div
+                    key={v.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "12px",
+                      padding: "10px 12px",
+                      borderRadius: "10px",
+                      background: "#f8fafc",
+                      border: "1px solid #f1f5f9",
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {v.staff || "Field Rep"}
+                      </div>
+                      <div style={{ fontSize: "0.76rem", color: "#64748b" }}>
+                        {v.type === "attendance" ? "Daily Attendance" : v.outlet || "Outlet Visit"}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
+                      <span
+                        style={{
+                          display: "inline-block",
+                          padding: "2px 8px",
+                          borderRadius: "9999px",
+                          fontSize: "0.72rem",
+                          fontWeight: 600,
+                          background: v.status === "Completed" ? "#ecfdf5" : "#eff6ff",
+                          color: v.status === "Completed" ? "#059669" : "#2563eb",
+                        }}
+                      >
+                        {v.status}
+                      </span>
+                      <div style={{ fontSize: "0.72rem", color: "#64748b", marginTop: "2px" }}>
+                        {v.date}{v.time ? ` · ${v.time}` : ""}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="dashboard-container">
       {/* ══════════════════════════════════════════════════════════════════════
@@ -553,6 +1364,8 @@ export default function Dashboard() {
             >
               <RefreshCw size={15} />
             </button>
+
+            {renderDashboardViewSwitch("dark")}
           </div>
         </div>
 
