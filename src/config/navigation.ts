@@ -7,16 +7,22 @@ export type NavigationItem = {
 
 const executiveRoles = [
   "administrator",
+  "admin",
   "national_sales_manager",
+  "nsm",
   "hr",
 ];
 
 const generalStaffRoles = [
   "administrator",
+  "admin",
   "national_sales_manager",
+  "nsm",
   "hr",
   "regional_sales_manager",
+  "rsm",
   "sales_executive",
+  "se",
   "market_sitter",
 ];
 

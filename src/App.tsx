@@ -32,23 +32,15 @@ import {
 
 import AppLayout from "./components/layout/AppLayout";
 import ProtectedRoute from "./routes/ProtectedRoute";
-import AdminRoute from "./routes/AdminRoute";
+import { isExecutiveRole, isFieldBaOrVsrRole } from "./services/dataScopeService";
 
 function ExecutiveRoute({ children }: { children: React.ReactNode }) {
   const { staff, role, loading } = useAuth();
   if (loading) return null;
-  const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
-  const isExecutive =
-    roleKey === "administrator" ||
-    roleKey === "admin" ||
-    roleKey === "national_sales_manager" ||
-    roleKey === "nsm" ||
-    roleKey === "hr" ||
-    role?.hierarchy_level === 1 ||
-    (role?.hierarchy_level === 2 && role?.can_view_all_sales === true);
+  const isExecutive = isExecutiveRole(staff, role);
 
   if (!isExecutive) {
-    if (roleKey === "brand_ambassador" || roleKey === "ba" || roleKey === "vsr") {
+    if (isFieldBaOrVsrRole(staff, role)) {
       return <Navigate to="/check-in" replace />;
     }
     return <Navigate to="/sales" replace />;
@@ -61,8 +53,7 @@ function ExecutiveRoute({ children }: { children: React.ReactNode }) {
 function BaRestrictedRoute({ children }: { children: React.ReactNode }) {
   const { staff, role, loading } = useAuth();
   if (loading) return null;
-  const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
-  const isBA = roleKey === "brand_ambassador" || roleKey === "ba" || roleKey === "vsr";
+  const isBA = isFieldBaOrVsrRole(staff, role);
 
   if (isBA) {
     return <Navigate to="/check-in" replace />;
@@ -258,11 +249,7 @@ function ApplicationRoutes() {
 
                 <Route
                   path="/settings"
-                  element={
-                    <AdminRoute>
-                      <Settings />
-                    </AdminRoute>
-                  }
+                  element={<Settings />}
                 />
 
                 <Route

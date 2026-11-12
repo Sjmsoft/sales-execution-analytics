@@ -26,6 +26,12 @@ import {
 import { useAuth } from "../../context/AuthContext";
 import { getUnreadNotificationsCount, subscribeNotifications } from "../../services/notificationService";
 import { getUnreadMessagesCount, messagingEvents } from "../../services/messagingService";
+import {
+  getEffectiveRoleKey,
+  isAdminRole,
+  isExecutiveRole,
+  isFieldBaOrVsrRole,
+} from "../../services/dataScopeService";
 
 type MobileNavProps = {
   isDrawerOpen: boolean;
@@ -71,14 +77,10 @@ export default function MobileNav({
     return staff.name.slice(0, 2).toUpperCase();
   }, [staff?.name]);
 
-  const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
-  const isAdmin = roleKey === "administrator" || roleKey === "admin" || role?.hierarchy_level === 1;
-  const isExecutive =
-    isAdmin ||
-    roleKey === "national_sales_manager" ||
-    roleKey === "nsm" ||
-    roleKey === "hr";
-  const isBA = roleKey === "brand_ambassador" || roleKey === "ba" || roleKey === "vsr";
+  const roleKey = getEffectiveRoleKey(staff, role);
+  const isAdmin = isAdminRole(staff, role);
+  const isExecutive = isExecutiveRole(staff, role);
+  const isBA = isFieldBaOrVsrRole(staff, role);
   const isAttendanceExcluded =
     roleKey === "regional_sales_manager" ||
     roleKey === "rsm" ||

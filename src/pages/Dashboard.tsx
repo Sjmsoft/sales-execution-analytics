@@ -46,6 +46,9 @@ import {
   filterVisitsByScope,
   filterOutletsByScope,
   filterTargetsByScope,
+  isAdminRole,
+  isExecutiveRole,
+  isFieldBaOrVsrRole,
 } from "../services/dataScopeService";
 import { DashboardSkeleton } from "../components/ui/Skeleton";
 import { useMinimumLoading } from "../hooks/useMinimumLoading";
@@ -136,19 +139,8 @@ export default function Dashboard() {
 
   // Role Scoping
   const userScope = useMemo(() => getUserScope(staff, role), [staff, role]);
-  const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
-  const isAdmin =
-    roleKey === "administrator" ||
-    roleKey === "admin" ||
-    roleKey === "a0000000-0000-4000-8000-000000000001" ||
-    role?.hierarchy_level === 1;
-  const isExecutive =
-    userScope.isNational ||
-    roleKey === "administrator" ||
-    roleKey === "admin" ||
-    roleKey === "national_sales_manager" ||
-    roleKey === "nsm" ||
-    roleKey === "hr";
+  const isAdmin = isAdminRole(staff, role);
+  const isExecutive = userScope.isNational || isExecutiveRole(staff, role);
 
   // Admin Dashboard View Mode ("simple" | "full") - retained across sign-outs
   const [dashboardMode, setDashboardMode] = useState<DashboardViewMode>(() => {
@@ -523,7 +515,7 @@ export default function Dashboard() {
 
   // Executive Command Center is strictly visible to Admin, NSM, and HR only
   if (!authLoading && !isExecutive) {
-    if (roleKey === "brand_ambassador" || roleKey === "ba" || roleKey === "vsr") {
+    if (isFieldBaOrVsrRole(staff, role)) {
       return <Navigate to="/attendance" replace />;
     }
     return <Navigate to="/sales" replace />;

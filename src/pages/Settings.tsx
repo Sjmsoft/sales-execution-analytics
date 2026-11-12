@@ -45,6 +45,7 @@ import {
 } from "lucide-react";
 import { useAppearance, THEME_COLOR_OPTIONS } from "../hooks/useAppearance";
 import { useAuth } from "../context/AuthContext";
+import { isAdminRole } from "../services/dataScopeService";
 import { supabase } from "../lib/supabase";
 import {
   sendPasswordResetEmail,
@@ -258,12 +259,7 @@ function SaveBar({
 
 export default function Settings() {
   const { user, staff, role, loading: authLoading, refreshStaff, signOut } = useAuth();
-  const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
-  const isAdmin =
-    roleKey === "administrator" ||
-    roleKey === "admin" ||
-    roleKey === "a0000000-0000-4000-8000-000000000001" ||
-    role?.hierarchy_level === 1;
+  const isAdmin = isAdminRole(staff, role);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const rawParamTab = searchParams.get("tab");

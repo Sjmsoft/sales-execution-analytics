@@ -47,6 +47,7 @@ import {
   getUserScope,
   filterOutletsByScope,
   filterStaffByScope,
+  isAdminRole,
 } from "../services/dataScopeService";
 import { getCurrentPosition, formatGpsError, distanceInMeters } from "./visits/visitsUtils";
 import OutletsMapView from "../components/outlets/OutletsMapView";
@@ -146,14 +147,7 @@ export default function Outlets() {
   const userScope = useMemo(() => getUserScope(staff, role), [staff, role]);
 
   // Admin role check (for edit/delete privileges)
-  const isAdmin = useMemo(() => {
-    const key = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
-    return (
-      key === "administrator" ||
-      key === "admin" ||
-      role?.hierarchy_level === 1
-    );
-  }, [role, staff]);
+  const isAdmin = useMemo(() => isAdminRole(staff, role), [role, staff]);
 
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [search, setSearch] = useState("");

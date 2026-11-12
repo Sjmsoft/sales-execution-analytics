@@ -32,6 +32,12 @@ import { useAuth } from "../../context/AuthContext";
 import BrandLogo3D from "../brand/BrandLogo3D";
 import { getUnreadNotificationsCount, subscribeNotifications } from "../../services/notificationService";
 import { getUnreadMessagesCount, messagingEvents } from "../../services/messagingService";
+import {
+  getEffectiveRoleKey,
+  isAdminRole,
+  isExecutiveRole,
+  isFieldBaOrVsrRole,
+} from "../../services/dataScopeService";
 
 type SidebarProps = {
   mobileOpen: boolean;
@@ -121,19 +127,10 @@ export default function Sidebar({
     };
   }, []);
 
-  const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
-  const isAdmin =
-    roleKey === "administrator" ||
-    roleKey === "admin" ||
-    roleKey === "a0000000-0000-4000-8000-000000000001" ||
-    role?.hierarchy_level === 1;
-  const isExecutive =
-    isAdmin ||
-    roleKey === "national_sales_manager" ||
-    roleKey === "nsm" ||
-    roleKey === "hr" ||
-    (role?.hierarchy_level === 2 && role?.can_view_all_sales === true);
-  const isBA = roleKey === "brand_ambassador" || roleKey === "ba" || roleKey === "vsr";
+  const roleKey = getEffectiveRoleKey(staff, role);
+  const isAdmin = isAdminRole(staff, role);
+  const isExecutive = isExecutiveRole(staff, role);
+  const isBA = isFieldBaOrVsrRole(staff, role);
 
   // Filter items visible to this role
   const visibleItems = useMemo(

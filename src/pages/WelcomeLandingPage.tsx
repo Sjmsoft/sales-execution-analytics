@@ -18,6 +18,11 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useUserLocation } from "../hooks/useUserLocation";
+import {
+  getEffectiveRoleKey,
+  isExecutiveRole,
+  isFieldBaOrVsrRole,
+} from "../services/dataScopeService";
 import "./WelcomeLandingPage.css";
 import BrandLogo3D from "../components/brand/BrandLogo3D";
 
@@ -26,14 +31,9 @@ export default function WelcomeLandingPage() {
   const { userLocation, isLocating } = useUserLocation(staff?.id);
   const navigate = useNavigate();
 
-  const roleKey = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
-  const isBA = roleKey === "brand_ambassador" || roleKey === "ba" || roleKey === "vsr";
-  const isExecutive =
-    roleKey === "administrator" ||
-    roleKey === "admin" ||
-    roleKey === "national_sales_manager" ||
-    roleKey === "nsm" ||
-    roleKey === "hr";
+  const roleKey = getEffectiveRoleKey(staff, role);
+  const isBA = isFieldBaOrVsrRole(staff, role);
+  const isExecutive = isExecutiveRole(staff, role);
   const isAttendanceExcluded =
     roleKey === "regional_sales_manager" ||
     roleKey === "rsm" ||

@@ -21,6 +21,72 @@ function normalize(str?: string | null): string {
   return (str ?? "").trim().toLowerCase();
 }
 
+/**
+ * Returns the canonical normalized role key for a staff member + role definition.
+ */
+export function getEffectiveRoleKey(staff: any | null, role: any | null): string {
+  return normalize(role?.key || staff?.user_roles?.key || staff?.assigned_role || "");
+}
+
+/**
+ * Checks whether the user is an HR user (explicitly NOT a system administrator).
+ */
+export function isHrRole(staff: any | null, role: any | null): boolean {
+  const roleKey = getEffectiveRoleKey(staff, role);
+  const roleName = normalize(role?.name || staff?.user_roles?.name || "");
+  return (
+    roleKey === "hr" ||
+    roleKey.includes("human_resource") ||
+    roleKey.includes("human resource") ||
+    roleName.includes("human resource") ||
+    roleKey === "a0000000-0000-4000-8000-000000000002"
+  );
+}
+
+/**
+ * Checks whether the user is a true System Administrator.
+ * Note: HR has hierarchy_level === 1 in SYSTEM_ROLES, so HR is explicitly excluded here.
+ */
+export function isAdminRole(staff: any | null, role: any | null): boolean {
+  if (isHrRole(staff, role)) return false;
+  const roleKey = getEffectiveRoleKey(staff, role);
+  const roleName = normalize(role?.name || staff?.user_roles?.name || "");
+  return (
+    roleKey === "administrator" ||
+    roleKey === "admin" ||
+    roleKey === "a0000000-0000-4000-8000-000000000001" ||
+    roleKey.includes("admin") ||
+    roleName.includes("admin") ||
+    role?.hierarchy_level === 1 ||
+    staff?.role === 1
+  );
+}
+
+/**
+ * Checks whether the user has Executive Command Center access (Admin, NSM, HR, or level-2 executive with all-sales access).
+ */
+export function isExecutiveRole(staff: any | null, role: any | null): boolean {
+  if (isAdminRole(staff, role) || isHrRole(staff, role)) return true;
+  const roleKey = getEffectiveRoleKey(staff, role);
+  const roleName = normalize(role?.name || staff?.user_roles?.name || "");
+  return (
+    roleKey === "national_sales_manager" ||
+    roleKey === "nsm" ||
+    roleKey.includes("national_sales") ||
+    roleName.includes("national sales") ||
+    roleKey === "a0000000-0000-4000-8000-000000000003" ||
+    (role?.hierarchy_level === 2 && (role?.can_view_all_sales === true || role?.can_manage_staff === true))
+  );
+}
+
+/**
+ * Checks whether the user is a restricted field rep (Brand Ambassador or Van Sales Rep).
+ */
+export function isFieldBaOrVsrRole(staff: any | null, role: any | null): boolean {
+  const roleKey = getEffectiveRoleKey(staff, role);
+  return roleKey === "brand_ambassador" || roleKey === "ba" || roleKey === "vsr";
+}
+
 function matchRegion(itemRegion: string | null | undefined, assignedRegions: string[]): boolean {
   if (!itemRegion) return false;
   const target = normalize(itemRegion);
@@ -54,23 +120,8 @@ export function getUserScope(staff: any | null, role: any | null): UserScope {
     });
   }
 
-  const isAdmin =
-    roleKey === "administrator" ||
-    roleKey === "admin" ||
-    roleKey.includes("admin") ||
-    roleName.includes("admin") ||
-    role?.hierarchy_level === 1 ||
-    staff?.role === 1 ||
-    roleKey === "a0000000-0000-4000-8000-000000000001";
-
-  const isHR =
-    roleKey === "hr" ||
-    roleKey.includes("human_resource") ||
-    roleKey.includes("human resource") ||
-    roleName.includes("human resource") ||
-    roleName.includes("hr") ||
-    roleKey === "a0000000-0000-4000-8000-000000000002" ||
-    (roleKey.includes("hr") && !roleKey.includes("rsm") && !roleKey.includes("vsr"));
+  const isHR = isHrRole(staff, role);
+  const isAdmin = isAdminRole(staff, role);
 
   const isNSM =
     roleKey === "national_sales_manager" ||
@@ -87,9 +138,16 @@ export function getUserScope(staff: any | null, role: any | null): UserScope {
     role?.hierarchy_level === 1 ||
     (role?.hierarchy_level === 2 && (role?.can_view_all_sales === true || role?.can_manage_staff === true));
 
+  const isIndividualFieldRole =
+    roleKey === "brand_ambassador" ||
+    roleKey === "ba" ||
+    roleKey === "vsr" ||
+    roleKey === "market_sitter";
+
   // Tier 2: Regional View (RSM, SE) -> Only sees data of staff from their assigned regions
   const isRegional =
     !isNational &&
+    !isIndividualFieldRole &&
     (roleKey === "regional_sales_manager" ||
       roleKey === "rsm" ||
       roleKey === "sales_executive" ||
@@ -97,8 +155,7 @@ export function getUserScope(staff: any | null, role: any | null): UserScope {
       roleName.includes("regional sales") ||
       roleName.includes("sales executive") ||
       role?.can_manage_staff === true ||
-      role?.hierarchy_level === 3 ||
-      role?.hierarchy_level === 4);
+      role?.hierarchy_level === 3);
 
   // Tier 3: Individual View (BA, VSR, Market Sitter) -> Only sees respective sales data and outlets in their regions
   const isIndividual = !isNational && !isRegional;

@@ -9,6 +9,7 @@ import {
   filterSalesByScope,
   filterOutletsByScope,
   filterStaffByScope,
+  isAdminRole,
 } from "../services/dataScopeService";
 import { NewSaleDialog } from "./sales/NewSaleDialog";
 import { PenEdgeInvoiceModal, type InvoiceOutletInfo } from "./sales/PenEdgeInvoiceModal";
@@ -172,14 +173,7 @@ export default function Sales() {
   const [copiedRef, setCopiedRef] = useState<string | null>(null);
 
   // Admin role check (for edit/delete privileges)
-  const isAdmin = useMemo(() => {
-    const key = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
-    return (
-      key === "administrator" ||
-      key === "admin" ||
-      role?.hierarchy_level === 1
-    );
-  }, [role, staff]);
+  const isAdmin = useMemo(() => isAdminRole(staff, role), [role, staff]);
 
   // Edit Sale modal state (Admin only)
   const [editingSale, setEditingSale] = useState<Sale | null>(null);

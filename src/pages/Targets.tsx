@@ -46,6 +46,8 @@ import {
   getUserScope,
   filterTargetsByScope,
   filterStaffByScope,
+  getEffectiveRoleKey,
+  isAdminRole,
 } from "../services/dataScopeService";
 import { addNotification } from "../services/notificationService";
 
@@ -55,23 +57,17 @@ export default function Targets() {
 
   // Role permissions: Only NSM and Admins can create and push targets
   const canCreateAndPush = useMemo(() => {
-    const key = role?.key?.toLowerCase() || "";
+    const key = getEffectiveRoleKey(staff, role);
     return (
-      key === "administrator" ||
+      isAdminRole(staff, role) ||
       key === "national_sales_manager" ||
+      key === "nsm" ||
       role?.can_assign_targets === true
     );
-  }, [role]);
+  }, [role, staff]);
 
   // Admin role check (for edit/delete privileges)
-  const isAdmin = useMemo(() => {
-    const key = (role?.key || staff?.user_roles?.key || staff?.assigned_role || "").toLowerCase();
-    return (
-      key === "administrator" ||
-      key === "admin" ||
-      role?.hierarchy_level === 1
-    );
-  }, [role, staff]);
+  const isAdmin = useMemo(() => isAdminRole(staff, role), [role, staff]);
 
   // Is current staff a Brand Ambassador?
   const isBrandAmbassador = useMemo(() => {
